@@ -54,12 +54,12 @@ struct OnboardingWelcomeView: View {
 
             ButtonDock(primary: "Begin", link: "Restore from iCloud", onPrimary: {
                 // A backup in iCloud (a second device): restore it rather than onboard over it (M5).
-                RestoreRouting.shared.begin(model)
+                model.restoreRouting.begin(model)
             }, onLink: {
                 model.go(.r1)
             })
         }
-        .onAppear { RestoreRouting.shared.checkForBackup(model) }
+        .onAppear { model.restoreRouting.checkForBackup(model) }
     }
 }
 
@@ -72,7 +72,7 @@ struct OnboardingGoalQuestionView: View {
     let id: ScreenID
 
     var body: some View {
-        let draft = OnboardingDraft.shared
+        let draft = model.onboardingDraft
         FlowScreen {
             OnboardingNav(id: id, progress: 1)
 
@@ -100,7 +100,7 @@ struct OnboardingGoalQuestionView: View {
 // MARK: - A3 · Listening
 
 /// The question greys; words land under it; stops on silence. Also listens for the A4b answer.
-/// The take lives in `VoiceCapture.shared` (started on the screen before, so A2 → A3 is turn-taking).
+/// The take lives in `model.voice` (started on the screen before, so A2 → A3 is turn-taking).
 struct OnboardingListeningView: View {
     @Environment(AppModel.self) private var model
     let id: ScreenID
@@ -108,11 +108,11 @@ struct OnboardingListeningView: View {
     @State private var finishing = false
 
     /// Launched straight onto A3 (screenshots): show the board's words; nothing is recording.
-    private var staticBoard: Bool { model.fixture?.id == id && !VoiceCapture.shared.isBusy }
+    private var staticBoard: Bool { model.fixture?.id == id && !model.voice.isBusy }
 
     var body: some View {
-        let draft = OnboardingDraft.shared
-        let capture = VoiceCapture.shared
+        let draft = model.onboardingDraft
+        let capture = model.voice
         let question = draft.answering ? (draft.clarifyingQuestion ?? "Where are you going?") : "Where are you going?"
         let board = staticBoard ? model.fixture?.transcript : nil
         let settled = board?.settled ?? capture.settled
@@ -153,7 +153,7 @@ struct OnboardingListeningView: View {
     /// Stop (tap or silence): the words become the goal (A4), or the answer replaces it; a vague goal
     /// gets one question (A4b). No words: typing.
     private func finish() {
-        let draft = OnboardingDraft.shared
+        let draft = model.onboardingDraft
         if staticBoard {
             model.replace(with: draft.accept(captured: model.fixture?.transcript?.text ?? "", byVoice: true))
             return
@@ -161,7 +161,7 @@ struct OnboardingListeningView: View {
         guard !finishing else { return }
         finishing = true
         Task { @MainActor in
-            let take = await VoiceCapture.shared.stop()
+            let take = await model.voice.stop()
             // The goal keeps its words, not the audio.
             VoiceStorage.shared.delete(take.recording?.fileName)
             if take.transcript.isEmpty {
@@ -175,11 +175,11 @@ struct OnboardingListeningView: View {
 
     /// Back or the keyboard: drop the audio; the keyboard keeps the words said so far.
     private func leave(to next: ScreenID, keepWords: Bool) {
-        let draft = OnboardingDraft.shared
-        let words = staticBoard ? (model.fixture?.transcript?.text ?? "") : VoiceCapture.shared.text
+        let draft = model.onboardingDraft
+        let words = staticBoard ? (model.fixture?.transcript?.text ?? "") : model.voice.text
         if keepWords, !words.isEmpty { draft.text = GoalShaper.normalize(words) }
         draft.answering = false
-        Task { @MainActor in await VoiceCapture.shared.discard() }
+        Task { @MainActor in await model.voice.discard() }
         model.replace(with: next)
     }
 }
@@ -193,7 +193,7 @@ struct OnboardingReviewView: View {
     @Environment(\.motionReduced) private var reduced
     let id: ScreenID
 
-    @Bindable private var draft = OnboardingDraft.shared
+    private var draft: OnboardingDraft { model.onboardingDraft }
     @FocusState private var focused: Bool
     @State private var editingRequested = false
 
@@ -207,7 +207,7 @@ struct OnboardingReviewView: View {
             OnboardingNav(id: id, progress: 1)
 
             VStack(alignment: .leading, spacing: 0) {
-                UnderlineField(prompt: "Where are you going?", text: $draft.text, style: .title,
+                UnderlineField(prompt: "Where are you going?", text: Bindable(draft).text, style: .title,
                                lines: id == .a4b ? 1...4 : 3...6, focused: $focused, showsFocus: boardKeyboard,
                                label: "Your goal", onSubmit: continueTapped)
                 if id == .a4b, let question = draft.clarifyingQuestion {
@@ -267,7 +267,7 @@ struct OnboardingPartsView: View {
     @FocusState private var titleFocused: Bool
 
     var body: some View {
-        let draft = OnboardingDraft.shared
+        let draft = model.onboardingDraft
         FlowScreen {
             OnboardingNav(id: .a5, progress: 2)
 
@@ -374,7 +374,7 @@ struct OnboardingRhythmView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        let draft = OnboardingDraft.shared
+        let draft = model.onboardingDraft
         FlowScreen {
             OnboardingNav(id: .a6, progress: 3)
 
@@ -418,7 +418,7 @@ struct OnboardingRhythmView: View {
 /// What stays on the phone; one switch for cloud help. Start saves the goal and lands by the clock.
 struct OnboardingPrivacyView: View {
     @Environment(AppModel.self) private var model
-    @Bindable private var draft = OnboardingDraft.shared
+    private var draft: OnboardingDraft { model.onboardingDraft }
 
     var body: some View {
         FlowScreen {
@@ -441,7 +441,7 @@ struct OnboardingPrivacyView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .accessibilityElement(children: .combine)
                         if model.cloudHelpConfigured {
-                            CompassSwitch(label: "Cloud help", isOn: $draft.cloudAssist)
+                            CompassSwitch(label: "Cloud help", isOn: Bindable(draft).cloudAssist)
                                 .padding(.top, -6)
                         }
                     }

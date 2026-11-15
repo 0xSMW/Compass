@@ -9,8 +9,6 @@ import CompassCore
 @MainActor
 @Observable
 final class HistorySelection {
-    static let shared = HistorySelection()
-
     /// E2/E4/E5/E6: the day that is open.
     var day: DayKey?
     /// E1 opened from E3: the last day of that week. nil = this week.
@@ -24,7 +22,7 @@ final class HistorySelection {
 extension AppModel {
     /// The goal History is drawing (a past goal when opened from G3).
     var historyGoal: Goal? {
-        if let id = HistorySelection.shared.goalID, let past = snapshot.pastGoals.first(where: { $0.id == id }) { return past }
+        if let id = historySelection.goalID, let past = snapshot.pastGoals.first(where: { $0.id == id }) { return past }
         return goal
     }
 
@@ -40,17 +38,17 @@ extension AppModel {
 
     /// The open day: History's selection, else the fixture's, else today.
     var historySelectedDay: DayKey {
-        HistorySelection.shared.day ?? fixture?.selectedDay ?? todayKey
+        historySelection.day ?? fixture?.selectedDay ?? todayKey
     }
 
     func openHistoryDay(_ key: DayKey) {
-        HistorySelection.shared.day = key
+        historySelection.day = key
         let day = snapshot.day(key)
         go(day?.hasConflict == true ? .e5 : .e2)
     }
 
     func openHistoryWeek(endingOn end: DayKey?) {
-        HistorySelection.shared.weekEnd = end
+        historySelection.weekEnd = end
         go(.e1)
     }
 

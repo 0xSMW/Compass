@@ -16,20 +16,20 @@ private struct SystemServicesModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .task { SystemServices.shared.start(model: model) }
+            .task { model.system.start(model: model) }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { Task { await SystemServices.shared.refresh() } }
+                if phase == .active { Task { await model.system.refresh() } }
                 if phase == .background, model.fixture == nil { ReminderRefresh.schedule() }
             }
             .onChange(of: model.snapshot) { old, new in
-                SystemServices.shared.scheduleReminders()
-                if old.settings.rhythm != new.settings.rhythm { SystemServices.shared.scheduleEntryTimer() }
+                model.system.scheduleReminders()
+                if old.settings.rhythm != new.settings.rhythm { model.system.scheduleEntryTimer() }
             }
     }
 }
 
 extension AppModel {
-    var isLiveSystem: Bool { fixture == nil && SystemServices.shared.isLive }
+    var isLiveSystem: Bool { fixture == nil && system.isLive }
 
     // MARK: I2 · Notifications off
 
@@ -39,14 +39,14 @@ extension AppModel {
     var showsNotificationsNotice: Bool {
         NotificationRules.showsOffNotice(enabled: settings.notificationsEnabled,
                                          status: conditions.notifications,
-                                         dismissed: SystemServices.shared.notificationsNoticeDismissed)
+                                         dismissed: system.notificationsNoticeDismissed)
     }
 
-    func dismissNotificationsNotice() { SystemServices.shared.setNoticeDismissed(true) }
+    func dismissNotificationsNotice() { system.setNoticeDismissed(true) }
 
     func turnOnNotifications() {
         if isLiveSystem {
-            Task { await SystemServices.shared.turnOnNotifications() }
+            Task { await system.turnOnNotifications() }
         } else {
             updateSettings { $0.notificationsEnabled = true }
             conditions.notifications = .granted
@@ -56,7 +56,7 @@ extension AppModel {
     /// Ask iOS for notification permission (onboarding A6, Settings). Returns the resulting state.
     func requestNotificationPermission() async -> PermissionState {
         guard isLiveSystem else { conditions.notifications = .granted; return .granted }
-        return await SystemServices.shared.requestNotifications()
+        return await system.requestNotifications()
     }
 
     // MARK: I3 · New time zone
@@ -70,7 +70,7 @@ extension AppModel {
     /// OK / Keep <previous> time.
     func answerTimeZoneNotice(keepPrevious: Bool) {
         if isLiveSystem {
-            SystemServices.shared.answerTimeZone(keepPrevious: keepPrevious)
+            system.answerTimeZone(keepPrevious: keepPrevious)
         } else {
             let previous = conditions.previousTimeZoneID
             conditions.previousTimeZoneID = nil
@@ -85,7 +85,7 @@ extension AppModel {
 
     /// Check (and ask for) what a recording needs. nil = go ahead.
     func prepareToRecord() async -> RecordingBlock? {
-        if isLiveSystem { return await SystemServices.shared.prepareToRecord() }
+        if isLiveSystem { return await system.prepareToRecord() }
         return RecordingBlock(conditions)
     }
 

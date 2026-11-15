@@ -71,9 +71,9 @@ struct EveningReflectView: View {
     @Environment(AppModel.self) private var model
     let id: ScreenID
 
-    @Bindable private var session = EveningSession.shared
+    private var session: EveningSession { model.eveningSession }
     @FocusState private var focused: Bool
-    private var capture: VoiceCapture { .shared }
+    private var capture: VoiceCapture { model.voice }
 
     private var outcome: ReflectionOutcome { session.outcome ?? (id == .d4 ? .notToday : .moved) }
     private var kind: EveningKind { session.kind ?? (model.eveningDay?.step == nil ? .noStep : .stepOpen) }
@@ -137,7 +137,7 @@ struct EveningReflectView: View {
     private var typing: some View {
         VStack(alignment: .leading, spacing: Space.s) {
             CompassText(question, style: .title, color: .ink2)
-            UnderlineField(prompt: "Type it here", text: $session.draft, style: .live, focused: $focused, label: question)
+            UnderlineField(prompt: "Type it here", text: Bindable(session).draft, style: .live, focused: $focused, label: question)
         }
         .region(.focal)
         .onAppear { if model.fixture == nil { DispatchQueue.main.async { focused = true } } }
@@ -162,7 +162,7 @@ struct EveningSavedView: View {
     @Environment(\.motionReduced) private var reduced
     let id: ScreenID
 
-    @Bindable private var session = EveningSession.shared
+    private var session: EveningSession { model.eveningSession }
     @State private var expanded: Bool
     @State private var summaryDraft = ""
     @State private var pickingPart = false

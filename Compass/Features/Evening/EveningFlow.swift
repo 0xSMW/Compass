@@ -7,8 +7,6 @@ import CompassCore
 @MainActor
 @Observable
 final class EveningSession {
-    static let shared = EveningSession()
-
     /// Which question opened the evening (decides the subject symbol and the reflect prompt).
     var kind: EveningKind?
     var outcome: ReflectionOutcome?
@@ -44,12 +42,12 @@ final class EveningSession {
 
 extension AppModel {
     /// The day tonight's answer is for (see `EveningSession.dayKey`).
-    var eveningDayKey: DayKey { EveningSession.shared.dayKey ?? todayKey }
+    var eveningDayKey: DayKey { eveningSession.dayKey ?? todayKey }
     var eveningDay: Day? { snapshot.day(eveningDayKey) }
 
     /// D1 / D2 / D2b appeared: this evening belongs to today.
     func beginEvening() {
-        let session = EveningSession.shared
+        let session = eveningSession
         if session.dayKey == nil { session.dayKey = todayKey }
     }
 
@@ -68,7 +66,7 @@ extension AppModel {
 
     /// Done / Not today (D1, D7) or Yes / Not today (D2): the tapped circle becomes the mic.
     func answerEvening(_ outcome: ReflectionOutcome, kind: EveningKind) {
-        let session = EveningSession.shared
+        let session = eveningSession
         let day = eveningDayKey
         session.reset()
         session.dayKey = day
@@ -88,7 +86,7 @@ extension AppModel {
 
     /// D2b: "Anything to add?" — mic or keyboard.
     func addToDoneEarlier(typing: Bool) {
-        let session = EveningSession.shared
+        let session = eveningSession
         let day = eveningDayKey
         session.reset()
         session.dayKey = day
@@ -102,16 +100,16 @@ extension AppModel {
         }
     }
 
-    var eveningReflectScreen: ScreenID { EveningSession.shared.outcome == .notToday ? .d4 : .d3 }
+    var eveningReflectScreen: ScreenID { eveningSession.outcome == .notToday ? .d4 : .d3 }
 
     func startEveningListening() {
-        let session = EveningSession.shared
+        let session = eveningSession
         session.micProblem = nil
         session.typing = false
         let target = eveningReflectScreen
         Task {
             do {
-                guard try await VoiceCapture.shared.start(recorder: recorder, transcriber: transcriber) else { return }
+                guard try await voice.start(recorder: recorder, transcriber: transcriber) else { return }
             } catch let problem as VoiceCapture.StartError {
                 session.micProblem = problem
             } catch {
@@ -123,7 +121,7 @@ extension AppModel {
 
     /// Stop (tap or silence) on D3/D4: save at once ("Saved"), then the summary takes the question's place.
     func finishEveningListening() async {
-        let capture = VoiceCapture.shared
+        let capture = voice
         guard capture.isListening else { return }
         let take = await capture.stop()
         saveEveningTake(transcript: take.transcript, recording: take.recording, transcriptionFailed: take.transcriptionFailed)
@@ -133,10 +131,10 @@ extension AppModel {
 
     /// Keyboard while listening: stop, keep the audio, and carry the words into the field.
     func switchEveningToTyping() {
-        let session = EveningSession.shared
+        let session = eveningSession
         Task {
-            if VoiceCapture.shared.isBusy {
-                let take = await VoiceCapture.shared.stop()
+            if voice.isBusy {
+                let take = await voice.stop()
                 session.pendingRecording = take.recording
                 session.draft = take.transcript
             }
@@ -147,7 +145,7 @@ extension AppModel {
 
     /// Save on the typing state.
     func saveTypedReflection(_ text: String) {
-        let session = EveningSession.shared
+        let session = eveningSession
         saveEveningTake(transcript: text, recording: session.pendingRecording, transcriptionFailed: false)
         session.typing = false
         session.pendingRecording = nil
@@ -156,7 +154,7 @@ extension AppModel {
     }
 
     func saveEveningTake(transcript: String, recording: Recording?, transcriptionFailed: Bool) {
-        let session = EveningSession.shared
+        let session = eveningSession
         let old = eveningDay?.reflection
         let reflection = ReflectionRules.draft(
             outcome: session.outcome ?? old?.outcome ?? .moved,
@@ -178,7 +176,7 @@ extension AppModel {
     /// Offline → "Saved as audio." with the reconnect notice (D6). Off → the plain transcript.
     func refreshReflection() async {
         guard let start = eveningDay?.reflection else { return }
-        let session = EveningSession.shared
+        let session = eveningSession
         session.working = true
         defer { session.working = false }
         let stamp = start.createdAt
@@ -218,12 +216,12 @@ extension AppModel {
 
     func saveTypedSummary(_ text: String) {
         updateReflection { ReflectionRules.applying(typedSummary: text, to: $0) }
-        EveningSession.shared.editingSummary = false
+        eveningSession.editingSummary = false
     }
 
     /// Redo on the player: the same question again; the new memo replaces the old one.
     func recordReflectionAgain() {
-        let session = EveningSession.shared
+        let session = eveningSession
         let day = eveningDayKey
         let outcome = eveningDay?.reflection?.outcome ?? .moved
         let kind = session.kind ?? (eveningDay?.step == nil ? .noStep : .stepOpen)
@@ -236,10 +234,10 @@ extension AppModel {
 
     /// Close on D3/D4: "Close and keep what was said".
     func closeEveningKeeping() {
-        let session = EveningSession.shared
+        let session = eveningSession
         Task {
-            if VoiceCapture.shared.isBusy {
-                let take = await VoiceCapture.shared.stop()
+            if voice.isBusy {
+                let take = await voice.stop()
                 saveEveningTake(transcript: take.transcript, recording: take.recording, transcriptionFailed: take.transcriptionFailed)
                 Task { await refreshReflection() }
             } else if session.typing, !session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -256,7 +254,7 @@ extension AppModel {
 
     func closeEvening() {
         VoicePlayback.shared.stop()
-        EveningSession.shared.reset()
+        eveningSession.reset()
         closeRitual()
     }
 }

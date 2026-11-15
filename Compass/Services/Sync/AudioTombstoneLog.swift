@@ -5,7 +5,10 @@ import CompassCore
 /// (`Application Support/Compass/audio-tombstones.json`). `VoiceStorage.delete` records every deletion
 /// (E4 delete, evening redo, discarded takes); sync carries the list in this device's envelope, removes
 /// those files from iCloud and never copies them back. Thread-safe: deletions happen on any queue.
+// @unchecked Sendable: every access to `entries` goes through `lock`.
 final class AudioTombstoneLog: @unchecked Sendable {
+    /// Shared on purpose: a lock-guarded mirror of one file on disk, written from any queue by
+    /// `VoiceStorage.delete`; it is device bookkeeping, not flow state.
     static let shared = AudioTombstoneLog()
 
     private let lock = NSLock()

@@ -38,6 +38,24 @@ final class AppModel {
     @ObservationIgnored var entryCheckedAt: Date?
     @ObservationIgnored var isComposing = false
 
+    // MARK: Session state (owned here, one per model, so tests never share it)
+
+    /// The spoken answer in progress (intention, step, note, why, reflection, goal).
+    let voice: VoiceCapture
+    /// This morning's ritual (B1–B7) as its screens replace each other.
+    let morningSession: MorningSession
+    /// Tonight's look-back (D1–D6b).
+    let eveningSession: EveningSession
+    /// What onboarding has collected (A2–A7); seeded from the fixture under `-screen`.
+    let onboardingDraft: OnboardingDraft
+    /// A1's backup check and R3's reason.
+    let restoreRouting: RestoreRouting
+    /// The day, week or past goal History is showing.
+    let historySelection: HistorySelection
+    /// Permissions, time zone, reminders and the boundary timer on the live path (started by
+    /// `.systemServices()`; never started for fixtures or unit tests).
+    let system: SystemServices
+
     // MARK: Services
 
     let store: Store
@@ -50,6 +68,13 @@ final class AppModel {
 
     init(launch: LaunchOptions = .parse()) {
         self.launch = launch
+        voice = VoiceCapture()
+        morningSession = MorningSession()
+        eveningSession = EveningSession()
+        onboardingDraft = OnboardingDraft(seed: launch.screen)
+        restoreRouting = RestoreRouting()
+        historySelection = HistorySelection()
+        system = SystemServices()
         effects = launch.screen == nil ? .live : .none
         if let id = launch.screen {
             let f = Fixtures.fixture(for: id)
@@ -91,6 +116,13 @@ final class AppModel {
          recorder: AudioRecorder = FakeAudioRecorder(), transcriber: SpeechTranscriber = FakeSpeechTranscriber(),
          cloud: CloudAssist = FakeCloudAssist(isEnabled: false)) {
         launch = LaunchOptions()
+        voice = VoiceCapture()
+        morningSession = MorningSession()
+        eveningSession = EveningSession()
+        onboardingDraft = OnboardingDraft()
+        restoreRouting = RestoreRouting()
+        historySelection = HistorySelection()
+        system = SystemServices()
         fixture = nil
         self.snapshot = snapshot
         self.conditions = conditions

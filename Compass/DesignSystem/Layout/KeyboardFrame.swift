@@ -7,6 +7,7 @@ import UIKit
 @MainActor
 @Observable
 final class KeyboardFrame {
+    /// Shared on purpose: mirrors the one system keyboard of the process (no flow state).
     static let shared = KeyboardFrame()
 
     /// Top of the visible keyboard in screen points; nil when it is down.

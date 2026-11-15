@@ -7,8 +7,6 @@ import CompassCore
 @MainActor
 @Observable
 final class MorningSession {
-    static let shared = MorningSession()
-
     /// What the listening (B2) and typing (B5) screens are for.
     enum Purpose: Equatable {
         /// "Who will you be today?" (B1 → B2)
@@ -80,12 +78,12 @@ extension AppModel {
 
     /// Mic on B1, B3, B4, B6, B7: start listening, then B2 takes over (turn-taking in place).
     func startMorningListening(_ purpose: MorningSession.Purpose) {
-        let session = MorningSession.shared
+        let session = morningSession
         session.purpose = purpose
         session.micProblem = nil
         Task {
             do {
-                guard try await VoiceCapture.shared.start(recorder: recorder, transcriber: transcriber) else { return }
+                guard try await voice.start(recorder: recorder, transcriber: transcriber) else { return }
                 replace(with: .b2)
             } catch let problem as VoiceCapture.StartError {
                 session.micProblem = problem
@@ -97,9 +95,9 @@ extension AppModel {
 
     /// Stop on B2 (tap or silence): save what was said and move on.
     func finishMorningListening() async {
-        let capture = VoiceCapture.shared
+        let capture = voice
         guard capture.isListening else { return }
-        let session = MorningSession.shared
+        let session = morningSession
         let purpose = session.purpose ?? .intention
         let take = await capture.stop()
 
@@ -129,12 +127,12 @@ extension AppModel {
 
     /// Keyboard on a voice dock (or while listening): the same question, typed. Words said so far carry over.
     func openMorningTyping(_ purpose: MorningSession.Purpose, draft: String? = nil) {
-        let session = MorningSession.shared
+        let session = morningSession
         session.purpose = purpose
         if purpose == .step, session.draftPartID == nil { session.draftPartID = session.idea?.partID ?? morningDefaultPartID }
-        if VoiceCapture.shared.isBusy {
+        if voice.isBusy {
             Task {
-                let take = await VoiceCapture.shared.stop()
+                let take = await voice.stop()
                 if purpose == .why, take.recording != nil { session.whyRecording = take.recording } else { VoiceStorage.shared.delete(take.recording?.fileName) }
                 session.draft = draft ?? take.transcript
                 replace(with: .b5)
@@ -150,7 +148,7 @@ extension AppModel {
     /// After the intention (or Skip on B1): first week names its own step (B4); otherwise the
     /// quietest part gets an idea (B3). No idea (cloud help off, offline) → name it yourself.
     func continueToPlanning() async {
-        let session = MorningSession.shared
+        let session = morningSession
         guard let plan = morningPlan else { goToEntry(); return }
         switch plan.planning {
         case .nameYourOwn:
@@ -170,7 +168,7 @@ extension AppModel {
 
     /// B6 (and B3 opened without an idea): ask for one; fall back to B4.
     func loadMorningIdeaIfNeeded() {
-        let session = MorningSession.shared
+        let session = morningSession
         guard fixture == nil, session.idea == nil, !session.loadingIdea else { return }
         session.loadingIdea = true
         Task {
@@ -210,7 +208,7 @@ extension AppModel {
     }
 
     func finishMorning() {
-        MorningSession.shared.reset()
+        morningSession.reset()
         goToEntry()
     }
 
@@ -242,10 +240,10 @@ extension AppModel {
 
     /// Close (top-left) on any morning screen: keep a spoken intention if there was one, then Today.
     func closeMorning() {
-        let session = MorningSession.shared
+        let session = morningSession
         Task {
-            if VoiceCapture.shared.isBusy {
-                let take = await VoiceCapture.shared.stop()
+            if voice.isBusy {
+                let take = await voice.stop()
                 VoiceStorage.shared.delete(take.recording?.fileName)
                 if (session.purpose ?? .intention) == .intention, !take.transcript.isEmpty, today?.intention == nil {
                     setIntention(MorningRules.intention(from: take.transcript), duration: take.recording?.duration)

@@ -7,6 +7,8 @@ import Observation
 @MainActor
 @Observable
 final class VoicePlayback {
+    /// Shared on purpose: the one audio player of the process (one memo plays at a time, whichever
+    /// screen started it). It holds no flow state; sessions and the clock only call `stop()`.
     static let shared = VoicePlayback()
 
     /// The file currently playing, if any.

@@ -17,7 +17,7 @@ struct RestoreProgressView: View {
     private var staticBoard: Bool { model.fixture?.id == id }
 
     var body: some View {
-        let draft = OnboardingDraft.shared
+        let draft = model.onboardingDraft
         FlowScreen {
             NavBar(leading: .back { cancel() }).region(.nav)
 
@@ -50,7 +50,7 @@ struct RestoreProgressView: View {
 
     private func run(draft: OnboardingDraft) async {
         let backup = model.onboardingBackup
-        let routing = RestoreRouting.shared
+        let routing = model.restoreRouting
         draft.restoreProgress = 0
         draft.restoreSummary = nil
         let animation = Motion.animation(Motion.turnTaking, reduced: reduced)
@@ -100,8 +100,6 @@ struct RestoreProgressView: View {
 @MainActor
 @Observable
 final class RestoreRouting {
-    static let shared = RestoreRouting()
-
     /// R3's reason. `.empty` is the board's copy.
     var nothingReason: NothingToRestoreReason = .empty
     /// A backup with a goal or history is in the user's iCloud (live app only).
@@ -124,7 +122,7 @@ final class RestoreRouting {
         if backupFound {
             model.go(.r1)
         } else {
-            OnboardingDraft.shared.reset()
+            model.onboardingDraft.reset()
             model.go(.a2)
         }
     }
@@ -156,7 +154,7 @@ struct RestoreDoneView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        let draft = OnboardingDraft.shared
+        let draft = model.onboardingDraft
         let goalText = model.goal?.text ?? draft.restoreSummary?.goalText ?? ""
         let steps = draft.restoreSummary?.steps ?? model.snapshot.movedCount
         FlowScreen {
@@ -188,7 +186,7 @@ struct RestoreNothingView: View {
 
     var body: some View {
         // The board's copy when iCloud is simply empty; its own words when iCloud is off or still downloading.
-        let reason: NothingToRestoreReason = model.fixture == nil ? RestoreRouting.shared.nothingReason : .empty
+        let reason: NothingToRestoreReason = model.fixture == nil ? model.restoreRouting.nothingReason : .empty
         FlowScreen {
             NavBar(leading: .back { model.onboardingBack(from: .r3) }).region(.nav)
 
@@ -201,7 +199,7 @@ struct RestoreNothingView: View {
             .scrollingRegion(.custom(top: 128, bottom: 668))
 
             ButtonDock(primary: "Start fresh", link: "Try again", onPrimary: {
-                OnboardingDraft.shared.reset()
+                model.onboardingDraft.reset()
                 model.replace(with: .a2)
             }, onLink: {
                 model.replace(with: .r1)

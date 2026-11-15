@@ -7,12 +7,11 @@ import CompassCore
 /// Keeps the live app in step with the phone: permissions and storage feed `model.conditions`, the
 /// device time zone drives the I3 notice and the rhythm's calendar, the 07:00 / 21:00 reminders are
 /// re-planned on every change, and changes the widget made to the shared store are picked up when the
-/// app becomes active. Started once from `RootView` (`.systemServices()`); never runs with `-screen`.
+/// app becomes active. Owned by `AppModel` (`model.system`) and started once from `RootView`
+/// (`.systemServices()`); never runs with `-screen` or for a unit test's model.
 @MainActor
 @Observable
 final class SystemServices {
-    static let shared = SystemServices()
-
     /// I2 was dismissed (per device). Shown again once notifications have worked and been lost.
     private(set) var notificationsNoticeDismissed: Bool
 
@@ -32,7 +31,7 @@ final class SystemServices {
         static let noticeDismissed = "compass.system.notificationsNoticeDismissed"
     }
 
-    private init() {
+    init() {
         notificationsNoticeDismissed = UserDefaults.standard.bool(forKey: Key.noticeDismissed)
     }
 

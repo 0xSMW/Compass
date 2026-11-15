@@ -26,8 +26,8 @@ extension AppModel {
     /// Something is being said, typed or saved right now.
     var isMidAnswer: Bool {
         if isComposing || current == .b5 { return true }
-        if VoiceCapture.shared.isBusy { return true }
-        let evening = EveningSession.shared
+        if voice.isBusy { return true }
+        let evening = eveningSession
         return evening.typing || evening.editingSummary || evening.working
     }
 
@@ -48,8 +48,8 @@ extension AppModel {
         // Keep `then`: once the answer is saved, the next look still sees the move.
         guard !isMidAnswer else { return .deferred }
         entryCheckedAt = now
-        MorningSession.shared.reset()
-        EveningSession.shared.reset()
+        morningSession.reset()
+        eveningSession.reset()
         VoicePlayback.shared.stop()
         resetRoot(to: entryScreen)
         return .moved

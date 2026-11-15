@@ -243,7 +243,7 @@ final class SyncCoordinator {
         } else if before.goal == nil, merged.snapshot.goal != nil, Self.isOnboarding(model.current) {
             // A second device mid-onboarding just received the real goal: don't let onboarding replace
             // it. Open by the clock, as if restored.
-            OnboardingDraft.shared.reset()
+            model.onboardingDraft.reset()
             model.goToEntry()
         }
         syncAudio(referencedBefore: before.referencedAudioFiles, merged: merged)

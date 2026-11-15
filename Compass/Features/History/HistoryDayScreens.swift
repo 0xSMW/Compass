@@ -215,7 +215,7 @@ struct HistoryEditDayView: View {
             case .delete:
                 PrimaryButton("Delete entry", role: .destructive) {
                     model.deleteHistoryDay(key)
-                    HistorySelection.shared.day = nil
+                    model.historySelection.day = nil
                     model.back()
                     if model.current == .e2 || model.current == .e6 { model.back() }
                 }

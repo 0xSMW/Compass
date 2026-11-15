@@ -262,7 +262,7 @@ struct TodayView: View {
     // MARK: Recording (C5)
 
     /// The shared voice take (same recorder + on-device speech as the morning and evening).
-    private var capture: VoiceCapture { VoiceCapture.shared }
+    private var capture: VoiceCapture { model.voice }
 
     /// Live words in the notes row: the fixture's for screenshots, else the take's.
     private var liveWords: TranscriptUpdate {

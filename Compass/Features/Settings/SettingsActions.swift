@@ -16,9 +16,9 @@ extension AppModel {
             LiveSync.wipeEverywhere(at: now)
             DataEraser.eraseLocalData()
         }
-        HistorySelection.shared.day = nil
-        HistorySelection.shared.weekEnd = nil
-        HistorySelection.shared.goalID = nil
+        historySelection.day = nil
+        historySelection.weekEnd = nil
+        historySelection.goalID = nil
         deleteEverything()
     }
 }

@@ -2,13 +2,11 @@ import Foundation
 import Observation
 import CompassCore
 
-/// What onboarding has collected so far (A2–A7). One per process; cleared when onboarding finishes
-/// or starts over. Launching with `-screen <ID>` seeds it with that board's state.
+/// What onboarding has collected so far (A2–A7). One per `AppModel` (`model.onboardingDraft`);
+/// cleared when onboarding finishes or starts over. Launching with `-screen <ID>` seeds it with that board's state.
 @MainActor
 @Observable
 final class OnboardingDraft {
-    static let shared = OnboardingDraft(seed: LaunchOptions.parse().screen)
-
     /// The goal sentence as spoken or typed.
     var text = ""
     /// A4b: the one question for a vague goal (nil when concrete).
@@ -204,7 +202,7 @@ extension AppModel {
         }
         Task { @MainActor in
             do {
-                guard try await VoiceCapture.shared.start(recorder: recorder, transcriber: transcriber) else { return }
+                guard try await voice.start(recorder: recorder, transcriber: transcriber) else { return }
                 draft.answering = answering
                 replace(with: .a3)
             } catch {
@@ -222,7 +220,7 @@ extension AppModel {
     /// Today's "Set the next goal": the goal steps of onboarding (A2–A5), seeded from the current
     /// settings. A5 then saves the goal; the rhythm, reminders and cloud help stay as they are.
     func startNewGoal() {
-        let draft = OnboardingDraft.shared
+        let draft = onboardingDraft
         draft.reset()
         draft.seed(from: settings)
         go(.a2)

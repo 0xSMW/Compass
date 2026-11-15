@@ -26,7 +26,7 @@ enum HistoryScreens {
 
 struct HistoryWeekView: View {
     @Environment(AppModel.self) private var model
-    private var selection: HistorySelection { .shared }
+    private var selection: HistorySelection { model.historySelection }
 
     var body: some View {
         let ctx = model.historyContext
@@ -177,7 +177,7 @@ private struct DayRow: View {
 
 struct HistoryWeeksView: View {
     @Environment(AppModel.self) private var model
-    private var selection: HistorySelection { .shared }
+    private var selection: HistorySelection { model.historySelection }
 
     var body: some View {
         let ctx = model.historyContext

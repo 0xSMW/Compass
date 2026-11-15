@@ -15,8 +15,6 @@ import CompassCore
 @MainActor
 @Observable
 final class VoiceCapture {
-    static let shared = VoiceCapture()
-
     enum State: Equatable { case idle, starting, listening, stopping }
 
     /// Why a recording couldn't start. The dock becomes "Type instead" (I1 / I4 copy).

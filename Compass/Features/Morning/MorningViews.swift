@@ -10,7 +10,7 @@ private extension AppModel {
 /// The goal is the focal text at 128; "Who will you be today?" under it; breathing rings on 712.
 struct MorningCenterView: View {
     @Environment(AppModel.self) private var model
-    private var session: MorningSession { .shared }
+    private var session: MorningSession { model.morningSession }
 
     var body: some View {
         FlowScreen {
@@ -50,8 +50,8 @@ struct MorningCenterView: View {
 /// Also listens for a spoken step (subject: the intention) and for "why" (B7).
 struct MorningListeningView: View {
     @Environment(AppModel.self) private var model
-    private var capture: VoiceCapture { .shared }
-    private var session: MorningSession { .shared }
+    private var capture: VoiceCapture { model.voice }
+    private var session: MorningSession { model.morningSession }
 
     private var purpose: MorningSession.Purpose { session.purpose ?? .intention }
     /// Fixture screenshot: the board's words, nothing recording.
@@ -102,7 +102,7 @@ struct MorningListeningView: View {
 struct MorningPlanView: View {
     @Environment(AppModel.self) private var model
     let id: ScreenID
-    private var session: MorningSession { .shared }
+    private var session: MorningSession { model.morningSession }
 
     private var idea: StepIdea? {
         session.idea ?? (model.fixture != nil ? Fixtures.stepIdea(for: id) : nil)
@@ -176,7 +176,7 @@ struct MorningPlanView: View {
 /// No history yet, so you name the step: "What's one step today?" with the voice dock.
 struct MorningNameStepView: View {
     @Environment(AppModel.self) private var model
-    private var session: MorningSession { .shared }
+    private var session: MorningSession { model.morningSession }
 
     var body: some View {
         FlowScreen {
@@ -217,7 +217,7 @@ struct MorningNameStepView: View {
 /// action sits on the keyboard at 436. For a step, the part chip sits under the field.
 struct MorningTypingView: View {
     @Environment(AppModel.self) private var model
-    private var session: MorningSession { .shared }
+    private var session: MorningSession { model.morningSession }
 
     @State private var text = ""
     @State private var partID: UUID?
@@ -312,7 +312,7 @@ struct StepIdeaLoading: View {
 
 struct MorningWhyView: View {
     @Environment(AppModel.self) private var model
-    private var session: MorningSession { .shared }
+    private var session: MorningSession { model.morningSession }
 
     var body: some View {
         FlowScreen {

@@ -275,7 +275,7 @@ struct PastGoalsView: View {
                     VStack(spacing: Space.s) {
                         ForEach(model.snapshot.pastGoals) { goal in
                             PastGoalCard(goal: goal) {
-                                HistorySelection.shared.goalID = goal.id
+                                model.historySelection.goalID = goal.id
                                 model.go(.e3)
                             }
                         }
@@ -290,12 +290,12 @@ struct PastGoalsView: View {
             .region(.custom(top: 128, bottom: 844, inset: 0))
 
             NavBar(leading: .quietBack("Back") {
-                HistorySelection.shared.goalID = nil
+                model.historySelection.goalID = nil
                 model.back()
             })
             .region(.nav)
         }
-        .onAppear { HistorySelection.shared.goalID = nil }
+        .onAppear { model.historySelection.goalID = nil }
     }
 }
 

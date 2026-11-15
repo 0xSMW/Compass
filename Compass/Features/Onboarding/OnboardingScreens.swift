@@ -6,7 +6,7 @@ import CompassCore
 /// Live path: A1 Begin → A2 (say or type) → A3 listening → A4 review (A4k typing, A4b one question
 /// for a vague goal) → A5 parts → A6 rhythm + notification permission → A7 privacy → Start saves the
 /// goal and lands by the clock. A1 Restore → R1 → R2 (or R3 when there's nothing to restore).
-/// What the user has said so far lives in `OnboardingDraft.shared`.
+/// What the user has said so far lives in `model.onboardingDraft`.
 enum OnboardingScreens {
     /// A1 A2 A3 A4 A4k A4b A5 A6 A7 R1 R2 R3 A8
     static let ids: [ScreenID] = Flow.onboarding.screens

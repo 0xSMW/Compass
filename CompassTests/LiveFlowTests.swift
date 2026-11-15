@@ -10,21 +10,11 @@ final class TestClock: @unchecked Sendable {
 
 /// The live path through `AppModel`: onboarding → morning → Today → evening → the next day, the clock
 /// moving the entry screen, a lapse, an achieved goal and a goal change, notes and reminders.
+/// Each test's `AppModel` owns its own sessions (voice, morning, evening, onboarding), so nothing
+/// carries over between cases.
 @MainActor
 final class LiveFlowTests: XCTestCase {
     let cal = Fixtures.calendar
-
-    override func setUp() async throws {
-        MorningSession.shared.reset()
-        EveningSession.shared.reset()
-        OnboardingDraft.shared.reset()
-    }
-
-    override func tearDown() async throws {
-        MorningSession.shared.reset()
-        EveningSession.shared.reset()
-        OnboardingDraft.shared.reset()
-    }
 
     private func day(_ offset: Int) -> DayKey { Fixtures.todayKey.adding(days: offset, calendar: cal) }
     private func at(_ key: DayKey, _ h: Int, _ m: Int = 0) -> Date { Fixtures.date(key, h, m) }
@@ -53,7 +43,7 @@ final class LiveFlowTests: XCTestCase {
         XCTAssertEqual(model.current, .a1)
 
         // A2–A7: the goal typed, defaults kept, Start.
-        let draft = OnboardingDraft.shared
+        let draft = model.onboardingDraft
         draft.text = "Run a calm studio."
         draft.proposePartsIfNeeded()
         model.go(.a2)
@@ -81,7 +71,7 @@ final class LiveFlowTests: XCTestCase {
         // Answered after midnight: it still belongs to day 0.
         model.beginEvening()
         clock.now = at(day(1), 0, 10)
-        EveningSession.shared.outcome = .moved
+        model.eveningSession.outcome = .moved
         model.saveEveningTake(transcript: "Called Lena", recording: nil, transcriptionFailed: false)
         XCTAssertEqual(try store.load().day(day(0))?.reflection?.transcript, "Called Lena")
         XCTAssertNil(try store.load().day(day(1))?.reflection)
@@ -200,7 +190,7 @@ final class LiveFlowTests: XCTestCase {
         model.go(.g1)
         model.startNewGoal()
         XCTAssertEqual(model.current, .a2)
-        let draft = OnboardingDraft.shared
+        let draft = model.onboardingDraft
         XCTAssertTrue(draft.replacing)
         XCTAssertEqual(draft.rhythm, before.rhythm)
         XCTAssertFalse(draft.cloudAssist)
@@ -224,9 +214,9 @@ final class LiveFlowTests: XCTestCase {
         XCTAssertTrue(model.prefersTyping)
         model.beginEvening()
         model.answerEvening(.moved, kind: .stepOpen)
-        XCTAssertTrue(EveningSession.shared.typing)
+        XCTAssertTrue(model.eveningSession.typing)
         XCTAssertEqual(model.current, .d3)
-        XCTAssertFalse(VoiceCapture.shared.isBusy)
+        XCTAssertFalse(model.voice.isBusy)
         XCTAssertTrue(model.today?.step?.isDone ?? false)
     }
 
@@ -262,7 +252,7 @@ final class LiveFlowTests: XCTestCase {
         var conditions = SystemConditions.normal
         conditions.notifications = .notDetermined
         let (model, _, _) = make(snap, at: at(day(0), 14), conditions: conditions)
-        SystemServices.shared.setNoticeDismissed(false)
+        model.system.setNoticeDismissed(false)
         XCTAssertTrue(model.showsNotificationsNotice)
         model.turnOnNotifications()
         XCTAssertTrue(model.settings.notificationsEnabled)

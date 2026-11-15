@@ -7,6 +7,7 @@ import Foundation
 /// recording's id, so its audio is `<note id>.m4a` (B7 "why" plays back on hard days). A `Reflection`
 /// stores its file in `audioFileName`.
 struct VoiceStorage: Sendable {
+    /// Shared on purpose: a stateless view of one folder on disk (no flow state), the same for every model.
     static let shared = VoiceStorage()
 
     /// Below this much free space a recording can't start (I4 "Your iPhone is full").
