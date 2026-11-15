@@ -14,6 +14,17 @@ public struct DayTombstone: Codable, Hashable, Sendable {
     }
 }
 
+/// A note or step deleted from a day on some device (kept on the day, see `Day.removedItems`).
+public struct ItemTombstone: Codable, Hashable, Sendable {
+    public var id: UUID
+    public var deletedAt: Date
+
+    public init(id: UUID, deletedAt: Date) {
+        self.id = id
+        self.deletedAt = deletedAt
+    }
+}
+
 /// A recording deleted on some device (E4 delete, evening redo, a discarded take). Every device removes
 /// the file locally and from iCloud, and never copies it back.
 public struct AudioTombstone: Codable, Hashable, Sendable {
@@ -300,6 +311,14 @@ public enum SnapshotMerger {
         for note in o.notes { notes[note.id] = notes[note.id].map { latest($0, note, by: \.versionTime) } ?? note }
         d.notes = notes.values.sorted { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }
 
+        // Deleted notes and steps stay deleted unless edited after the deletion.
+        let removed = Dictionary(((n.removedItems ?? []) + (o.removedItems ?? [])).map { ($0.id, $0.deletedAt) }, uniquingKeysWith: max)
+        if !removed.isEmpty {
+            d.removedItems = removed.map { ItemTombstone(id: $0.key, deletedAt: $0.value) }.sorted { $0.id.uuidString < $1.id.uuidString }
+            d.notes.removeAll { note in removed[note.id].map { note.versionTime <= $0 } ?? false }
+            if let s = d.step, let gone = removed[s.id], s.versionTime <= gone { d.step = nil }
+        }
+
         d.morningSkipped = n.morningSkipped || o.morningSkipped
 
         // Reflections: identity is the moment it was recorded; the later version of each wins.
@@ -344,6 +363,8 @@ extension CompassSnapshot {
             let others = versions.filter { $0.createdAt != d.reflection?.createdAt }
             d.mergeCandidates = others.isEmpty ? nil : others
             guard d.intention != nil || d.step != nil || !d.notes.isEmpty || d.reflection != nil else { continue }
+            let removed = (day.removedItems ?? []).filter { $0.deletedAt >= wipe }
+            d.removedItems = removed.isEmpty ? nil : removed
             d.morningSkipped = day.morningSkipped
             s.days.append(d)
         }

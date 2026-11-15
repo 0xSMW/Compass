@@ -135,6 +135,26 @@ final class SyncIntegrityTests: XCTestCase {
         XCTAssertEqual(e.snapshot, .empty)
     }
 
+    func testDeletedNoteAndStepDoNotComeBackFromAnotherDevice() {
+        let note = Note(id: uid(910), text: "Lena wants numbers", createdAt: at(9))
+        let base = CompassSnapshot(goal: Fixtures.goal, days: [Day(key: sat, step: step(), notes: [note])])
+        var deleted = base
+        deleted.updateDay(sat) { $0.notes = []; $0.step = nil }
+        let a = LocalEdits.stamp(deleted, since: base, at: at(12), device: phone)
+        XCTAssertEqual(Set(a.day(sat)?.removedItems?.map(\.id) ?? []), [note.id, step().id])
+
+        // B still has both and saved later.
+        let merged = SnapshotMerger.merge([envelope("A", savedAt: at(12), a), envelope("B", savedAt: at(13), base)])!
+        XCTAssertTrue(merged.snapshot.day(sat)!.notes.isEmpty)
+        XCTAssertNil(merged.snapshot.day(sat)!.step)
+
+        // An edit made on B after the deletion wins.
+        var edited = base
+        edited.updateDay(sat) { $0.notes[0].text = "Lena wants numbers by Thursday"; $0.notes[0].updatedAt = at(14) }
+        let later = SnapshotMerger.merge([envelope("A", savedAt: at(12), a), envelope("B", savedAt: at(14), edited)])!
+        XCTAssertEqual(later.snapshot.day(sat)?.notes.map(\.text), ["Lena wants numbers by Thursday"])
+    }
+
     // MARK: Stamping local edits
 
     func testLocalEditsStampChangedItemsOnly() {

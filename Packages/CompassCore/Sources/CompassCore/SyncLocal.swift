@@ -57,7 +57,8 @@ public struct DeviceIdentity: Hashable, Sendable {
 /// Gives local edits what the merge needs, without every feature remembering to: compares the snapshot
 /// after a local change with the one before it and
 /// - sets `updatedAt = now` on every existing item whose content changed (unless the edit set it itself),
-/// - puts this install's `deviceID` and model on new notes and reflections recorded here.
+/// - puts this install's `deviceID` and model on new notes and reflections recorded here,
+/// - records notes and steps that disappeared from a day (`Day.removedItems`), so merges don't revive them.
 /// Items new to this snapshot keep `updatedAt == nil` (their `createdAt` is their version time).
 public enum LocalEdits {
     public static func stamp(_ new: CompassSnapshot, since old: CompassSnapshot, at now: Date, device: DeviceIdentity) -> CompassSnapshot {
@@ -85,6 +86,13 @@ public enum LocalEdits {
             }
             if let st = d.step, let b = before.step, st.id == b.id, changed(st, b, \.updatedAt) {
                 d.step?.updatedAt = now
+            }
+            var gone = Set(before.notes.map(\.id)).subtracting(d.notes.map(\.id))
+            if let s = before.step, d.step?.id != s.id { gone.insert(s.id) }
+            if !gone.isEmpty {
+                var removed = Dictionary((d.removedItems ?? []).map { ($0.id, $0.deletedAt) }, uniquingKeysWith: max)
+                for id in gone { removed[id] = now }
+                d.removedItems = removed.map { ItemTombstone(id: $0.key, deletedAt: $0.value) }.sorted { $0.id.uuidString < $1.id.uuidString }
             }
             let oldNotes = Dictionary(before.notes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             d.notes = d.notes.map { n in

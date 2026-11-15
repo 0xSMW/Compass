@@ -289,6 +289,9 @@ public struct Day: Identifiable, Codable, Hashable, Sendable {
     public var morningSkipped: Bool
     /// E5: the same day was changed on another device. Notes and audio merge; only the summary asks.
     public var mergeCandidates: [Reflection]?
+    /// Notes and steps deleted from this day (by id), so a merge doesn't bring them back from a device
+    /// that still has them. A version edited after the deletion wins. Written by `LocalEdits`.
+    public var removedItems: [ItemTombstone]? = nil
 
     public var id: DayKey { key }
 
