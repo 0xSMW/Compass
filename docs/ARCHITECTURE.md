@@ -13,7 +13,10 @@ Packages/CompassCore/           Pure Swift, Linux-buildable. `swift test` runs h
                                 Reflection, TimeOfDay, Rhythm (07:00/21:00), Settings, CompassSnapshot
     DayEngine.swift             DayPhase / MorningPlan / EveningKind: phase from clock + history
     History.swift               DayMark (moved/missed/empty), HistoryWeek, HistoryBuilder, GoalMarker
-    Store.swift                 Store protocol, InMemoryStore, JSONFileStore
+    Store.swift                 Store protocol, InMemoryStore, JSONFileStore (schema check, quarantine)
+    Sync.swift                  SyncEnvelope, SnapshotMerger (per-item updatedAt, wipe generations, E5)
+    SyncLocal.swift             DeviceIdentity (E5 labels), LocalEdits (stamping), AudioSyncPlan
+    Backup.swift                BackupRestoring, BackupReader (waits for iCloud placeholders), R3 reasons
     Services.swift              AudioRecorder, SpeechTranscriber, CloudAssist protocols (+ errors)
     Fakes.swift                 FakeAudioRecorder, FakeSpeechTranscriber, FakeCloudAssist (deterministic)
     ScreenID.swift              Flow + ScreenID (all 66 board states), captions, design render names
@@ -54,6 +57,12 @@ whole snapshot (restore, sync merge with `.remote`, the widget's copy). Every ch
 tells sync (`.local` only) and reloads the widget timelines (`SnapshotEffects`, spied in `CompassTests`).
 `deleteEverything()` clears the store and reloads the widget; sync hears about a wipe through
 `LiveSync.wipeEverywhere`. There is no other save call: never call `store.save` from a feature.
+
+`commit` stamps `.local` changes (`LocalEdits`): every changed item gets `updatedAt`, new notes and
+reflections get this install's `deviceID` and model. That is what sync merges on, item by item; restores
+commit as `.restored` (synced, not stamped). Deleting a recording goes through `VoiceStorage.delete`,
+which leaves an audio tombstone so the file leaves iCloud and every device. Only recordings the
+snapshot refers to are uploaded or downloaded.
 
 ## Platform services (live path only)
 
