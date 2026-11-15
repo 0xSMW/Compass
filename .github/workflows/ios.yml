@@ -10,9 +10,9 @@ on:
         required: false
         default: ""
 
-concurrency:
-  group: ios-${{ github.ref }}
-  cancel-in-progress: true
+# No concurrency group: several agents push in parallel and each needs its own
+# run to finish. Screenshot commits rebase before pushing; README.txt names the
+# commit that produced the current PNGs.
 
 permissions:
   contents: write
@@ -125,6 +125,9 @@ jobs:
           ls renders/ios | wc -l
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --depth=50 origin "${GITHUB_REF_NAME}"
+          latest=$(git log "origin/${GITHUB_REF_NAME}" --format=%H --invert-grep --grep='\[skip ci\]' -1)
+          if [ "$latest" != "${GITHUB_SHA}" ]; then echo "Newer code ($latest) is on the branch; its run publishes screenshots"; exit 0; fi
           git add renders/ios
           if git diff --cached --quiet; then echo "No screenshot changes"; exit 0; fi
           git commit -m "Update iOS screenshots from ${GITHUB_SHA::7} [skip ci]"
