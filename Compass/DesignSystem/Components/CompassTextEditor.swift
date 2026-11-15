@@ -126,12 +126,12 @@ private struct EditorView: UIViewRepresentable {
         paragraph.minimumLineHeight = lineHeight
         paragraph.maximumLineHeight = lineHeight
         paragraph.lineBreakStrategy = []
-        return [
+        let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: UIColor(Color.ink),
-            .kern: style.kern(for: dts),
             .paragraphStyle: paragraph,
             .baselineOffset: (lineHeight - font.lineHeight) / 2,
         ]
+        return attributes.merging(style.trackingAttributes(for: dts)) { $1 }
     }
 }

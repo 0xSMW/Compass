@@ -104,8 +104,9 @@ struct LinkButton: View {
             CompassText(title, style: style, weight: tone == .ink ? .medium : .regular, color: color)
                 .lineLimit(1)
                 .padding(.horizontal, padding)
-                .frame(minWidth: ControlSize.minTarget, minHeight: max(ControlSize.minTarget, minHeight))
-                .contentShape(Rectangle())
+                .frame(minHeight: max(ControlSize.minTarget, minHeight))
+                // Tight links ("OK" in I3) keep the board's spacing; their target reaches past the label to 44.
+                .contentShape(Rectangle().inset(by: padding < 12 ? padding - 12 : 0))
         }
         .buttonStyle(PressableStyle())
         .accessibilityLabel(title)

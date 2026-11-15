@@ -68,11 +68,11 @@ struct YourGoalView: View {
                             } label: {
                                 HStack(spacing: Space.s) {
                                     Icon(.plus, size: IconSize.xs)
-                                        .foregroundStyle(.ink2)
+                                        .foregroundStyle(.ink)
                                         .frame(width: 40, height: 40)
                                         .overlay(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous)
                                             .strokeBorder(Color.line2, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])))
-                                    CompassText("Add a part", color: .ink2)
+                                    CompassText("Add a part")
                                     Spacer(minLength: 0)
                                 }
                                 .frame(minHeight: 56)

@@ -292,7 +292,7 @@ struct EveningSavedView: View {
 
 // MARK: - Saved-state pieces
 
-/// kit.css `.lr` "Transcript ⌄" in ink; the chevron greys once open (⌃).
+/// kit.css `.lr` "Transcript ⌄" (#A1A1A6), ink once open (⌃).
 struct TranscriptRow: View {
     @Binding var expanded: Bool
     @Environment(\.dynamicTypeSize) private var dts
@@ -300,10 +300,11 @@ struct TranscriptRow: View {
     var body: some View {
         Button { expanded.toggle() } label: {
             HStack(spacing: Space.s) {
-                CompassText("Transcript").lineLimit(1)
+                // evening.html: quiet while closed (`.lr.ink2`), ink once open; the chevron stays quiet.
+                CompassText("Transcript", color: expanded ? .ink : .ink2).lineLimit(1)
                 Spacer(minLength: 0)
                 Icon(expanded ? .up : .down, size: dts.isAccessibilitySize ? IconSize.m : IconSize.s)
-                    .foregroundStyle(expanded ? Color.ink2 : Color.ink)
+                    .foregroundStyle(Color.ink2)
             }
             .frame(minHeight: 56)
             .overlay(alignment: .top) { Rectangle().fill(Color.line).frame(height: 1) }
@@ -346,6 +347,6 @@ struct TextFailedNotice: View {
         Notice(text: "Couldn’t turn this recording into text.",
                actions: [NoticeAction(title: "Try again", action: { if !working { onRetry() } }),
                          NoticeAction(title: "Type a summary", action: onType)],
-               actionSpacing: Space.m, actionHeight: 48)
+               actionSpacing: Space.l, actionHeight: 48)
     }
 }

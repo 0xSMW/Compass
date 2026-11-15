@@ -7,6 +7,15 @@ struct TextRun: Equatable {
     var color: Color
 }
 
+extension CompassType {
+    /// CSS `letter-spacing` keeps the font's pair kerning, so it maps to `.tracking`, never `.kern`
+    /// (a `.kern` of 0 turns kerning off and makes lines a few points wider than the boards').
+    func trackingAttributes(for dts: DynamicTypeSize) -> [NSAttributedString.Key: Any] {
+        let t = kern(for: dts)
+        return t == 0 ? [:] : [.tracking: t]
+    }
+}
+
 /// The one way to set Compass text: every type style on the spec's exact line boxes, wrapped like the
 /// boards, scaled to AX5 along the spec's curve.
 ///
@@ -185,13 +194,14 @@ private struct CompassLabel: UIViewRepresentable {
         let baselineOffset = (lineHeight - font.lineHeight) / 2
         let result = NSMutableAttributedString()
         for run in runs {
-            result.append(NSAttributedString(string: run.text, attributes: [
+            var attributes: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: UIColor(run.color),
-                .kern: style.kern(for: dts),
                 .paragraphStyle: paragraph,
                 .baselineOffset: baselineOffset,
-            ]))
+            ]
+            attributes.merge(style.trackingAttributes(for: dts)) { $1 }
+            result.append(NSAttributedString(string: run.text, attributes: attributes))
         }
         return result
     }

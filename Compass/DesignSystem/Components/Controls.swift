@@ -95,19 +95,20 @@ struct Chip: View {
         }
         .padding(.leading, 12)
         .padding(.trailing, Space.s)
-        .padding(.vertical, ax ? Space.xs : 0)
+        // At AX the chip is `height: auto; padding: 8` inside its 1pt border (46 for one line, D8/E6).
+        .padding(.vertical, ax ? Space.xs + 1 : 0)
         .frame(minHeight: ControlSize.minTarget)
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Color.line, lineWidth: 1))
         .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 }
 
-/// kit.css `.tile` — 40pt rounded (12) surface square with an ink icon. Used in lists (A5 parts, H1).
+/// kit.css `.tile` — 40pt rounded (12) surface square with a 20pt (`svg.s`) ink icon (A5, G1 parts).
 struct Tile: View {
     let icon: CompassIcon
 
     var body: some View {
-        Icon(icon)
+        Icon(icon, size: IconSize.s)
             .foregroundStyle(.ink)
             .frame(width: 40, height: 40)
             .background(Color.surface, in: RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
@@ -290,8 +291,8 @@ struct Notice: View {
     let text: String
     var actions: [NoticeAction] = []
     var layout: Layout = .stacked
-    /// Gap between stacked action labels (I3 16, D6b 24).
-    var actionSpacing: CGFloat = Space.s
+    /// Gap between stacked action labels (I3 24, D6b 32: the boards' paddings plus the row's 8 gap).
+    var actionSpacing: CGFloat = Space.m
     /// Stacked action height: 44 (I3), or `.lnk`'s 48 (D6b). Inline actions are 48.
     var actionHeight: CGFloat = ControlSize.minTarget
     /// Centre the icon on the text (one-line notices: I1, I2, D6); top otherwise.
@@ -299,7 +300,7 @@ struct Notice: View {
     var onDismiss: (() -> Void)? = nil
 
     init(icon: CompassIcon? = nil, text: String, actions: [NoticeAction] = [], layout: Layout = .stacked,
-         actionSpacing: CGFloat = Space.s, actionHeight: CGFloat = ControlSize.minTarget, centred: Bool = false,
+         actionSpacing: CGFloat = Space.m, actionHeight: CGFloat = ControlSize.minTarget, centred: Bool = false,
          onDismiss: (() -> Void)? = nil) {
         self.icon = icon
         self.text = text
@@ -363,7 +364,6 @@ struct Notice: View {
 
     private func link(_ a: NoticeAction, padding: CGFloat) -> some View {
         LinkButton(a.title, tone: .ink, padding: padding, minHeight: layout == .inline ? 48 : actionHeight, action: a.action)
-            .contentShape(Rectangle().inset(by: padding < 10 ? -(10 - padding) : 0))
             .accessibilityLabel(a.label ?? a.title)
     }
 }
@@ -404,9 +404,10 @@ struct OptionCard<Content: View>: View {
 
     var body: some View {
         Button(action: action) {
+            // CSS draws the border outside the 24 padding (1pt; the selected 2pt border eats 1 of it).
             VStack(alignment: .leading, spacing: Space.xs) { content }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(Space.m)
+                .padding(Space.m + 1)
                 .overlay(
                     RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
                         .strokeBorder(selected ? Color.ink : Color.line, lineWidth: selected ? 2 : 1)
