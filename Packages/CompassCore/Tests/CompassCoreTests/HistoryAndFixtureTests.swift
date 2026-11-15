@@ -13,6 +13,12 @@ final class HistoryTests: XCTestCase {
         XCTAssertEqual(week.entries[2].text, "Sick. Rested.")
         XCTAssertEqual(week.entries.last?.text, Fixtures.reflectionSummary)
         XCTAssertEqual(builder.label(for: week), "4–10 Nov")
+        // The user's locale, from the calendar (en_GB only in the fixtures).
+        var french = cal
+        french.locale = Locale(identifier: "fr_FR")
+        let label = HistoryBuilder(calendar: french).label(for: week)
+        XCTAssertTrue(label.hasPrefix("4–10 "))
+        XCTAssertNotEqual(label, "4–10 Nov")
     }
 
     func testTodayUnresolvedIsEmptyMark() {

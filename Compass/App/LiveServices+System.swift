@@ -34,15 +34,30 @@ extension AppModel {
     // MARK: I2 · Notifications off
 
     /// "07:00 and 21:00 can't reach you." sits in the notes row until dismissed.
-    /// Also after "Not now" on A6 (reminders off while iOS has never asked): H1 has no notifications
-    /// row, so this notice is the way to turn them back on.
+    /// Also after "Not now" on A6 (reminders off while iOS has never asked).
     var showsNotificationsNotice: Bool {
         NotificationRules.showsOffNotice(enabled: settings.notificationsEnabled,
                                          status: conditions.notifications,
                                          dismissed: system.notificationsNoticeDismissed)
     }
 
+    /// H1's "Reminders" row: shown only while reminders can't arrive, so a dismissed I2 always
+    /// leaves a way to turn them on (F1). Its action is I2's "Turn on".
+    var showsRemindersRow: Bool {
+        NotificationRules.remindersBlocked(enabled: settings.notificationsEnabled, status: conditions.notifications)
+    }
+
     func dismissNotificationsNotice() { system.setNoticeDismissed(true) }
+
+    /// Settings › Morning / Evening saved: the new times, and a dismissed I2 comes back if reminders
+    /// still can't reach them.
+    func setRhythmFromSettings(_ rhythm: Rhythm) {
+        let old = settings.rhythm
+        updateSettings { $0.rhythm = $0.rhythm.settingMorning(rhythm.morning).settingEvening(rhythm.evening) }
+        let dismissed = system.notificationsNoticeDismissed
+        let next = NotificationRules.noticeDismissed(dismissed, afterRhythmChange: old, to: settings.rhythm)
+        if next != dismissed { system.setNoticeDismissed(next) }
+    }
 
     func turnOnNotifications() {
         if isLiveSystem {

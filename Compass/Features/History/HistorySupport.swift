@@ -84,13 +84,16 @@ extension AppModel {
 
 // MARK: - Formatting
 
+/// Dates in the user's locale (the calendar's: `Locale.current` live, en_GB in the screenshot fixtures,
+/// so screenshots still read "Saturday, 7 Nov"). `format` is the board's en_GB pattern; it is used as a
+/// template, so another locale gets its own order and punctuation ("Sat, Nov 7"). Times stay 24-hour.
 enum HistoryFormat {
     static func formatter(_ format: String, calendar: Calendar) -> DateFormatter {
         let f = DateFormatter()
         f.calendar = calendar
         f.timeZone = calendar.timeZone
-        f.locale = Locale(identifier: "en_GB")
-        f.dateFormat = format
+        f.locale = calendar.locale ?? .autoupdatingCurrent
+        f.setLocalizedDateFormatFromTemplate(format.filter { !" ,:".contains($0) })
         return f
     }
 
@@ -102,9 +105,10 @@ enum HistoryFormat {
         return formatter("EEE d MMM", calendar: calendar).string(from: date)
     }
 
-    /// "Saturday, 7 Nov"
+    /// "Saturday, 7 Nov" (the weekday, then the locale's day and month).
     static func dayTitle(_ key: DayKey, calendar: Calendar) -> String {
-        formatter("EEEE, d MMM", calendar: calendar).string(from: key.date(in: calendar, hour: 12))
+        let date = key.date(in: calendar, hour: 12)
+        return "\(formatter("EEEE", calendar: calendar).string(from: date)), \(formatter("d MMM", calendar: calendar).string(from: date))"
     }
 
     /// "Saturday"

@@ -107,6 +107,14 @@ final class FlowRulesTests: XCTestCase {
         XCTAssertTrue(NotificationRules.showsOffNotice(enabled: true, status: .notDetermined, dismissed: false))
         XCTAssertFalse(NotificationRules.showsOffNotice(enabled: true, status: .granted, dismissed: false))
         XCTAssertFalse(NotificationRules.showsOffNotice(enabled: false, status: .denied, dismissed: true))
+        // F1: after "Not now" and a dismissed notice, H1's row and a changed time are the ways back.
+        XCTAssertTrue(NotificationRules.remindersBlocked(enabled: false, status: .notDetermined))
+        XCTAssertTrue(NotificationRules.remindersBlocked(enabled: true, status: .denied))
+        XCTAssertFalse(NotificationRules.remindersBlocked(enabled: true, status: .granted))
+        let later = Rhythm.standard.settingEvening(TimeOfDay(hour: 22))
+        XCTAssertFalse(NotificationRules.noticeDismissed(true, afterRhythmChange: .standard, to: later))
+        XCTAssertTrue(NotificationRules.noticeDismissed(true, afterRhythmChange: .standard, to: .standard))
+        XCTAssertFalse(NotificationRules.noticeDismissed(false, afterRhythmChange: .standard, to: .standard))
     }
 
     // MARK: Notes

@@ -160,16 +160,19 @@ public struct NotificationPlanner: Sendable {
     }
 
     /// What the app hands to UNUserNotificationCenter: reminders that keep firing while the app is
-    /// closed. One weekly repeating reminder per weekday and kind (14 requests, well under iOS's 64):
-    /// - Morning: the goal, every day. Only today's is left out, when the morning was already handled
-    ///   before its time (it returns when the app next re-plans).
-    /// - Evening: today, a one-off with today's step (the text changes daily, so it can't repeat) and no
-    ///   reminder once reflected; every other weekday repeats the D2 question.
-    /// The app re-plans on every change, on each foreground and from a background refresh, so the step
-    /// text and handled days stay current; when it can't, the weekly repeats still arrive.
+    /// closed. One weekly repeating reminder per weekday and kind (at most 16 requests, well under 64):
+    /// - Morning: the goal, every day.
+    /// - Evening: the D2 question, every day; tonight, a one-off with today's step instead (the text
+    ///   changes daily, so it can't repeat), and nothing once reflected.
+    /// A repeating calendar trigger always fires at its next match, so today's weekday can't repeat
+    /// while tonight is special (handled morning, step, reflection): that weekday gets a one-off a week
+    /// from today instead, which the next re-plan turns back into the weekly repeat. The app re-plans on
+    /// every change, on each foreground and from a background refresh, so the step text and handled
+    /// days stay current; when it can't, every weekday still gets its reminders for the next week.
+    /// Times use the clamped rhythm, like `plan` and `DayEngine`.
     public func schedule(snapshot: CompassSnapshot, now: Date) -> [PlannedReminder] {
         guard snapshot.settings.notificationsEnabled, let goal = snapshot.goal, goal.status == .active else { return [] }
-        let rhythm = snapshot.settings.rhythm
+        let rhythm = snapshot.settings.rhythm.clamped
         let today = DayKey(now, calendar: calendar)
         var result: [PlannedReminder] = []
         for offset in 0..<7 {
@@ -182,21 +185,31 @@ public struct NotificationPlanner: Sendable {
                 return date > now ? date : key.adding(days: 7, calendar: calendar).date(in: calendar, hour: time.hour, minute: time.minute)
             }
 
+            /// Today's weekday while tonight is special: the same reminder a week from today, as a one-off.
+            func nextWeek(_ kind: ReminderKind, _ time: TimeOfDay, body: String) -> PlannedReminder {
+                let later = key.adding(days: 7, calendar: calendar)
+                return PlannedReminder(kind: kind, day: later, time: time,
+                                       date: later.date(in: calendar, hour: time.hour, minute: time.minute),
+                                       body: body, weekday: weekday)
+            }
+
             let morning = key.date(in: calendar, hour: rhythm.morning.hour, minute: rhythm.morning.minute)
             let handledEarly = offset == 0 && morning > now && (day?.morningHandled ?? false)
-            if !handledEarly {
+            if handledEarly {
+                result.append(nextWeek(.morning, rhythm.morning, body: goal.text))
+            } else {
                 result.append(PlannedReminder(kind: .morning, day: key, time: rhythm.morning, date: firstFire(rhythm.morning),
                                               body: goal.text, repeatsWeekly: true, weekday: weekday))
             }
 
             let evening = key.date(in: calendar, hour: rhythm.evening.hour, minute: rhythm.evening.minute)
-            if offset == 0, evening > now {
-                if day?.reflection != nil { continue }
-                if let title = day?.step?.title {
+            if offset == 0, evening > now, day?.reflection != nil || day?.step != nil {
+                if day?.reflection == nil, let title = day?.step?.title {
                     result.append(PlannedReminder(kind: .evening, day: key, time: rhythm.evening, date: evening,
                                                   body: title, weekday: weekday))
-                    continue
                 }
+                result.append(nextWeek(.evening, rhythm.evening, body: Self.noStepEveningBody))
+                continue
             }
             result.append(PlannedReminder(kind: .evening, day: key, time: rhythm.evening, date: firstFire(rhythm.evening),
                                           body: Self.noStepEveningBody, repeatsWeekly: true, weekday: weekday))

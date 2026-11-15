@@ -8,6 +8,19 @@ final class DayEngineTests: XCTestCase {
 
     func at(_ h: Int, _ m: Int = 0) -> Date { Fixtures.date(today, h, m) }
 
+    func testSameStageIgnoresPlanDetailsButNotTheScreen() {
+        // F2: a merge re-judges the screen only when today's phase changes what is on screen.
+        let morning = engine.phase(at: at(9), snapshot: Fixtures.snapshot(today: nil))
+        let handled = engine.phase(at: at(9), snapshot: Fixtures.snapshot(today: Fixtures.today()))
+        guard case .morning = morning else { return XCTFail("expected morning, got \(morning)") }
+        XCTAssertFalse(DayEngine.sameStage(morning, handled), "morning finished elsewhere: \(handled)")
+        XCTAssertTrue(DayEngine.sameStage(morning, morning))
+        XCTAssertTrue(DayEngine.sameStage(.returning(quietDays: 3), .returning(quietDays: 4)))
+        XCTAssertFalse(DayEngine.sameStage(.evening(.stepOpen), .evening(.doneEarlier)))
+        XCTAssertFalse(DayEngine.sameStage(.evening(.stepOpen), .today))
+        XCTAssertTrue(DayEngine.sameStage(.today, .today))
+    }
+
     func testNoGoalIsOnboarding() {
         XCTAssertEqual(engine.phase(at: at(9), snapshot: .empty), .onboarding)
     }

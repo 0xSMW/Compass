@@ -259,6 +259,79 @@ final class LiveFlowTests: XCTestCase {
         XCTAssertFalse(model.showsNotificationsNotice)
     }
 
+    func testDismissedNoticeLeavesTheSettingsRowAndComesBackWhenATimeChanges() {
+        // F1: "Not now" on A6, then I2 dismissed.
+        var snap = Fixtures.snapshot(today: Fixtures.today())
+        snap.settings.notificationsEnabled = false
+        var conditions = SystemConditions.normal
+        conditions.notifications = .notDetermined
+        let (model, _, _) = make(snap, at: at(day(0), 14), conditions: conditions)
+        model.system.setNoticeDismissed(false)
+        model.dismissNotificationsNotice()
+        XCTAssertFalse(model.showsNotificationsNotice)
+        XCTAssertTrue(model.showsRemindersRow, "H1 keeps a way to turn reminders on")
+
+        // Saving the same times leaves it dismissed; a new time brings it back.
+        model.setRhythmFromSettings(model.settings.rhythm)
+        XCTAssertFalse(model.showsNotificationsNotice)
+        model.setRhythmFromSettings(model.settings.rhythm.settingEvening(TimeOfDay(hour: 22)))
+        XCTAssertEqual(model.settings.rhythm.evening.description, "22:00")
+        XCTAssertTrue(model.showsNotificationsNotice)
+
+        // The row's action turns them on; then the row goes away (the board's H1).
+        model.turnOnNotifications()
+        XCTAssertFalse(model.showsRemindersRow)
+        model.system.setNoticeDismissed(false)
+    }
+
+    // MARK: Merges and reminders judge the screen (F2, F3)
+
+    func testMergeThatFinishesTheMorningLeavesCenter() {
+        let (model, _, _) = make(Fixtures.snapshot(today: nil), at: at(day(0), 9))
+        XCTAssertEqual(model.current, .b1)
+        let before = model.phase
+        // The iPad set today's intention and step.
+        var remote = model.snapshot
+        remote.updateDay(model.todayKey) { $0 = Fixtures.today() }
+        model.commit(remote, origin: .remote)
+        XCTAssertEqual(model.refreshEntryAfterMerge(phaseBefore: before), .moved)
+        XCTAssertEqual(model.current, .c3)
+        // A merge that changes nothing on screen leaves it alone.
+        XCTAssertEqual(model.refreshEntryAfterMerge(phaseBefore: model.phase), .unchanged)
+    }
+
+    func testMergeWaitsForAnAnswerInProgress() {
+        let (model, _, _) = make(Fixtures.snapshot(today: Fixtures.today()), at: at(day(0), 21, 5))
+        XCTAssertEqual(model.current, .d1)
+        model.beginEvening()
+        model.eveningSession.typing = true
+        let before = model.phase
+        var remote = model.snapshot
+        remote.updateDay(model.todayKey) { $0.reflection = Fixtures.savedReflection }
+        model.commit(remote, origin: .remote)
+        XCTAssertEqual(model.refreshEntryAfterMerge(phaseBefore: before), .deferred)
+        XCTAssertEqual(model.current, .d1, "never pulled away mid-sentence")
+        XCTAssertEqual(model.refreshEntryForClock(), .deferred)
+        model.eveningSession.typing = false
+        XCTAssertEqual(model.refreshEntryForClock(), .moved, "the move happens once the answer ends")
+        XCTAssertEqual(model.current.flow, .today)
+    }
+
+    func testReminderTapWaitsWhileANoteIsTyped() {
+        let (model, _, _) = make(Fixtures.snapshot(today: Fixtures.today()), at: at(day(0), 14))
+        model.go(.e1)
+        model.isComposing = true
+        XCTAssertEqual(model.openFromReminder(), .deferred)
+        XCTAssertEqual(model.current, .e1)
+        model.isComposing = false
+        XCTAssertEqual(model.refreshEntryForClock(), .moved)
+        XCTAssertEqual(model.path, [.c3], "the reminder opens the screen for the moment")
+        // Not mid-answer: at once.
+        model.go(.h1)
+        XCTAssertEqual(model.openFromReminder(), .moved)
+        XCTAssertEqual(model.path, [.c3])
+    }
+
     // MARK: Settings clamp (item 18)
 
     func testSettingsTimesStayInsideA6Limits() {

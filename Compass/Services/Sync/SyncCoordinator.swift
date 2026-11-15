@@ -235,9 +235,13 @@ final class SyncCoordinator {
         case .adopt(let snapshot, let source):
             AudioTombstoneLog.shared.adopt(merged.audioTombstones)
             state.save()
+            let phaseBefore = model.phase
             // `.merge` saves and reloads the widget without counting as this device's own change; a fresh
             // goal put back on top (`.localChange`) is this device's decision and is stamped and pushed.
             model.commit(snapshot, origin: source == .localChange ? .local : .remote)
+            // Today's phase changed elsewhere (morning done on the iPad): judge the screen again,
+            // unless an answer is in progress (then once it ends). F2.
+            model.system.mergeApplied(phaseBefore: phaseBefore)
             // Our envelope should now carry the merged result too.
             pushSoon()
         case .keep:

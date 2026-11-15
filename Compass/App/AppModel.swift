@@ -44,6 +44,8 @@ final class AppModel {
     /// pulls a screen away mid-sentence).
     @ObservationIgnored var entryCheckedAt: Date?
     @ObservationIgnored var isComposing = false
+    /// A merge's or a tapped reminder's move that waits for the answer in progress (AppModel+Clock.swift).
+    @ObservationIgnored var pendingEntryMove: PendingEntryMove?
 
     // MARK: Session state (owned here, one per model, so tests never share it)
 
@@ -312,7 +314,12 @@ final class AppModel {
     func updateSettings(_ body: (inout Settings) -> Void) {
         mutate { body(&$0.settings) }
         calendar = SharedStorage.calendar(for: snapshot.settings)
-        if fixture != nil, let tz = fixture?.calendar.timeZone, snapshot.settings.timeZoneID == nil { calendar.timeZone = tz }
+        if let fixture {
+            // Fixtures keep their deterministic locale (en_GB) and, unless pinned, their zone.
+            calendar.locale = fixture.calendar.locale
+            calendar.firstWeekday = fixture.calendar.firstWeekday
+            if snapshot.settings.timeZoneID == nil { calendar.timeZone = fixture.calendar.timeZone }
+        }
     }
 
     /// Clear the snapshot here (H2 on this device, or a wipe from another device). The store file is

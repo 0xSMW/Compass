@@ -134,14 +134,20 @@ final class RepeatingReminderTests: XCTestCase {
         XCTAssertEqual(tuesday?.date, Fixtures.date(Fixtures.todayKey.adding(days: 7, calendar: cal), 7))
         XCTAssertEqual(tuesday?.identifier, "compass.morning.weekly.3")
 
-        // Tonight: a one-off with today's step; the other six evenings repeat weekly.
-        XCTAssertEqual(evenings.count, 7)
+        // Tonight: a one-off with today's step; the other six evenings repeat weekly, and Tuesday's
+        // question comes back next week (a one-off the next re-plan turns into the weekly repeat).
+        XCTAssertEqual(evenings.count, 8)
         let tonight = evenings.first { $0.day == Fixtures.todayKey }
         XCTAssertEqual(tonight?.repeatsWeekly, false)
         XCTAssertEqual(tonight?.body, Fixtures.stepTitle)
         XCTAssertEqual(tonight?.identifier, "compass.evening.2026-11-10")
         XCTAssertEqual(evenings.filter(\.repeatsWeekly).count, 6)
         XCTAssertTrue(evenings.filter(\.repeatsWeekly).allSatisfy { $0.body == NotificationPlanner.noStepEveningBody })
+        let nextTuesday = evenings.first { $0.day == Fixtures.todayKey.adding(days: 7, calendar: cal) }
+        XCTAssertEqual(nextTuesday?.date, Fixtures.date(Fixtures.todayKey.adding(days: 7, calendar: cal), 21))
+        XCTAssertEqual(nextTuesday?.body, NotificationPlanner.noStepEveningBody)
+        XCTAssertEqual(nextTuesday?.repeatsWeekly, false)
+        XCTAssertEqual(Set(evenings.map(\.weekday)), Set(1...7), "every weekday has an evening reminder")
         XCTAssertLessThanOrEqual(plan.count, 64)
         XCTAssertEqual(Set(plan.map(\.identifier)).count, plan.count)
         XCTAssertTrue(plan.allSatisfy { $0.date > now })
@@ -152,16 +158,43 @@ final class RepeatingReminderTests: XCTestCase {
         XCTAssertTrue(snap.day(Fixtures.todayKey)?.morningHandled ?? false)
         let plan = NotificationPlanner(calendar: cal).schedule(snapshot: snap, now: Fixtures.date(Fixtures.todayKey, 6, 30))
         let mornings = plan.filter { $0.kind == .morning }
-        XCTAssertEqual(mornings.count, 6)
+        XCTAssertEqual(mornings.count, 7)
         XCTAssertFalse(mornings.contains { $0.day == Fixtures.todayKey })
+        // Tuesday's morning returns next week.
+        let nextTuesday = mornings.first { $0.day == Fixtures.todayKey.adding(days: 7, calendar: cal) }
+        XCTAssertEqual(nextTuesday?.date, Fixtures.date(Fixtures.todayKey.adding(days: 7, calendar: cal), 7))
+        XCTAssertEqual(Set(mornings.map(\.weekday)), Set(1...7))
     }
 
     func testReflectedTodayHasNoEveningTonightButRepeatsOtherDays() {
         let snap = Fixtures.snapshot(today: Fixtures.today(done: true, reflection: Fixtures.savedReflection))
         let plan = NotificationPlanner(calendar: cal).schedule(snapshot: snap, now: Fixtures.date(Fixtures.todayKey, 20))
         let evenings = plan.filter { $0.kind == .evening }
-        XCTAssertEqual(evenings.count, 6)
+        XCTAssertEqual(evenings.count, 7)
         XCTAssertFalse(evenings.contains { $0.day == Fixtures.todayKey })
+        // Nothing tonight, but Tuesday is asked again next week.
+        XCTAssertEqual(Set(evenings.map(\.weekday)), Set(1...7))
+        XCTAssertTrue(evenings.allSatisfy { $0.date > Fixtures.date(Fixtures.todayKey, 23, 59) })
+    }
+
+    func testEveryReminderFiresOncePerWeekdayAndNeverTwiceTonight() {
+        for (today, hour) in [(Fixtures.today(), 14), (Fixtures.today(done: true, reflection: Fixtures.savedReflection), 20), (nil, 14)] {
+            let plan = NotificationPlanner(calendar: cal).schedule(snapshot: Fixtures.snapshot(today: today), now: Fixtures.date(Fixtures.todayKey, hour))
+            XCTAssertEqual(Set(plan.map(\.identifier)).count, plan.count)
+            let fireDates = plan.filter { $0.kind == .evening }.map(\.date)
+            XCTAssertEqual(Set(fireDates).count, fireDates.count, "no evening fires twice")
+        }
+    }
+
+    func testScheduleUsesTheClampedRhythm() {
+        var snap = Fixtures.snapshot(today: nil)
+        // A stored rhythm outside A6's limits (an old file, another device).
+        snap.settings.rhythm = Rhythm(morning: TimeOfDay(hour: 2), evening: TimeOfDay(hour: 6))
+        let plan = NotificationPlanner(calendar: cal).schedule(snapshot: snap, now: Fixtures.date(Fixtures.todayKey, 1))
+        XCTAssertTrue(plan.filter { $0.kind == .morning }.allSatisfy { $0.time.description == "04:00" })
+        XCTAssertTrue(plan.filter { $0.kind == .evening }.allSatisfy { $0.time.description == "17:00" })
+        let tonight = plan.first { $0.kind == .evening && $0.day == Fixtures.todayKey }
+        XCTAssertEqual(tonight?.date, Fixtures.date(Fixtures.todayKey, 17))
     }
 
     func testNoStepTonightUsesTheWeeklyQuestion() {

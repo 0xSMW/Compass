@@ -44,7 +44,8 @@ final class SystemServices {
         started = true
         self.model = model
 
-        let handler = NotificationTapHandler { [weak self] in self?.model?.goToEntry() }
+        // A reminder opens the screen for the moment, but waits for an answer being said or typed (F3).
+        let handler = NotificationTapHandler { [weak self] in self?.openFromReminder() }
         tapHandler = handler
         UNUserNotificationCenter.current().delegate = handler
 
@@ -105,10 +106,26 @@ final class SystemServices {
     // MARK: Clock (the entry screen follows the day, from any screen)
 
     /// Judge the screen against the clock (AppModel+Clock.swift), then arm the timer for the next
-    /// boundary, or look again in a minute when an answer was in progress.
+    /// boundary, or look again when an answer was in progress: every few seconds while a tapped
+    /// reminder or a merge waits (`pendingEntryMove`), else in a minute.
     private func applyClock(_ model: AppModel) {
         let result = model.refreshEntryForClock()
-        scheduleEntryTimer(retryIn: result == .deferred ? 60 : nil)
+        scheduleEntryTimer(retryIn: result == .deferred ? Self.retryDelay(model) : nil)
+    }
+
+    private static func retryDelay(_ model: AppModel) -> TimeInterval {
+        model.pendingEntryMove == nil ? 60 : 3
+    }
+
+    private func openFromReminder() {
+        guard let model else { return }
+        if model.openFromReminder() == .deferred { scheduleEntryTimer(retryIn: Self.retryDelay(model)) }
+    }
+
+    /// A merge from another device changed the snapshot (SyncCoordinator): re-judge the screen (F2).
+    func mergeApplied(phaseBefore: DayPhase) {
+        guard let model else { return }
+        if model.refreshEntryAfterMerge(phaseBefore: phaseBefore) == .deferred { scheduleEntryTimer(retryIn: Self.retryDelay(model)) }
     }
 
     /// Re-arm the boundary timer (also after the rhythm changes).

@@ -45,6 +45,13 @@ struct SettingsListView: View {
                                 action: { timeSheet = .morning })
                         ListRow(title: "Evening", value: s.rhythm.evening.description, valueStyle: .bodyMono,
                                 action: { timeSheet = .evening })
+                        if model.showsRemindersRow {
+                            // Only while reminders can't arrive (off after "Not now", or not allowed by
+                            // iOS): the way back once I2 is dismissed. Same action as I2's "Turn on".
+                            ListRow(title: "Reminders", value: "Off", action: { model.turnOnNotifications() })
+                                .accessibilityHint("Turns on the morning and evening reminders")
+                                .accessibilityIdentifier("settings-reminders")
+                        }
                         ListRow(title: "Sound and haptics", value: soundOn ? "On" : "Off", action: {
                             soundOn.toggle()
                             SoundSetting.set(soundOn)
@@ -95,8 +102,7 @@ struct SettingsListView: View {
         } actions: {
             PrimaryButton("Save") {
                 // A6's limits (CompassCore): morning 04:00–11:45, evening 17:00–23:45.
-                let r = rhythmDraft
-                model.updateSettings { $0.rhythm = $0.rhythm.settingMorning(r.morning).settingEvening(r.evening) }
+                model.setRhythmFromSettings(rhythmDraft)
                 timeSheet = nil
             }
         }

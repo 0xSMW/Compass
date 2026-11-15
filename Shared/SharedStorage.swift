@@ -21,7 +21,7 @@ enum SharedStorage {
     /// Calendar for the user's rhythm: settings time zone, else the device's.
     static func calendar(for settings: Settings) -> Calendar {
         var c = Calendar(identifier: .gregorian)
-        c.locale = Locale.current
+        c.locale = .autoupdatingCurrent // the user's locale for dates (History, I5)
         if let id = settings.timeZoneID, let tz = TimeZone(identifier: id) { c.timeZone = tz } else { c.timeZone = .current }
         return c
     }

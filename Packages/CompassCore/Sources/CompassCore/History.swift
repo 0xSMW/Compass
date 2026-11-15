@@ -98,12 +98,13 @@ public struct HistoryBuilder: Sendable {
         GoalMarker(achieved: snapshot.goal?.status == .achieved, totalSteps: snapshot.movedCount)
     }
 
-    /// "4–10 Nov", "28 Oct–3 Nov", "29 Dec 2025–4 Jan" style label.
-    public func label(for week: HistoryWeek, locale: Locale = Locale(identifier: "en_GB")) -> String {
+    /// "4–10 Nov", "28 Oct–3 Nov", "29 Dec 2025–4 Jan" style label. Month names in `locale`, else the
+    /// calendar's (the user's live; en_GB in the fixtures).
+    public func label(for week: HistoryWeek, locale: Locale? = nil) -> String {
         let monthFormatter = DateFormatter()
         monthFormatter.calendar = calendar
         monthFormatter.timeZone = calendar.timeZone
-        monthFormatter.locale = locale
+        monthFormatter.locale = locale ?? calendar.locale ?? .autoupdatingCurrent
         monthFormatter.dateFormat = "MMM"
         let s = week.start, e = week.end
         let sm = monthFormatter.string(from: s.date(in: calendar, hour: 12))

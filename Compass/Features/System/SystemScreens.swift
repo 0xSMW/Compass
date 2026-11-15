@@ -61,10 +61,12 @@ struct SystemLockScreenView: View {
     }
 
     private var dateText: String {
+        // The user's locale; the fixture calendar's en_GB keeps the board's "Tuesday 10 November".
         let f = DateFormatter()
-        f.locale = Locale(identifier: "en_GB")
+        f.calendar = model.calendar
+        f.locale = model.calendar.locale ?? .autoupdatingCurrent
         f.timeZone = model.calendar.timeZone
-        f.dateFormat = "EEEE d MMMM"
+        f.setLocalizedDateFormatFromTemplate("EEEEdMMMM")
         return f.string(from: model.now)
     }
 }

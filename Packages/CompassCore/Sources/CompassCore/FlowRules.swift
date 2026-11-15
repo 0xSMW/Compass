@@ -104,10 +104,23 @@ extension DayEngine {
 public enum NotificationRules {
     /// "07:00 and 21:00 can't reach you." shows whenever reminders can't arrive: switched off in
     /// Compass ("Not now" on A6) or not allowed by iOS (not asked yet, or denied), until dismissed.
-    /// H1 has no notifications row, so this notice is the way back.
+    /// Dismissing it is undone when a reminder time is changed in Settings (`remindersBlocked` then
+    /// still holds), and H1 shows a "Reminders" row while they are blocked, so there is always a way back.
     public static func showsOffNotice(enabled: Bool, status: PermissionState, dismissed: Bool) -> Bool {
         guard !dismissed else { return false }
-        return !enabled || status != .granted
+        return remindersBlocked(enabled: enabled, status: status)
+    }
+
+    /// Reminders can't arrive: switched off in Compass or not allowed by iOS. H1 shows its "Reminders"
+    /// row only then (the board's list, which has no such row, is the state where they work).
+    public static func remindersBlocked(enabled: Bool, status: PermissionState) -> Bool {
+        !enabled || status != .granted
+    }
+
+    /// Changing a reminder time in Settings brings back a dismissed I2 (the user is thinking about
+    /// reminders); it stays dismissed when the times didn't change.
+    public static func noticeDismissed(_ dismissed: Bool, afterRhythmChange old: Rhythm, to new: Rhythm) -> Bool {
+        dismissed && old == new
     }
 }
 

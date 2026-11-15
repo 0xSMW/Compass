@@ -53,6 +53,19 @@ public enum DayPhase: Hashable, Sendable {
     case checkGoal(quietDays: Int)
 }
 
+extension DayEngine {
+    /// Whether two phases put the same screen up: the same case, ignoring the morning's plan details
+    /// and the quiet-day counts (those follow from other days' data, not from today moving on). A
+    /// different evening question (the step was done elsewhere) counts as a change. Used to decide
+    /// whether a merge from another device re-judges the screen (F2).
+    public static func sameStage(_ a: DayPhase, _ b: DayPhase) -> Bool {
+        switch (a, b) {
+        case (.morning, .morning), (.returning, .returning), (.checkGoal, .checkGoal): return true
+        default: return a == b
+        }
+    }
+}
+
 /// Picks the phase from the clock and history. Pure and deterministic.
 ///
 /// Rules (from the v3 map and boards):
