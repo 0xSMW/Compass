@@ -43,17 +43,27 @@ private struct EditorView: UIViewRepresentable {
 
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: EditorView
+        /// The focus binding as `updateUIView` last saw it (only a change to false resigns).
+        var lastSeenFocus = false
+        private var beganEditingAt: Date?
         init(_ parent: EditorView) { self.parent = parent }
+
+        /// Editing began under a second ago: a `false` read back now is SwiftUI's, not the screen's.
+        var justBeganEditing: Bool {
+            beganEditingAt.map { Date().timeIntervalSince($0) < 1 } ?? false
+        }
 
         func textViewDidChange(_ textView: UITextView) {
             parent.text = textView.text
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
+            beganEditingAt = Date()
             if let focus = parent.focus, !focus.wrappedValue { focus.wrappedValue = true }
         }
 
         func textViewDidEndEditing(_ textView: UITextView) {
+            beganEditingAt = nil
             if let focus = parent.focus, focus.wrappedValue { focus.wrappedValue = false }
         }
 
@@ -96,11 +106,19 @@ private struct EditorView: UIViewRepresentable {
         view.textContainer.maximumNumberOfLines = lines.upperBound == 1 ? 1 : 0
         view.textContainer.lineBreakMode = lines.upperBound == 1 ? .byTruncatingTail : .byWordWrapping
         view.accessibilityLabel = label
+        // `true` brings the keyboard up; a change to `false` takes it away. Only a change counts, and not
+        // in the moment after editing began: the FocusState isn't attached to a SwiftUI-focusable view
+        // (this is a UITextView), so SwiftUI can read it back as false right after the user taps in, and
+        // resigning on any `false` dropped the keyboard under the first keystroke (found by the
+        // tap-through UI test).
         if let focus {
             let wants = focus.wrappedValue
+            let coordinator = context.coordinator
+            let was = coordinator.lastSeenFocus
+            coordinator.lastSeenFocus = wants
             if wants, !view.isFirstResponder {
                 DispatchQueue.main.async { if view.window != nil { view.becomeFirstResponder() } }
-            } else if !wants, view.isFirstResponder {
+            } else if !wants, was, view.isFirstResponder, !coordinator.justBeganEditing {
                 DispatchQueue.main.async { view.resignFirstResponder() }
             }
         }

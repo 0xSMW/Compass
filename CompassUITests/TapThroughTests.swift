@@ -9,109 +9,109 @@ import XCTest
 /// Every hop waits for the next screen's `screen-<ID>` marker, so any broken hop fails the test with
 /// the screen it was stuck on. CI runs it on the 390×844 simulator.
 final class TapThroughTests: XCTestCase {
-    private var app: XCUIApplication!
-
-    override func setUp() {
-        continueAfterFailure = false
-        app = XCUIApplication()
-        app.launchArguments = ["-tapthrough"]
-        app.launch()
-    }
-
-    override func tearDown() {
-        app.terminate()
-    }
-
-    // MARK: Helpers
-
-    private func marker(_ id: String) -> XCUIElement { app.descendants(matching: .any)["screen-\(id)"] }
-
-    /// The screen currently up, from its marker (for failure messages).
-    private var currentScreen: String {
-        let ids = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'screen-'"))
-            .allElementsBoundByIndex.map(\.identifier)
-        return ids.first ?? "none"
-    }
-
-    private func expectScreen(_ id: String, timeout: TimeInterval = 10, file: StaticString = #filePath, line: UInt = #line) {
-        if !marker(id).waitForExistence(timeout: timeout) {
-            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-            shot.name = "stuck before \(id)"
-            shot.lifetime = .keepAlways
-            add(shot)
-            XCTFail("Expected \(id), still on \(currentScreen)", file: file, line: line)
-        }
-    }
-
-    private func button(_ label: String, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
-        let b = app.buttons[label].firstMatch
-        XCTAssertTrue(b.waitForExistence(timeout: 5), "No “\(label)” button on \(currentScreen)", file: file, line: line)
-        return b
-    }
-
-    private func tap(_ label: String, file: StaticString = #filePath, line: UInt = #line) {
-        button(label, file: file, line: line).tap()
-    }
-
-    /// A listening screen saves on silence; if it is still up after a moment, tap its stop button.
-    private func finishListening(on listening: String, stop: String, next: String, file: StaticString = #filePath, line: UInt = #line) {
-        if marker(next).waitForExistence(timeout: 4) { return }
-        XCTAssertTrue(marker(listening).exists, "Expected \(listening) or \(next), on \(currentScreen)", file: file, line: line)
-        if app.buttons[stop].exists { app.buttons[stop].firstMatch.tap() }
-        expectScreen(next, file: file, line: line)
-    }
-
-    /// Type into the focused (or first) text view of the screen.
-    private func type(_ text: String, file: StaticString = #filePath, line: UInt = #line) {
-        let field = app.textViews.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 5), "No text field on \(currentScreen)", file: file, line: line)
-        field.tap()
-        field.typeText(text)
-    }
-
-    // MARK: The day
-
     @MainActor
     func testOnboardingMorningNoteEvening() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-tapthrough"]
+        app.launch()
+        defer { app.terminate() }
+        let d = TapDriver(app: app, test: self)
+
         // A · Onboarding: the goal by voice (the fake transcriber says the board's goal).
-        expectScreen("A1")
-        tap("Begin")
-        expectScreen("A2")
-        tap("Say your goal")
-        finishListening(on: "A3", stop: "Stop", next: "A4")
-        tap("Continue")
-        expectScreen("A5")
-        tap("Continue")
-        expectScreen("A6")
-        tap("Allow notifications")
-        expectScreen("A7")
-        tap("Start")
+        d.expectScreen("A1")
+        d.tap("Begin")
+        d.expectScreen("A2")
+        d.tap("Say your goal")
+        d.finishListening(on: "A3", stop: "Stop", next: "A4")
+        d.tap("Continue")
+        d.expectScreen("A5")
+        d.tap("Continue")
+        d.expectScreen("A6")
+        d.tap("Allow notifications")
+        d.expectScreen("A7")
+        d.tap("Start")
 
         // B · The first morning (08:00): skip the intention, name and type the step.
-        expectScreen("B1")
-        tap("Skip")
-        expectScreen("B4")
-        tap("Type instead")
-        expectScreen("B5")
-        type("Call Lena about the pilot")
-        tap("Add step")
+        d.expectScreen("B1")
+        d.tap("Skip")
+        d.expectScreen("B4")
+        d.tap("Type instead")
+        d.expectScreen("B5")
+        d.type("Call Lena about the pilot")
+        d.tap("Add step")
 
         // C · Today, with a typed note.
-        expectScreen("C3")
-        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Call Lena about the pilot"))
-            .firstMatch.waitForExistence(timeout: 5), "Today shows the step")
-        tap("Type a note")
-        type("Ask Sam about Friday")
-        tap("Save note")
-        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Ask Sam about Friday"))
-            .firstMatch.waitForExistence(timeout: 5), "the note is on Today (\(currentScreen))")
-        expectScreen("C3")
+        d.expectScreen("C3")
+        d.expectText("Call Lena about the pilot", "Today shows the step")
+        d.tap("Type a note")
+        d.type("Ask Sam about Friday")
+        d.tap("Save note")
+        d.expectText("Ask Sam about Friday", "the note is on Today")
+        d.expectScreen("C3")
 
         // D · 21:05: the evening comes in by the clock; Done, said, saved.
         app.buttons["tapthrough-evening"].firstMatch.tap()
-        expectScreen("D1")
-        tap("Done")
-        // D3 listens (it may save on silence before the marker is seen), then D5 shows what was saved.
-        finishListening(on: "D3", stop: "Stop and save", next: "D5")
+        d.expectScreen("D1")
+        d.tap("Done")
+        // D3 listens (it may save on silence before its marker is seen), then D5 shows what was saved.
+        d.finishListening(on: "D3", stop: "Stop and save", next: "D5")
+    }
+}
+
+/// Taps and waits on the main actor (XCUIElement is main-actor isolated).
+@MainActor
+private struct TapDriver {
+    let app: XCUIApplication
+    let test: XCTestCase
+
+    func marker(_ id: String) -> XCUIElement { app.descendants(matching: .any)["screen-\(id)"] }
+
+    /// The screen currently up, from its marker (for failure messages).
+    var currentScreen: String {
+        let markers = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'screen-'"))
+        return markers.firstMatch.exists ? markers.firstMatch.identifier : "none"
+    }
+
+    func expectScreen(_ id: String, timeout: TimeInterval = 10, file: StaticString = #filePath, line: UInt = #line) {
+        guard !marker(id).waitForExistence(timeout: timeout) else { return }
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "stuck before \(id)"
+        shot.lifetime = .keepAlways
+        test.add(shot)
+        XCTFail("Expected \(id), still on \(currentScreen)", file: file, line: line)
+    }
+
+    func tap(_ label: String, file: StaticString = #filePath, line: UInt = #line) {
+        let button = app.buttons[label].firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 5), "No “\(label)” button on \(currentScreen)", file: file, line: line)
+        button.tap()
+    }
+
+    func expectText(_ text: String, _ message: String, file: StaticString = #filePath, line: UInt = #line) {
+        let element = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+        XCTAssertTrue(element.waitForExistence(timeout: 5), "\(message) (on \(currentScreen))", file: file, line: line)
+    }
+
+    /// A listening screen saves on silence; if it is still up after a moment, tap its stop button.
+    func finishListening(on listening: String, stop: String, next: String, file: StaticString = #filePath, line: UInt = #line) {
+        if marker(next).waitForExistence(timeout: 4) { return }
+        XCTAssertTrue(marker(listening).exists, "Expected \(listening) or \(next), on \(currentScreen)", file: file, line: line)
+        let button = app.buttons[stop].firstMatch
+        if button.exists { button.tap() }
+        expectScreen(next, file: file, line: line)
+    }
+
+    /// Type into the screen's text field once it has keyboard focus (tapping it again if needed).
+    func type(_ text: String, file: StaticString = #filePath, line: UInt = #line) {
+        let field = app.textViews.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "No text field on \(currentScreen)", file: file, line: line)
+        let focused = app.textViews.matching(NSPredicate(format: "hasKeyboardFocus == true")).firstMatch
+        for _ in 0..<3 where !focused.exists {
+            field.tap()
+            _ = focused.waitForExistence(timeout: 2)
+        }
+        XCTAssertTrue(focused.exists, "The text field on \(currentScreen) never took keyboard focus", file: file, line: line)
+        focused.typeText(text)
     }
 }
