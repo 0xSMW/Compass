@@ -5,7 +5,8 @@ import PackageDescription
 
 let package = Package(
     name: "CompassCore",
-    platforms: [.iOS(.v18), .macOS(.v14)],
+    // macOS 15 for `Synchronization.Mutex` (iOS 18 already has it); the package is only built for iOS and Linux.
+    platforms: [.iOS(.v18), .macOS(.v15)],
     products: [
         .library(name: "CompassCore", targets: ["CompassCore"]),
     ],

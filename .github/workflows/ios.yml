@@ -88,6 +88,14 @@ jobs:
             | tee build/build.log | grep -E "error:|warning: .*deprecated|BUILD|\*\*" || true
           grep -q "TEST BUILD SUCCEEDED" build/build.log || { grep -E "error:" -A3 build/build.log | head -200; exit 1; }
 
+      - name: Concurrency warnings (strict checking, Swift 5 mode)
+        if: always()
+        run: |
+          grep -E "warning: .*(Sendable|actor-isolated|main actor|data race|concurrency|isolation)" build/build.log \
+            | sed -E 's#^.*/(Compass[^:]*|Shared[^:]*|Packages[^:]*):#\1:#' | sort -u > build/concurrency-warnings.txt || true
+          echo "Unique concurrency warnings: $(wc -l < build/concurrency-warnings.txt | tr -d ' ')"
+          head -80 build/concurrency-warnings.txt
+
       - name: Check privacy manifest and usage strings in the app bundle
         run: |
           set -euo pipefail

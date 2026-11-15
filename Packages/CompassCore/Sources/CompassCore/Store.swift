@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Persistence for the whole snapshot. The real app syncs the JSON file through iCloud;
 /// the widget reads and writes the same file in the shared App Group container.
@@ -28,24 +29,29 @@ extension Store {
     }
 }
 
-public final class InMemoryStore: Store, @unchecked Sendable {
-    private let lock = NSLock()
-    private var snapshot: CompassSnapshot
-    public private(set) var saveCount = 0
+public final class InMemoryStore: Store, Sendable {
+    private struct State {
+        var snapshot: CompassSnapshot
+        var saveCount = 0
+    }
+    private let state: Mutex<State>
+
+    /// How many times `save` ran (tests).
+    public var saveCount: Int { state.withLock { $0.saveCount } }
 
     public init(_ snapshot: CompassSnapshot = .empty) {
-        self.snapshot = snapshot
+        state = Mutex(State(snapshot: snapshot))
     }
 
     public func load() throws -> CompassSnapshot {
-        lock.lock(); defer { lock.unlock() }
-        return snapshot
+        state.withLock { $0.snapshot }
     }
 
     public func save(_ snapshot: CompassSnapshot) throws {
-        lock.lock(); defer { lock.unlock() }
-        self.snapshot = snapshot
-        saveCount += 1
+        state.withLock {
+            $0.snapshot = snapshot
+            $0.saveCount += 1
+        }
     }
 }
 
@@ -54,7 +60,7 @@ public enum StoreError: Error, Equatable {
 }
 
 /// JSON file store. A missing file loads as `.empty`. Writes are atomic.
-public final class JSONFileStore: Store, @unchecked Sendable {
+public final class JSONFileStore: Store, Sendable {
     public let url: URL
     private let lock = NSLock()
 

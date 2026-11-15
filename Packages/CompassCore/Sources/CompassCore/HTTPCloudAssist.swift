@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -75,24 +76,23 @@ public enum CloudAssistFailure: Equatable, Sendable {
 ///
 /// Throws `CloudAssistError.disabled` when the Settings switch is off or no endpoint is configured,
 /// and `.offline` when the network is unreachable. The on-device fallback is simply no summary / no idea.
-public final class HTTPCloudAssist: CloudAssist, @unchecked Sendable {
+public final class HTTPCloudAssist: CloudAssist, Sendable {
     public typealias Transport = @Sendable (URLRequest) async throws -> (Data, URLResponse)
 
     public let configuration: CloudAssistConfiguration
     private let transport: Transport
-    private let lock = NSLock()
-    private var _switchOn: Bool
+    private let _switchOn: Mutex<Bool>
 
     public init(configuration: CloudAssistConfiguration, switchOn: Bool, transport: Transport? = nil) {
         self.configuration = configuration
-        self._switchOn = switchOn
+        self._switchOn = Mutex(switchOn)
         self.transport = transport ?? HTTPCloudAssist.urlSessionTransport
     }
 
     /// The Settings "Cloud help" switch.
     public var switchOn: Bool {
-        get { lock.withLock { _switchOn } }
-        set { lock.withLock { _switchOn = newValue } }
+        get { _switchOn.withLock { $0 } }
+        set { _switchOn.withLock { $0 = newValue } }
     }
 
     public var isEnabled: Bool { switchOn && configuration.endpoint != nil }
