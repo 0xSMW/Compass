@@ -33,10 +33,13 @@ struct HistoryDayView: View {
                         PartChip(part: part)
                             .padding(.top, Space.s)
                     }
-                    transcriptAndNotes(day)
-                        .padding(.top, Space.m)
-                        .frame(maxHeight: .infinity, alignment: .top)
+                    // The transcript takes whatever is left above 648 and fades out; it never pushes
+                    // past the player (overlay content doesn't size the slot).
+                    Color.clear
+                        .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+                        .overlay(alignment: .topLeading) { transcriptAndNotes(day) }
                         .clipped()
+                        .padding(.top, Space.m)
                         .mask(LinearGradient(stops: [.init(color: .black, location: ax ? 0.6 : 0.75), .init(color: .clear, location: 1)],
                                              startPoint: .top, endPoint: .bottom))
                 }
