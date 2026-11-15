@@ -55,6 +55,18 @@ tells sync (`.local` only) and reloads the widget timelines (`SnapshotEffects`, 
 `deleteEverything()` clears the store and reloads the widget; sync hears about a wipe through
 `LiveSync.wipeEverywhere`. There is no other save call: never call `store.save` from a feature.
 
+## Platform services (live path only)
+
+- Cloud help: `HTTPCloudAssist` (Core), https only, contract in `docs/CLOUD_ASSIST.md`. No endpoint in repo
+  builds, so `model.cloudHelpConfigured` is false and A7/H1 say "Not set up"; use `model.cloudHelpOn`, not
+  `settings.cloudAssist`, to decide whether to ask. `NetworkMonitor` (NWPathMonitor) retries D6 on reconnect.
+- Recording: `LiveAudioRecorder` ends a take on interruption/route loss and keeps it for `stop()`; the level
+  stream finishing while listening makes `VoiceCapture` call `onSilence` (save as after a pause).
+- Reminders: weekly repeating calendar triggers (`NotificationPlanner.schedule`) plus a background app refresh
+  (`ReminderRefresh`, task id in project.yml).
+- Export: one zip in `tmp/CompassExport`, removed after the share sheet (`DataExport`).
+- `Compass/Resources/PrivacyInfo.xcprivacy` lists the required-reason APIs; update it with new API use.
+
 ## Rules for flow agents
 
 - Edit only your `Features/<Flow>/` folder. Keep `static func view(for: ScreenID) -> some View` in the
@@ -118,8 +130,10 @@ Type: `.compassFont(.display | .title | .live | .heading | .body | .caption | .m
 Inter Tight / Plex Mono, spec line heights, Dynamic Type scaled to the spec's AX5 column.
 `Space.xs/s/m/l/xl = 8/16/24/32/48`, `Radius.card 24 / tile 12 / pill(h)`, `ControlSize`, `IconSize`, `Motion`.
 Layout: `FlowScreen { … }` + `.region(.nav | .subject | .focal | .focalTop | .middle(top:) | .wave | .dock |
-.buttonDock | .buttonDockHigh | .linkDock | .labels | .player | .todayDock | .aboveKeyboard |
-.custom(top:bottom:inset:) | .growsUp(bottom:))`; `TodayScaffold(onHistory:onSettings:header:notes:card:dock:overlay:)`.
+.buttonDock | .buttonDockHigh | .linkDock | .labels | .player | .todayDock | .aboveKeyboard | .keyboard |
+.custom(top:bottom:inset:) | .growsUp(bottom:))`. `.aboveKeyboard` is keyboard-relative (16 above the real
+keyboard via `KeyboardFrame`, or the estimated one: 508 on 844, 260pt tall on iPhone SE); draw screenshot
+keyboards in `.keyboard`; `TodayScaffold(onHistory:onSettings:header:notes:card:dock:overlay:)`.
 
 | Component | kit.css | Notes |
 |---|---|---|
