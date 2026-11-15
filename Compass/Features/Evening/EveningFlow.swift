@@ -82,7 +82,7 @@ extension AppModel {
         let target = eveningReflectScreen
         Task {
             do {
-                try await VoiceCapture.shared.start(recorder: recorder, transcriber: transcriber)
+                guard try await VoiceCapture.shared.start(recorder: recorder, transcriber: transcriber) else { return }
             } catch let problem as VoiceCapture.StartError {
                 session.micProblem = problem
             } catch {

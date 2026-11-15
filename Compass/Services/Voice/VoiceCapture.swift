@@ -59,8 +59,10 @@ final class VoiceCapture {
 
     /// Ask for the microphone (and speech) if needed, then record and transcribe.
     /// Speech permission is optional: without it the audio is still saved and typing fills in.
-    func start(recorder: AudioRecorder, transcriber: SpeechTranscriber) async throws {
-        guard state == .idle else { return }
+    /// Returns false (and does nothing) when a take is already starting or running.
+    @discardableResult
+    func start(recorder: AudioRecorder, transcriber: SpeechTranscriber) async throws -> Bool {
+        guard state == .idle else { return false }
         state = .starting
         VoicePlayback.shared.stop()
 
@@ -127,6 +129,7 @@ final class VoiceCapture {
                 }
             }
         }
+        return true
     }
 
     /// Stop recording, wait briefly for the last words, and hand back the take.

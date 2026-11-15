@@ -139,7 +139,7 @@ struct EveningReflectView: View {
                 .accessibilityLabel(question)
         }
         .region(.focal)
-        .onAppear { if model.fixture == nil { focused = true } }
+        .onAppear { if model.fixture == nil { DispatchQueue.main.async { focused = true } } }
 
         AboveKeyboardAction(
             title: "Save",

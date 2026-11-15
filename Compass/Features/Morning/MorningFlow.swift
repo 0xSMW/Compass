@@ -80,7 +80,7 @@ extension AppModel {
         session.micProblem = nil
         Task {
             do {
-                try await VoiceCapture.shared.start(recorder: recorder, transcriber: transcriber)
+                guard try await VoiceCapture.shared.start(recorder: recorder, transcriber: transcriber) else { return }
                 replace(with: .b2)
             } catch let problem as VoiceCapture.StartError {
                 session.micProblem = problem
@@ -149,6 +149,9 @@ extension AppModel {
         switch plan.planning {
         case .nameYourOwn:
             replace(with: .b4)
+        case .suggestion(_, .smaller):
+            // After 1–2 quiet days: F1's frame ("Smaller than usual. It still counts.") fetches its own idea.
+            replace(with: .f1)
         case .suggestion(let partID, let size):
             if let idea = await morningFetchIdea(partID: partID, size: size) {
                 session.idea = idea

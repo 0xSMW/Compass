@@ -261,7 +261,7 @@ struct MorningTypingView: View {
             } else {
                 text = session.draft
                 partID = session.draftPartID ?? model.morningDefaultPartID
-                focused = true
+                DispatchQueue.main.async { focused = true }
             }
         }
     }
