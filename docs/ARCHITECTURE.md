@@ -135,7 +135,7 @@ Layout: `FlowScreen { … }` + `.region(.nav | .subject | .focal | .focalTop | .
 | `Notice(icon:text:actionTitle:action:)` | `.notice` | |
 | `StepCard(title:partTitle:partIcon:state: .empty/.open/.justDone/.done, onToggle:onUndo:onOptions:onPlan:showsOptions:)` | `.slot` | min 176, grows up |
 | `CompletionCircle(isDone:onChange:)` + `Feedback` | `.c56.done(.on)` | 240 ms fill, click (silent switch), light haptic, "Done, undo available" |
-| `NavBar(leading:trailing:progress:solid:)`, `NavItem.close/.back/.text/.icon` | `.nav` `.navb` | |
+| `NavBar(leading:trailing:progress:solid:)`, `NavItem.close/.back/.text/.icon` | `.nav` `.navb` | pinned to Large type (controls keep size); `solid` = ground + hairline |
 | `ProgressDots(total:current:)` | `.prog` | 4 segments |
 | `SubjectLine(icon:text:)` | `.ctx` | |
 | `LiveTranscript(settled:pending:style:)` | `.live` + `.dim` | |
@@ -152,6 +152,9 @@ optional `screens` input like `C3,C4`):
    simulator (iOS 26.2, 390×844 pt; falls back to 17e), run `ScreenshotTests`, scale each PNG to
    390×844 with `sips`, commit `renders/ios/<ID>.png` (+ `README.txt` with run URL) back to the branch
    with `[skip ci]`.
+
+Last green run: https://github.com/0xSMW/Compass/actions/runs/43740739724 (66/66 screenshots).
+`renders/ios/README.txt` names the run and commit that produced the current PNGs.
 
 Loop: push → watch the run (GitHub MCP `actions_list` / `get_job_logs` with `failed_only`) → `git pull`
 → open `renders/ios/<ID>.png` next to `design/compass-v3/renders/screens/<designRender>` and compare.
