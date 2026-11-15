@@ -32,7 +32,6 @@ struct TodayView: View {
     @State private var undoTask: Task<Void, Never>?
     @State private var transcript: TranscriptUpdate?
     @State private var levels: [Float] = []
-    @State private var recordTasks: [Task<Void, Never>] = []
     /// Microphone off / storage full after tapping Note: shown in the notes row until fixed.
     @State private var showsRecordingBlock = false
     @State private var draft = ""
@@ -126,7 +125,7 @@ struct TodayView: View {
     @ViewBuilder
     private func notesRow(_ today: Day?) -> some View {
         if mode == .recording {
-            LiveTranscript(settled: transcript?.settled ?? "", pending: transcript?.pending ?? "")
+            LiveTranscript(settled: liveWords.settled, pending: liveWords.pending)
                 .lineLimit(3)
                 .truncationMode(.head)
                 .accessibilityAddTraits(.updatesFrequently)
@@ -209,7 +208,7 @@ struct TodayView: View {
     }
 
     private var pillLevels: [Float] {
-        let recent = Array(levels.suffix(30))
+        let recent = Array((isFixture ? levels : capture.levels).suffix(30))
         return Array(repeating: Float(0.1), count: max(0, 30 - recent.count)) + recent
     }
 
@@ -234,59 +233,51 @@ struct TodayView: View {
 
     // MARK: Recording (C5)
 
+    /// The shared voice take (same recorder + on-device speech as the morning and evening).
+    private var capture: VoiceCapture { VoiceCapture.shared }
+
+    /// Live words in the notes row: the fixture's for screenshots, else the take's.
+    private var liveWords: TranscriptUpdate {
+        if isFixture { return transcript ?? TranscriptUpdate(settled: "") }
+        return TranscriptUpdate(settled: capture.settled, pending: capture.pending)
+    }
+
     private func startRecording() async {
         if await model.prepareToRecord() != nil {
             showsRecordingBlock = true
             return
         }
         showsRecordingBlock = false
-        let recorder = model.recorder
-        let transcriber = model.transcriber
+        capture.onSilence = { Task { _ = await finishRecording(save: true) } }
         do {
-            try await recorder.start()
-        } catch let error as RecorderError {
-            if error == .permissionDenied { model.conditions.microphone = .denied }
-            if error == .storageFull { model.conditions.storageFull = true }
-            showsRecordingBlock = RecordingBlock(model.conditions) != nil
+            try await capture.start(recorder: model.recorder, transcriber: model.transcriber)
+        } catch VoiceCapture.StartError.microphoneOff {
+            model.conditions.microphone = .denied
+            showsRecordingBlock = true
+            return
+        } catch VoiceCapture.StartError.storageFull {
+            model.conditions.storageFull = true
+            showsRecordingBlock = true
             return
         } catch {
             return
         }
-        transcript = TranscriptUpdate(settled: "")
-        levels = []
         mode = .recording
-        recordTasks = [
-            Task {
-                for await level in recorder.levels() {
-                    levels.append(level)
-                    if levels.count > 60 { levels.removeFirst(levels.count - 60) }
-                }
-            },
-            Task {
-                do {
-                    for try await update in transcriber.live() { transcript = update }
-                } catch {
-                    // Words can still come from the saved audio below.
-                }
-            },
-        ]
     }
 
-    /// Stop the recorder. Saves the note (words + duration) unless switching to typing; returns the words so far.
+    /// Stop the take. Saves the note (words + duration) unless switching to typing; returns the words.
     private func finishRecording(save: Bool) async -> String {
-        recordTasks.forEach { $0.cancel() }
-        recordTasks = []
-        let spoken = (transcript?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard mode == .recording else { return "" }
+        capture.onSilence = nil
+        let take = await capture.stop()
         mode = .resting
-        transcript = nil
-        guard let recording = try? await model.recorder.stop() else { return spoken }
-        guard save else { return spoken }
-        var text = spoken
-        if text.isEmpty {
-            text = ((try? await model.transcriber.transcribe(recording)) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if save, take.recording != nil || !take.transcript.isEmpty {
+            model.addNote(take.transcript, duration: take.recording?.duration)
+            Feedback.announce("Note saved")
         }
-        model.addNote(text, duration: recording.duration)
-        return spoken
+        // A note keeps its words and length; the audio file isn't referenced, so don't leave it behind.
+        VoiceStorage.shared.delete(take.recording?.fileName)
+        return take.transcript
     }
 
     // MARK: Typing (C10, and Change step)
