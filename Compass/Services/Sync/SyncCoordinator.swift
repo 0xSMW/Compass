@@ -216,7 +216,9 @@ final class SyncCoordinator {
         state.wipedAt = merged.wipedAt
         if newWipe { state.appliedWipe = merged.wipedAt }
 
-        if newWipe && merged.snapshot.isBlank {
+        // An old wipe a fresh install hears about for the first time has nothing here to erase.
+        let lostLocalData = newWipe && merged.wipedAt.map { before.keepingOnly(createdSince: $0) != before } == true
+        if lostLocalData && merged.snapshot.isBlank {
             // "Delete everything" on another device and nothing made here since: erase here too.
             state.tombstones = []
             DataEraser.eraseLocalData()
@@ -235,7 +237,7 @@ final class SyncCoordinator {
             // Our envelope should now carry the merged result too.
             pushSoon()
         }
-        if newWipe {
+        if lostLocalData {
             // Only what this device made after the wipe is left; open wherever that leads.
             model.goToEntry()
         } else if before.goal == nil, merged.snapshot.goal != nil, Self.isOnboarding(model.current) {
