@@ -15,24 +15,54 @@ public struct CloudAssistConfiguration: Hashable, Sendable {
         self.timeout = timeout
     }
 
-    /// Parses a configured string. Empty, unexpanded (`$(…)`) or non-http(s) values mean "not configured".
+    /// Parses a configured string. Empty, unexpanded (`$(…)`) or non-https values mean "not configured":
+    /// transcripts and goals never travel over plain http.
     public init(endpointString: String?, timeout: TimeInterval = 20) {
-        let trimmed = (endpointString ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        var url: URL?
-        if !trimmed.isEmpty, !trimmed.contains("$("), let u = URL(string: trimmed),
-           let scheme = u.scheme?.lowercased(), scheme == "https" || scheme == "http", u.host != nil {
-            url = u
-        }
-        self.init(endpoint: url, timeout: timeout)
+        self.init(endpoint: Self.httpsURL(endpointString), timeout: timeout)
     }
+
+    /// The URL if the string is an absolute https URL with a host, else nil.
+    public static func httpsURL(_ string: String?) -> URL? {
+        let trimmed = (string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains("$("), let u = URL(string: trimmed),
+              u.scheme?.lowercased() == "https", let host = u.host, !host.isEmpty else { return nil }
+        return u
+    }
+
+    /// True when a cloud endpoint is set for this build. Without one, Cloud help can't do anything and
+    /// the app says so where the switch lives (A7, H1).
+    public var isConfigured: Bool { endpoint != nil }
 
     public static let none = CloudAssistConfiguration(endpoint: nil)
 }
 
-/// A response the client couldn't use (non-2xx, malformed JSON). Callers fall back to "no summary".
+/// A response the client couldn't use (non-2xx, malformed JSON). Callers fall back to "no summary";
+/// this is never shown as "Offline" (see `CloudAssistFailure`).
 public enum HTTPCloudAssistError: Error, Equatable, Sendable {
     case badStatus(Int)
     case malformedResponse
+    /// The endpoint isn't https (a configuration built in code bypassed `httpsURL`).
+    case insecureEndpoint
+}
+
+/// How a cloud-help call failed, as the app treats it.
+public enum CloudAssistFailure: Equatable, Sendable {
+    /// Switch off or no endpoint: plain transcripts, no ideas.
+    case disabled
+    /// No network: keep the request and retry when the connection comes back (D6).
+    case offline
+    /// The server answered badly (HTTP error, unreadable JSON) or refused: fall back to no summary or
+    /// idea. Not retried automatically and never shown as offline.
+    case server
+
+    public init(_ error: Error) {
+        switch error {
+        case CloudAssistError.disabled: self = .disabled
+        case CloudAssistError.offline: self = .offline
+        case let url as URLError where HTTPCloudAssist.isOffline(url): self = .offline
+        default: self = .server
+        }
+    }
 }
 
 /// The real `CloudAssist`: JSON over HTTPS to a private model endpoint. Only text is sent (never audio).
@@ -66,6 +96,9 @@ public final class HTTPCloudAssist: CloudAssist, @unchecked Sendable {
     }
 
     public var isEnabled: Bool { switchOn && configuration.endpoint != nil }
+
+    /// An endpoint is configured for this build (independent of the switch).
+    public var isConfigured: Bool { configuration.isConfigured }
 
     // MARK: CloudAssist
 
@@ -122,6 +155,7 @@ public final class HTTPCloudAssist: CloudAssist, @unchecked Sendable {
 
     func request(_ path: String, body: Data) throws -> URLRequest {
         guard switchOn, let base = configuration.endpoint else { throw CloudAssistError.disabled }
+        guard base.scheme?.lowercased() == "https" else { throw HTTPCloudAssistError.insecureEndpoint }
         var req = URLRequest(url: base.appendingPathComponent(path), timeoutInterval: configuration.timeout)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -151,7 +185,8 @@ public final class HTTPCloudAssist: CloudAssist, @unchecked Sendable {
         }
     }
 
-    static func isOffline(_ error: URLError) -> Bool {
+    /// Network-level failures that mean "no connection right now". Anything else is a server problem.
+    public static func isOffline(_ error: URLError) -> Bool {
         switch error.code {
         case .notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotFindHost, .cannotConnectToHost,
              .dnsLookupFailed, .dataNotAllowed, .internationalRoamingOff, .callIsActive:

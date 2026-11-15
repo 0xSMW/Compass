@@ -89,16 +89,29 @@ public struct PlannedReminder: Hashable, Sendable {
     public var date: Date
     /// Notification body. The title is the app name ("Compass"), added by the system.
     public var body: String
+    /// Repeats every week on `weekday` at `time` (a repeating calendar trigger), so reminders keep
+    /// coming while the app isn't opened. `date` is then the first fire date.
+    public var repeatsWeekly: Bool
+    /// Gregorian weekday (1 = Sunday … 7 = Saturday) of `day`.
+    public var weekday: Int
 
-    /// Stable identifier, e.g. "compass.morning.2026-11-10".
-    public var identifier: String { "\(NotificationPlanner.identifierPrefix)\(kind.rawValue).\(day)" }
+    /// Stable identifier: "compass.morning.2026-11-10" for a one-off, "compass.morning.weekly.3" for a
+    /// weekly repeat (one per weekday, so re-planning replaces it in place).
+    public var identifier: String {
+        repeatsWeekly
+            ? "\(NotificationPlanner.identifierPrefix)\(kind.rawValue).weekly.\(weekday)"
+            : "\(NotificationPlanner.identifierPrefix)\(kind.rawValue).\(day)"
+    }
 
-    public init(kind: ReminderKind, day: DayKey, time: TimeOfDay, date: Date, body: String) {
+    public init(kind: ReminderKind, day: DayKey, time: TimeOfDay, date: Date, body: String,
+                repeatsWeekly: Bool = false, weekday: Int = 0) {
         self.kind = kind
         self.day = day
         self.time = time
         self.date = date
         self.body = body
+        self.repeatsWeekly = repeatsWeekly
+        self.weekday = weekday
     }
 }
 
@@ -142,6 +155,51 @@ public struct NotificationPlanner: Sendable {
             if evening > now, day?.reflection == nil, let body = Self.body(for: .evening, goal: goal, day: day) {
                 result.append(PlannedReminder(kind: .evening, day: key, time: rhythm.evening, date: evening, body: body))
             }
+        }
+        return result
+    }
+
+    /// What the app hands to UNUserNotificationCenter: reminders that keep firing while the app is
+    /// closed. One weekly repeating reminder per weekday and kind (14 requests, well under iOS's 64):
+    /// - Morning: the goal, every day. Only today's is left out, when the morning was already handled
+    ///   before its time (it returns when the app next re-plans).
+    /// - Evening: today, a one-off with today's step (the text changes daily, so it can't repeat) and no
+    ///   reminder once reflected; every other weekday repeats the D2 question.
+    /// The app re-plans on every change, on each foreground and from a background refresh, so the step
+    /// text and handled days stay current; when it can't, the weekly repeats still arrive.
+    public func schedule(snapshot: CompassSnapshot, now: Date) -> [PlannedReminder] {
+        guard snapshot.settings.notificationsEnabled, let goal = snapshot.goal, goal.status == .active else { return [] }
+        let rhythm = snapshot.settings.rhythm
+        let today = DayKey(now, calendar: calendar)
+        var result: [PlannedReminder] = []
+        for offset in 0..<7 {
+            let key = today.adding(days: offset, calendar: calendar)
+            let day = snapshot.day(key)
+            let weekday = calendar.component(.weekday, from: key.date(in: calendar, hour: 12, minute: 0))
+
+            func firstFire(_ time: TimeOfDay) -> Date {
+                let date = key.date(in: calendar, hour: time.hour, minute: time.minute)
+                return date > now ? date : key.adding(days: 7, calendar: calendar).date(in: calendar, hour: time.hour, minute: time.minute)
+            }
+
+            let morning = key.date(in: calendar, hour: rhythm.morning.hour, minute: rhythm.morning.minute)
+            let handledEarly = offset == 0 && morning > now && (day?.morningHandled ?? false)
+            if !handledEarly {
+                result.append(PlannedReminder(kind: .morning, day: key, time: rhythm.morning, date: firstFire(rhythm.morning),
+                                              body: goal.text, repeatsWeekly: true, weekday: weekday))
+            }
+
+            let evening = key.date(in: calendar, hour: rhythm.evening.hour, minute: rhythm.evening.minute)
+            if offset == 0, evening > now {
+                if day?.reflection != nil { continue }
+                if let title = day?.step?.title {
+                    result.append(PlannedReminder(kind: .evening, day: key, time: rhythm.evening, date: evening,
+                                                  body: title, weekday: weekday))
+                    continue
+                }
+            }
+            result.append(PlannedReminder(kind: .evening, day: key, time: rhythm.evening, date: firstFire(rhythm.evening),
+                                          body: Self.noStepEveningBody, repeatsWeekly: true, weekday: weekday))
         }
         return result
     }

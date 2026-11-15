@@ -19,6 +19,7 @@ private struct SystemServicesModifier: ViewModifier {
             .task { SystemServices.shared.start(model: model) }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { Task { await SystemServices.shared.refresh() } }
+                if phase == .background, model.fixture == nil { ReminderRefresh.schedule() }
             }
             .onChange(of: model.snapshot) { _, _ in SystemServices.shared.scheduleReminders() }
     }

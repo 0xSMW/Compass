@@ -22,6 +22,6 @@ extension AppModel {
         guard let goal else { return .a1 }
         let engine = DayEngine(calendar: calendar)
         let firstWeek = engine.goalDayNumber(goal: goal, today: todayKey) <= engine.firstWeekLength
-        return firstWeek || !settings.cloudAssist ? .b4 : .b3
+        return firstWeek || !cloudHelpOn ? .b4 : .b3
     }
 }

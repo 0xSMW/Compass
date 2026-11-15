@@ -25,9 +25,22 @@ extension TranscriptUpdate {
 
 /// "Stops on silence": once words have landed, a pause of `silence` seconds ends the recording.
 /// Never stops before anything was said (except at `maxDuration`).
+///
+/// Voice is judged against the room, not a fixed level. The detector tracks the noise floor: it falls
+/// quickly to quieter levels (the gaps between words) and climbs slowly, at `risePerSecond`, through
+/// steady sound. A level counts as voice when it is `margin` above that floor (and at least
+/// `threshold`, at most `ceiling`). Levels use the recorder's 0...1 scale (-50…-5 dBFS, 0.1 ≈ 4.5 dB):
+/// the default margin 0.15 is about 7 dB. In a silent room the bar is `threshold`-ish; in a café the bar
+/// rises with the hum within a few seconds, so a pause still ends the take.
 public struct SilenceDetector: Hashable, Sendable {
-    /// Input level (0...1) that counts as voice.
+    /// Lowest level that ever counts as voice (a silent room).
     public var threshold: Float
+    /// How far above the noise floor a level must be to count as voice.
+    public var margin: Float
+    /// Highest bar for voice, however loud the room. Words from the recogniser always count as voice.
+    public var ceiling: Float
+    /// How fast the floor can climb through steady sound (level units per second).
+    public var risePerSecond: Float
     /// Seconds of quiet after speech that end the recording.
     public var silence: TimeInterval
     /// Hard limit for one recording.
@@ -35,17 +48,39 @@ public struct SilenceDetector: Hashable, Sendable {
 
     public private(set) var startedAt: TimeInterval?
     public private(set) var lastVoiceAt: TimeInterval?
+    /// Estimated level of the room without speech. Starts as a silent room.
+    public private(set) var noiseFloor: Float = 0
+    private var lastSampleAt: TimeInterval?
 
-    public init(threshold: Float = 0.12, silence: TimeInterval = 2.5, maxDuration: TimeInterval = 300) {
+    /// Share of the gap closed per sample when the level drops below the floor.
+    static let fallRate: Float = 0.5
+
+    public init(threshold: Float = 0.12, margin: Float = 0.15, ceiling: Float = 0.8, risePerSecond: Float = 0.05,
+                silence: TimeInterval = 2.5, maxDuration: TimeInterval = 300) {
         self.threshold = threshold
+        self.margin = margin
+        self.ceiling = ceiling
+        self.risePerSecond = risePerSecond
         self.silence = silence
         self.maxDuration = maxDuration
     }
 
+    /// The level that counts as voice right now.
+    public var voiceThreshold: Float { min(ceiling, max(threshold, noiseFloor + margin)) }
+
+    public func isVoice(_ level: Float) -> Bool { level >= voiceThreshold }
+
     /// Feed one input level sampled at `t` (seconds, any monotonic clock).
     public mutating func feed(level: Float, at t: TimeInterval) {
         if startedAt == nil { startedAt = t }
-        if level >= threshold { lastVoiceAt = t }
+        if isVoice(level) { lastVoiceAt = t }
+        let dt = Float(max(0, t - (lastSampleAt ?? t)))
+        lastSampleAt = t
+        if level < noiseFloor {
+            noiseFloor += (level - noiseFloor) * Self.fallRate
+        } else {
+            noiseFloor = min(level, noiseFloor + risePerSecond * dt)
+        }
     }
 
     /// New words from the recogniser also count as voice.
@@ -226,6 +261,21 @@ public enum ReflectionRules {
             r.summaryState = .waitingForNetwork
         }
         return r
+    }
+
+    /// A failed summary call, by kind (`CloudAssistFailure`):
+    /// - offline: wait for the network (D6); the app retries on reconnect;
+    /// - disabled, or a server/decoding error: the plain transcript stands, never "Offline".
+    public static func applying(summaryError error: Error, to r: Reflection) -> Reflection {
+        switch CloudAssistFailure(error) {
+        case .offline: return applying(summary: .failure(.offline), to: r)
+        case .disabled, .server: return applying(summary: .failure(.disabled), to: r)
+        }
+    }
+
+    /// A reflection waiting for the network (D6) that a reconnect should retry.
+    public static func waitsForNetwork(_ r: Reflection?) -> Bool {
+        r?.summaryState == .waitingForNetwork
     }
 
     /// "Type a summary" (D6b) or the pen (D5): typed text becomes the summary; the recording stays.

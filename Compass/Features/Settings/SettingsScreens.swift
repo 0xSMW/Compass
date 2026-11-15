@@ -54,17 +54,33 @@ struct SettingsListView: View {
                         ListRow(title: "Start with", value: s.input == .voice ? "Voice" : "Typing", action: {
                             model.updateSettings { $0.input = $0.input == .voice ? .typing : .voice }
                         })
-                        ListRow(title: "Cloud help") {
-                            CompassSwitch(label: "Cloud help", isOn: Binding(
-                                get: { model.settings.cloudAssist },
-                                set: { model.setCloudHelp($0) }
-                            ))
+                        if model.cloudHelpConfigured {
+                            ListRow(title: "Cloud help") {
+                                CompassSwitch(label: "Cloud help", isOn: Binding(
+                                    get: { model.settings.cloudAssist },
+                                    set: { model.setCloudHelp($0) }
+                                ))
+                            }
+                        } else {
+                            // No endpoint in this build: say so instead of a switch that does nothing.
+                            ListRow(title: "Cloud help", value: CloudHelpCopy.notSetUpValue)
+                                .accessibilityHint(CloudHelpCopy.notSetUpFootnote)
                         }
-                        ListRow(title: "Export everything", action: { export = ExportItems(urls: DataExport.makeExport(model.snapshot)) }) { chevron }
+                        ListRow(title: "Export everything", action: { startExport() }) { chevron }
                         ListRow(title: "Delete everything", tint: .destructive, action: { model.replace(with: .h2) })
                             .overlay(alignment: .bottom) { Rectangle().fill(Color.line).frame(height: 1) }
                     }
                     .padding(.top, Space.m)
+
+                    if !model.cloudHelpConfigured {
+                        Text(CloudHelpCopy.notSetUpFootnote)
+                            .compassFont(.caption)
+                            .foregroundStyle(.ink3)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, Space.s)
+                            .accessibilityHidden(true) // read as the Cloud help row's hint
+                    }
                 }
                 .padding(.horizontal, Space.inset)
                 .padding(.bottom, Space.xl)
@@ -90,12 +106,15 @@ struct SettingsListView: View {
                            onCancel: { timeSheet = nil })
             }
         }
-        .sheet(item: $export) { items in
-            ExportShareSheet(items: items.urls).ignoresSafeArea()
-        }
+        .exportSheet($export)
     }
 
     private var chevron: some View { Icon(.right, size: IconSize.s).foregroundStyle(.ink3) }
+
+    private func startExport() {
+        let snapshot = model.snapshot
+        Task { export = ExportItems(urls: await DataExport.prepare(snapshot)) }
+    }
 
     private func leave() {
         if model.canGoBack { model.back() } else { model.goToEntry() }
@@ -178,7 +197,7 @@ struct DeleteEverythingView: View {
                 }
                 .padding(.top, Space.xs)
                 Spacer(minLength: Space.s)
-                SecondaryButton("Export first") { export = ExportItems(urls: DataExport.makeExport(model.snapshot)) }
+                SecondaryButton("Export first") { startExport() }
                 PrimaryButton("Delete everything", role: .destructive) {
                     guard !deleting else { return }
                     deleting = true
@@ -191,9 +210,12 @@ struct DeleteEverythingView: View {
                     .padding(.bottom, 52)
             }
         }
-        .sheet(item: $export) { items in
-            ExportShareSheet(items: items.urls).ignoresSafeArea()
-        }
+        .exportSheet($export)
+    }
+
+    private func startExport() {
+        let snapshot = model.snapshot
+        Task { export = ExportItems(urls: await DataExport.prepare(snapshot)) }
     }
 
     /// "212 steps, 186 memos and 2 past goals, on this iPhone and in iCloud. This can’t be undone."
@@ -214,15 +236,30 @@ struct ExportItems: Identifiable {
     let urls: [URL]
 }
 
-/// The system share sheet for the export files.
+/// The system share sheet for the export. The temporary files go when it finishes or is dismissed.
 struct ExportShareSheet: UIViewControllerRepresentable {
     let items: [URL]
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
+        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        controller.completionWithItemsHandler = { _, _, _, _ in DataExport.cleanUp() }
+        return controller
     }
 
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+
+    static func dismantleUIViewController(_ controller: UIActivityViewController, coordinator: ()) {
+        DataExport.cleanUp()
+    }
+}
+
+extension View {
+    /// Share sheet for "Export everything" / "Export first", removing its temporary files afterwards.
+    func exportSheet(_ export: Binding<ExportItems?>) -> some View {
+        sheet(item: export, onDismiss: { DataExport.cleanUp() }) { items in
+            ExportShareSheet(items: items.urls).ignoresSafeArea()
+        }
+    }
 }
 
 /// "Sound and haptics": per device, so it lives in UserDefaults and drives `Feedback.enabled`.

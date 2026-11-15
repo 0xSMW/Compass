@@ -13,6 +13,9 @@ struct CompassApp: App {
                 .environment(model)
                 .preferredColorScheme(.dark)
         }
+        .backgroundTask(.appRefresh(ReminderRefresh.taskID)) {
+            await ReminderRefresh.run()
+        }
     }
 }
 

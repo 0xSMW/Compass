@@ -19,6 +19,7 @@ final class SystemServices {
     @ObservationIgnored private weak var model: AppModel?
     @ObservationIgnored private let scheduler = NotificationScheduler()
     @ObservationIgnored private let tapHandler = NotificationTapHandler()
+    @ObservationIgnored private let network = NetworkMonitor()
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var rescheduleTask: Task<Void, Never>?
     @ObservationIgnored private var started = false
@@ -52,6 +53,9 @@ final class SystemServices {
         observers.append(center.addObserver(forName: UIApplication.significantTimeChangeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.deviceClockChanged() }
         })
+        DataExport.cleanUp() // an export left behind by a killed share sheet
+        network.onChange = { [weak self] online in self?.networkChanged(online) }
+        network.start()
         Task { await refresh() }
     }
 
@@ -72,6 +76,14 @@ final class SystemServices {
 
         moveToEntryIfStale(model)
         scheduleReminders()
+        if network.isOnline { await model.retryCloudWorkAfterReconnect() }
+    }
+
+    /// Reachability flipped: keep `conditions.online` true to the phone and retry what waited (D6).
+    private func networkChanged(_ online: Bool) {
+        guard let model else { return }
+        if model.conditions.online != online { model.conditions.online = online }
+        if online { Task { await model.retryCloudWorkAfterReconnect() } }
     }
 
     private func deviceClockChanged() {

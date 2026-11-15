@@ -88,6 +88,16 @@ jobs:
             | tee build/build.log | grep -E "error:|warning: .*deprecated|BUILD|\*\*" || true
           grep -q "TEST BUILD SUCCEEDED" build/build.log || { grep -E "error:" -A3 build/build.log | head -200; exit 1; }
 
+      - name: Check privacy manifest and usage strings in the app bundle
+        run: |
+          set -euo pipefail
+          APP=$(find build/DerivedData/Build/Products -maxdepth 2 -name Compass.app | head -1)
+          test -f "$APP/PrivacyInfo.xcprivacy" || { echo "PrivacyInfo.xcprivacy missing from $APP"; exit 1; }
+          plutil -lint "$APP/PrivacyInfo.xcprivacy"
+          if /usr/libexec/PlistBuddy -c "Print :NSMicrophoneUsageDescription" "$APP/Info.plist" | grep -q "stays on this iPhone"; then
+            echo "Microphone usage string claims audio stays on the phone, but recordings sync to iCloud"; exit 1
+          fi
+
       - name: Run app unit tests (CompassTests)
         id: unit
         run: |

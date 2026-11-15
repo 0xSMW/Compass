@@ -90,28 +90,45 @@ final class VoicePlayback {
         if let levels { waveforms[fileName] = levels }
     }
 
+    /// Frames decoded per read: memory stays at one small buffer however long the memo is.
+    nonisolated static let readChunk: AVAudioFrameCount = 16_384
+    /// At most this many samples are measured per bar; the rest are skipped (RMS of a sparse sample is
+    /// indistinguishable at 20 bars and keeps a 5-minute memo cheap).
+    nonisolated static let samplesPerBar = 2_000
+
+    /// RMS per bar, read in chunks and sparsely sampled (never the whole file in memory).
     nonisolated static func readLevels(url: URL, bars: Int) -> [Float]? {
-        guard let file = try? AVAudioFile(forReading: url) else { return nil }
-        let frames = AVAudioFrameCount(file.length)
-        guard frames > 0, bars > 0,
-              let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: frames),
-              (try? file.read(into: buffer)) != nil,
-              let data = buffer.floatChannelData else { return nil }
-        let samples = data[0]
-        let count = Int(buffer.frameLength)
-        let chunk = max(1, count / bars)
-        var result: [Float] = []
-        for b in 0..<bars {
-            let start = b * chunk
-            guard start < count else { result.append(0); continue }
-            let end = min(count, start + chunk)
-            var sum: Float = 0
-            for i in start..<end { sum += samples[i] * samples[i] }
-            let rms = (sum / Float(end - start)).squareRoot()
-            let db = 20 * log10(max(rms, 0.000_01))
-            result.append(min(1, max(0.15, (db + 50) / 45)))
+        guard bars > 0, let file = try? AVAudioFile(forReading: url) else { return nil }
+        let total = file.length
+        guard total > 0,
+              let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: readChunk) else { return nil }
+        let step = max(1, Int(total / AVAudioFramePosition(bars * samplesPerBar)))
+        var sums = [Double](repeating: 0, count: bars)
+        var counts = [Int](repeating: 0, count: bars)
+        var position: AVAudioFramePosition = 0
+        while position < total {
+            do { try file.read(into: buffer, frameCount: readChunk) } catch { break }
+            let n = Int(buffer.frameLength)
+            guard n > 0, let samples = buffer.floatChannelData?[0] else { break }
+            // Continue the stride across chunk boundaries.
+            var i = Int((AVAudioFramePosition(step) - position % AVAudioFramePosition(step)) % AVAudioFramePosition(step))
+            while i < n {
+                let frame = position + AVAudioFramePosition(i)
+                let bar = min(bars - 1, Int(frame * AVAudioFramePosition(bars) / total))
+                let x = Double(samples[i])
+                sums[bar] += x * x
+                counts[bar] += 1
+                i += step
+            }
+            position += AVAudioFramePosition(n)
         }
-        return result
+        guard counts.contains(where: { $0 > 0 }) else { return nil }
+        return (0..<bars).map { b in
+            guard counts[b] > 0 else { return 0 }
+            let rms = Float((sums[b] / Double(counts[b])).squareRoot())
+            let db = 20 * log10(max(rms, 0.000_01))
+            return min(1, max(0.15, (db + 50) / 45))
+        }
     }
 }
 

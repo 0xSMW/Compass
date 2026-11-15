@@ -21,7 +21,7 @@ Packages/CompassCore/           Pure Swift, Linux-buildable. `swift test` runs h
   Tests/CompassCoreTests/       DayEngine, Store, History, Fixture tests
 Compass/
   App/                          CompassApp + RootView, AppModel, LaunchOptions      (shared)
-  Navigation/                   ScreenRegistry (ID → flow), ScreenStub, TodayStub  (shared)
+  Navigation/                   ScreenRegistry (ID → flow), ScreenStub             (shared)
   DesignSystem/
     Tokens/                     Colors, Typography, Metrics (Space/Radius/ControlSize/IconSize/Motion),
                                 Icons (also compiled into the widget)

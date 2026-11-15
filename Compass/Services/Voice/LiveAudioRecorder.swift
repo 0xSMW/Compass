@@ -13,6 +13,12 @@ enum LiveVoiceError: Error, Equatable {
 /// - reports a normalised input level (0...1) for the waveform / level bar,
 /// - hands every buffer to consumers, so the on-device transcriber hears the same audio
 ///   without opening the microphone twice (`LiveSpeechTranscriber` registers as a consumer).
+///
+/// Interruptions end the take cleanly: a phone call or Siri (audio session interruption), the input
+/// going away (headset unplugged, Bluetooth mic lost), an engine configuration change or a media
+/// services reset finalise the m4a with everything said so far, finish the level stream (which
+/// `VoiceCapture` treats like a pause after speech, so the screen saves) and keep the `Recording`
+/// for the next `stop()`. Nothing that was said is thrown away.
 final class LiveAudioRecorder: AudioRecorder, @unchecked Sendable {
     typealias BufferHandler = (AVAudioPCMBuffer) -> Void
 
@@ -36,9 +42,28 @@ final class LiveAudioRecorder: AudioRecorder, @unchecked Sendable {
     private var framesWritten: AVAudioFramePosition = 0
     private var levelContinuations: [UUID: AsyncStream<Float>.Continuation] = [:]
     private var consumers: [UUID: Consumer] = [:]
+    /// A take the system ended (interruption, route lost); handed out by the next `stop()`.
+    private var endedTake: Recording?
+    private var observers: [NSObjectProtocol] = []
+
+    /// Why the system ended a take (for logs and tests).
+    enum EndReason: Equatable {
+        case interruption
+        case routeLost
+        case engineReconfigured
+        case mediaServicesReset
+    }
+
+    /// The last reason the system ended a take, if any.
+    private(set) var lastEndReason: EndReason?
 
     init(storage: VoiceStorage = .shared) {
         self.storage = storage
+        observeSession()
+    }
+
+    deinit {
+        for token in observers { NotificationCenter.default.removeObserver(token) }
     }
 
     // MARK: Permission
@@ -81,6 +106,10 @@ final class LiveAudioRecorder: AudioRecorder, @unchecked Sendable {
         guard permission == .granted else { throw RecorderError.permissionDenied }
         guard storage.hasRoomForRecording else { throw RecorderError.storageFull }
         if isRecording { _ = try? await stop() }
+        lock.withLock {
+            endedTake = nil
+            lastEndReason = nil
+        }
 
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .duckOthers])
@@ -135,6 +164,7 @@ final class LiveAudioRecorder: AudioRecorder, @unchecked Sendable {
             throw error
         }
         lock.withLock { self.engine = engine }
+        observeEngine(engine)
     }
 
     func levels() -> AsyncStream<Float> {
@@ -154,7 +184,26 @@ final class LiveAudioRecorder: AudioRecorder, @unchecked Sendable {
     }
 
     func stop() async throws -> Recording {
-        guard let engine = lock.withLock({ self.engine }) else { throw RecorderError.notRecording }
+        if let recording = finishTake() { return recording }
+        // The system already ended this take (call, route lost): hand back what was said.
+        if let ended = lock.withLock({ () -> Recording? in
+            defer { endedTake = nil }
+            return endedTake
+        }) { return ended }
+        throw RecorderError.notRecording
+    }
+
+    /// Stop the engine, finalise the file and end every stream. nil when nothing is recording.
+    private func finishTake() -> Recording? {
+        guard let engine = lock.withLock({ () -> AVAudioEngine? in
+            let e = self.engine
+            self.engine = nil // claim it, so a concurrent interruption and stop() can't both finish it
+            return e
+        }) else { return nil }
+        if let token = lock.withLock({ () -> NSObjectProtocol? in
+            defer { engineObserver = nil }
+            return engineObserver
+        }) { NotificationCenter.default.removeObserver(token) }
         // Stop the tap first so no buffer is written while the file closes.
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
@@ -172,11 +221,56 @@ final class LiveAudioRecorder: AudioRecorder, @unchecked Sendable {
         state.3.forEach { $0.finish() }
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
 
-        guard let take = state.0 else { throw RecorderError.notRecording }
+        guard let take = state.0 else { return nil }
         let duration = take.sampleRate > 0 && state.1 > 0
             ? Double(state.1) / take.sampleRate
             : Date().timeIntervalSince(take.startedAt)
         return Recording(id: take.id, duration: duration, fileName: take.fileName, createdAt: take.startedAt)
+    }
+
+    // MARK: Interruptions and route changes
+
+    private var engineObserver: NSObjectProtocol?
+
+    private func observeSession() {
+        let center = NotificationCenter.default
+        let session = AVAudioSession.sharedInstance()
+        observers.append(center.addObserver(forName: AVAudioSession.interruptionNotification, object: session, queue: nil) { [weak self] note in
+            guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  AVAudioSession.InterruptionType(rawValue: raw) == .began else { return }
+            // A call, Siri or an alarm took the microphone: keep what was said and end the take.
+            self?.systemEndedTake(.interruption)
+        })
+        observers.append(center.addObserver(forName: AVAudioSession.routeChangeNotification, object: session, queue: nil) { [weak self] note in
+            guard let raw = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+                  let reason = AVAudioSession.RouteChangeReason(rawValue: raw) else { return }
+            switch reason {
+            case .oldDeviceUnavailable, .noSuitableRouteForCategory:
+                // The headset or Bluetooth mic went away mid-sentence.
+                self?.systemEndedTake(.routeLost)
+            default:
+                break
+            }
+        })
+        observers.append(center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: session, queue: nil) { [weak self] _ in
+            self?.systemEndedTake(.mediaServicesReset)
+        })
+    }
+
+    /// The engine stops itself when its input format changes (a new route). End the take there too.
+    private func observeEngine(_ engine: AVAudioEngine) {
+        let token = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { [weak self] _ in
+            self?.systemEndedTake(.engineReconfigured)
+        }
+        lock.withLock { engineObserver = token }
+    }
+
+    private func systemEndedTake(_ reason: EndReason) {
+        guard let recording = finishTake() else { return }
+        lock.withLock {
+            endedTake = recording
+            lastEndReason = reason
+        }
     }
 
     // MARK: Tap

@@ -161,15 +161,14 @@ extension AppModel {
         }
 
         guard let current = today?.reflection, current.createdAt == stamp, ReflectionRules.needsSummary(current) else { return }
-        let result: Result<String, CloudAssistError>
         do {
-            result = .success(try await cloud.summarize(transcript: current.transcript, goal: goal))
-        } catch let error as CloudAssistError {
-            result = .failure(error)
+            let summary = try await cloud.summarize(transcript: current.transcript, goal: goal)
+            updateReflection(createdAt: stamp) { ReflectionRules.applying(summary: .success(summary), to: $0) }
         } catch {
-            result = .failure(.offline)
+            // Offline waits for the network (retried on reconnect, D6). Switch off, no endpoint, or a server
+            // or decoding error keeps the plain transcript; those are never shown as "Offline".
+            updateReflection(createdAt: stamp) { ReflectionRules.applying(summaryError: error, to: $0) }
         }
-        updateReflection(createdAt: stamp) { ReflectionRules.applying(summary: result, to: $0) }
     }
 
     /// Apply a change to today's reflection if it is still the same one (the user may have redone it).

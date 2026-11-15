@@ -56,9 +56,14 @@ targets:
           - InterTight-SemiBold.ttf
           - IBMPlexMono-Regular.ttf
           - IBMPlexMono-Medium.ttf
-        NSMicrophoneUsageDescription: Compass records your voice for your goal, notes and reflections. Audio stays on this iPhone.
-        NSSpeechRecognitionUsageDescription: Speech becomes text on this iPhone.
+        NSMicrophoneUsageDescription: Compass records your voice for your goal, notes and reflections. Recordings are kept on this iPhone and, when iCloud Drive is on, in your iCloud so your other devices have them.
+        NSSpeechRecognitionUsageDescription: Speech becomes text on this iPhone. Compass uses on-device recognition only.
         ITSAppUsesNonExemptEncryption: false
+        # Background app refresh re-plans the 07:00 / 21:00 reminders (ReminderRefresh in SystemMonitors.swift).
+        UIBackgroundModes:
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - app.compass.Compass.reminders
         # Cloud help endpoint (no secrets). Empty = cloud help reports .disabled. See CloudAssistEndpoint.swift.
         CompassCloudAssistEndpoint: $(COMPASS_CLOUD_ASSIST_ENDPOINT)
     settings:

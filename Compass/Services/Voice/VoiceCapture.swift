@@ -118,6 +118,10 @@ final class VoiceCapture {
             for await level in levelStream {
                 self?.feed(level)
             }
+            // The level stream only ends on its own when the recorder ended the take (a phone call, the
+            // headset unplugged). Save what was said, exactly as after a pause.
+            guard !Task.isCancelled, let self, self.state == .listening else { return }
+            self.onSilence?()
         }
         watchTask = Task { [weak self] in
             while !Task.isCancelled {

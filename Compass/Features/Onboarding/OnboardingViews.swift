@@ -529,15 +529,19 @@ struct OnboardingPrivacyView: View {
                         Icon(.cloud).foregroundStyle(.ink)
                         VStack(alignment: .leading, spacing: Space.xs) {
                             Text("Summaries and step ideas").compassFont(.body).onboardingWraps()
-                            Text("A private cloud model reads your notes, never trains on them. Off means plain transcripts, no ideas.")
+                            Text(model.cloudHelpConfigured
+                                 ? "A private cloud model reads your notes, never trains on them. Off means plain transcripts, no ideas."
+                                 : CloudHelpCopy.notSetUpCaption)
                                 .compassFont(.caption)
                                 .foregroundStyle(.ink3)
                                 .onboardingWraps()
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .accessibilityElement(children: .combine)
-                        CompassSwitch(label: "Cloud help", isOn: $draft.cloudAssist)
-                            .padding(.top, -6)
+                        if model.cloudHelpConfigured {
+                            CompassSwitch(label: "Cloud help", isOn: $draft.cloudAssist)
+                                .padding(.top, -6)
+                        }
                     }
                     line(.sync) { Text("History syncs through your iCloud.").compassFont(.body).onboardingWraps() }
                 }
