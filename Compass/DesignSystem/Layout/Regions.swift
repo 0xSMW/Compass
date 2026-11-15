@@ -161,17 +161,21 @@ private struct RegionModifier: ViewModifier {
     @Environment(\.screenMetrics) private var metrics
     let region: Region
 
-    func body(content: Content) -> some View {
-        var top = region.top.map(metrics.y)
-        var bottom = region.bottom.map(metrics.y)
+    /// Screen y of the region's top and bottom. The keyboard regions follow the keyboard.
+    private var span: (top: CGFloat?, bottom: CGFloat?) {
         switch region {
         case .aboveKeyboard:
-            (top, bottom) = metrics.aboveKeyboardSpan
+            let s = metrics.aboveKeyboardSpan
+            return (s.top, s.bottom)
         case .keyboard:
-            (top, bottom) = (metrics.keyboardY, metrics.size.height)
+            return (metrics.keyboardY, metrics.size.height)
         default:
-            break
+            return (region.top.map(metrics.y), region.bottom.map(metrics.y))
         }
+    }
+
+    func body(content: Content) -> some View {
+        let (top, bottom) = span
         let height: CGFloat? = {
             if let top, let bottom { return max(0, bottom - top) }
             return nil
