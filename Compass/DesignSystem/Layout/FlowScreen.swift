@@ -99,7 +99,8 @@ struct TodayScaffold<Header: View, Notes: View, Card: View, Dock: View, Overlay:
                         scrolled = isScrolled
                     }
                     .onScrollGeometryChange(for: Bool.self) { geo in
-                        geo.contentOffset.y + geo.containerSize.height < geo.contentSize.height - 1
+                        // The last 24 is padding: fade only once words are cut off.
+                        geo.contentOffset.y + geo.containerSize.height < geo.contentSize.height - Space.m - 1
                     } action: { _, isClipped in
                         clipped = isClipped
                     }

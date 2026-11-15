@@ -91,7 +91,7 @@ struct TodayView: View {
         case .c5:
             mode = .recording
             transcript = model.fixture?.transcript
-            levels = FakeAudioRecorder.designLevels
+            levels = Array(FakeAudioRecorder.designLevels.prefix(30))
         case .c6: mode = .options
         case .c10:
             mode = .typing(.note)
@@ -106,7 +106,7 @@ struct TodayView: View {
         VStack(alignment: .leading, spacing: 0) {
             if let goal = model.goal {
                 Text(goal.text)
-                    .compassFont(.title)
+                    .compassTightFont(.title)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
             }

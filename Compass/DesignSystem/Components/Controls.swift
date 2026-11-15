@@ -15,7 +15,7 @@ struct NotePill: View {
                 HStack(spacing: 3) {
                     ForEach(Array(levels.prefix(30).enumerated()), id: \.offset) { i, level in
                         RoundedRectangle(cornerRadius: 2)
-                            .fill(i < 24 ? Color.ink : Color.line)
+                            .fill(Color.ink)
                             .frame(width: 3, height: max(4, CGFloat(level) * 40))
                     }
                 }

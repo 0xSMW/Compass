@@ -58,7 +58,7 @@ struct SystemMicrophoneOffView: View {
             } else {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(model.goal?.text ?? "")
-                        .compassFont(.display)
+                        .compassTightFont(.display)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.isHeader)
                     Text("Who will you be today?")
@@ -260,7 +260,7 @@ struct SystemWidgetsView: View {
                 HStack(alignment: .top, spacing: Space.m) {
                     widget(data, .small)
                         .frame(width: 160, height: 160)
-                    appGrid(columns: 2, count: 4)
+                    appGrid(columns: 2, count: 4, rowSpacing: 28)
                 }
                 appGrid(columns: 4, count: 8)
             }
@@ -286,8 +286,8 @@ struct SystemWidgetsView: View {
         .background(Color.raised, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
     }
 
-    private func appGrid(columns: Int, count: Int) -> some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.m), count: columns), spacing: Space.m) {
+    private func appGrid(columns: Int, count: Int, rowSpacing: CGFloat = Space.m) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.m), count: columns), spacing: rowSpacing) {
             ForEach(0..<count, id: \.self) { _ in
                 RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.raised).frame(height: 64)
             }
