@@ -1,65 +1,46 @@
 import Foundation
 import CompassCore
 
-/// Where recordings live on disk. The voice services name files by recording; History matches a memo
-/// to its file by creation time (the moment recording stopped) within a second.
+/// The audio side of sync and History, on top of the voice services' `VoiceStorage`
+/// (`Application Support/Compass/Audio`): a reflection's file is `audioFileName`, a spoken note's file is
+/// `<note id>.m4a`. Files are write-once with unique names, so they sync without conflicts.
 enum MemoAudio {
-    static let extensions: Set<String> = ["m4a", "caf", "wav", "aac", "mp4"]
+    static let extensions: Set<String> = ["m4a", "caf", "wav", "aac"]
 
-    /// Folders the app may keep audio in (own sandbox and the App Group container).
-    static var directories: [URL] {
-        let fm = FileManager.default
-        var dirs: [URL] = []
-        for base in [fm.urls(for: .documentDirectory, in: .userDomainMask).first,
-                     fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first,
-                     SharedStorage.directory as URL?] {
-            guard let base else { continue }
-            dirs.append(base)
-            dirs.append(base.appendingPathComponent("Compass"))
-            dirs.append(base.appendingPathComponent("Compass/Audio"))
-            dirs.append(base.appendingPathComponent("Audio"))
-            dirs.append(base.appendingPathComponent("Recordings"))
-            dirs.append(base.appendingPathComponent("Compass/Recordings"))
-        }
-        return dirs
-    }
+    /// Recordings from the user's other devices land in the same folder, so playback finds them.
+    static var syncedAudioDirectory: URL { VoiceStorage.shared.directory }
 
-    /// Where recordings from the user's other devices land when they sync down.
-    static var syncedAudioDirectory: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Compass/Audio", isDirectory: true)
-    }
-
+    /// Every recording on this device.
     static func allFiles() -> [URL] {
-        let fm = FileManager.default
-        var seen = Set<String>()
-        var files: [URL] = []
-        for dir in directories {
-            guard let items = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.creationDateKey, .contentModificationDateKey]) else { continue }
-            for url in items where extensions.contains(url.pathExtension.lowercased()) && seen.insert(url.path).inserted {
-                files.append(url)
-            }
+        let dir = VoiceStorage.shared.directory
+        let items = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+        return items.filter { extensions.contains($0.pathExtension.lowercased()) }
+    }
+
+    /// The file behind a spoken note (`<note id>.m4a`).
+    static func fileName(for note: Note) -> String? {
+        note.isSpoken ? VoiceStorage.shared.fileName(for: note.id) : nil
+    }
+
+    /// Every audio file a day refers to.
+    static func fileNames(for day: Day) -> [String] {
+        day.reflectionVersions.compactMap(\.audioFileName) + day.notes.compactMap(fileName(for:))
+    }
+
+    /// E5: a set-aside version becomes a note (`Day.supersededNoteID`); give that note its own copy of
+    /// the recording under the note naming, so it stays playable everywhere. The original stays too.
+    static func keepRecordings(of versions: [Reflection]) {
+        let storage = VoiceStorage.shared
+        for r in versions {
+            guard let file = r.audioFileName, storage.exists(file) else { continue }
+            let target = storage.fileName(for: Day.supersededNoteID(for: r))
+            guard !storage.exists(target) else { continue }
+            try? FileManager.default.copyItem(at: storage.url(for: file), to: storage.url(for: target))
         }
-        return files
     }
 
-    /// The file recorded at `createdAt` (±2 s on its modification date), if it is on this device.
-    static func fileURL(createdAt: Date) -> URL? {
-        allFiles().min { distance($0, createdAt) < distance($1, createdAt) }.flatMap { distance($0, createdAt) <= 2 ? $0 : nil }
-    }
-
-    private static func distance(_ url: URL, _ date: Date) -> TimeInterval {
-        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .creationDateKey])
-        let d = values?.contentModificationDate ?? values?.creationDate ?? .distantPast
-        return abs(d.timeIntervalSince(date))
-    }
-
-    /// Remove the audio of a deleted day (E4).
+    /// E4: remove the recordings of a deleted day.
     static func deleteFiles(for day: Day) {
-        var moments = day.notes.compactMap { $0.isSpoken ? $0.createdAt : nil }
-        moments += day.reflectionVersions.compactMap { $0.duration != nil ? $0.createdAt : nil }
-        if let i = day.intention, i.duration != nil { moments.append(i.createdAt) }
-        for m in moments {
-            if let url = fileURL(createdAt: m) { try? FileManager.default.removeItem(at: url) }
-        }
+        for name in fileNames(for: day) { VoiceStorage.shared.delete(name) }
     }
 }

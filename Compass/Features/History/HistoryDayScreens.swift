@@ -9,7 +9,7 @@ struct HistoryDayView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dynamicTypeSize) private var dts
     let id: ScreenID
-    @State private var player = MemoPlayer()
+    private var playback: VoicePlayback { .shared }
 
     var body: some View {
         let key = model.historySelectedDay
@@ -45,20 +45,22 @@ struct HistoryDayView: View {
             .region(.custom(top: 128, bottom: 648))
 
             if let r = reflection, let duration = r.duration {
-                Player(duration: duration, isPlaying: player.isPlaying && player.playingID == r.createdAt,
+                Player(duration: duration, isPlaying: playback.isPlaying(r.audioFileName),
+                       levels: playback.waveform(for: r.audioFileName) ?? Array(FakeAudioRecorder.designLevels.prefix(20)),
                        showsRedo: false) {
-                    player.toggle(r.createdAt)
+                    playback.toggle(r.audioFileName)
                 }
                 .region(.player)
             }
 
             NavBar(
                 leading: .quietBack("This week") { model.back() },
-                trailing: .text("Edit", quiet: false) { model.go(.e4) }
+                trailing: .text("Edit", quiet: false) { model.go(.e4) },
+                scalesText: true
             )
             .region(.nav)
         }
-        .onDisappear { player.stop() }
+        .onDisappear { playback.stop() }
     }
 
     private func summaryText(_ day: Day?) -> String {
@@ -84,7 +86,7 @@ struct HistoryDayView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(notes) { note in
                         NoteRow(text: note.text, duration: note.duration) {
-                            if note.isSpoken { player.toggle(note.createdAt) }
+                            playback.toggle(MemoAudio.fileName(for: note))
                         }
                     }
                 }

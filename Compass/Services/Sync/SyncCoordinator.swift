@@ -34,9 +34,10 @@ struct SyncState: Codable, Equatable {
             .appendingPathComponent("Compass/sync-state.json")
     }
 
-    static func load() -> SyncState {
-        guard let data = try? Data(contentsOf: url), let s = try? JSONFileStore.decoder().decode(SyncState.self, from: data) else { return SyncState() }
-        return s
+    /// nil on first launch with sync (or after Delete everything cleared it).
+    static func load() -> SyncState? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONFileStore.decoder().decode(SyncState.self, from: data)
     }
 
     func save() {
@@ -59,7 +60,7 @@ final class SyncCoordinator {
     private weak var model: AppModel?
     private let drive = ICloudDrive()
     private let io = DispatchQueue(label: "app.compass.icloud", qos: .utility)
-    private var state = SyncState.load()
+    private var state: SyncState
     private var root: URL?
     private var query: NSMetadataQuery?
     private var pushTask: Task<Void, Never>?
@@ -71,6 +72,16 @@ final class SyncCoordinator {
 
     init(model: AppModel) {
         self.model = model
+        if let saved = SyncState.load() {
+            state = saved
+        } else {
+            // First sync on this install: data already here counts as current, so an old wipe marker
+            // or an older device can't erase it.
+            var fresh = SyncState()
+            if model.snapshot.goal != nil || !model.snapshot.days.isEmpty { fresh.lastLocalChange = Date() }
+            state = fresh
+            fresh.save()
+        }
     }
 
     func start() {
@@ -208,7 +219,7 @@ final class SyncCoordinator {
         let others = remote.filter { $0.deviceID != state.deviceID }
         guard let merged = SnapshotMerger.merge([local] + others) else { return }
 
-        if let wipe = merged.wipedAt, wipe > (state.appliedWipe ?? .distantPast) {
+        if let wipe = merged.wipedAt, wipe > (state.appliedWipe ?? .distantPast), wipe > state.lastLocalChange {
             // "Delete everything" on another device: erase here too.
             state.wipedAt = wipe
             state.appliedWipe = wipe
@@ -223,6 +234,7 @@ final class SyncCoordinator {
 
         state.tombstones = merged.tombstones
         state.wipedAt = merged.wipedAt
+        if let wipe = merged.wipedAt, wipe > (state.appliedWipe ?? .distantPast) { state.appliedWipe = wipe }
         state.save()
         if merged.snapshot != model.snapshot {
             applyingRemote = true

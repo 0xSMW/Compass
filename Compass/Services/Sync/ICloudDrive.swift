@@ -148,7 +148,7 @@ final class ICloudDrive: @unchecked Sendable {
         return status == .current || status == .downloaded
     }
 
-    /// Keep the recording's dates: History matches a memo to its file by when it was recorded.
+    /// Keep the recording's dates on the copy.
     private func copyDates(from source: URL, to target: URL) {
         guard let attrs = try? fm.attributesOfItem(atPath: source.path) else { return }
         var keep: [FileAttributeKey: Any] = [:]

@@ -1,6 +1,5 @@
 import SwiftUI
 import Observation
-import AVFoundation
 import CompassCore
 
 // MARK: - Selection (which day / week / goal History is showing)
@@ -89,6 +88,10 @@ extension AppModel {
 
     /// E5 "Use this summary" / "Keep both".
     func resolveConflict(_ key: DayKey, keeping chosen: Reflection?) {
+        let versions = snapshot.day(key)?.reflectionVersions ?? []
+        let shown = chosen ?? snapshot.day(key)?.reflection
+        // Both recordings are kept: the set-aside version's audio gets its note's file name too.
+        MemoAudio.keepRecordings(of: versions.filter { $0.createdAt != shown?.createdAt })
         snapshot.updateDay(key) { day in
             if let chosen { day.resolveConflict(keeping: chosen) } else { day.keepBothVersions() }
         }
@@ -177,46 +180,4 @@ struct HistoryLabelFont: ViewModifier {
 
 extension View {
     func historyLabelFont() -> some View { modifier(HistoryLabelFont()) }
-}
-
-// MARK: - Memo audio playback (E2, E6)
-
-/// Finds and plays the audio behind a day's evening entry and notes. Audio stays on the phone (and in
-/// the user's iCloud when sync is on); files are looked up in the app's recording folders by the
-/// recording's id or creation time. Screenshots have no files: the player simply shows the duration.
-@MainActor
-@Observable
-final class MemoPlayer: NSObject, AVAudioPlayerDelegate {
-    private(set) var isPlaying = false
-    private(set) var playingID: Date?
-    @ObservationIgnored private var player: AVAudioPlayer?
-
-    func toggle(_ createdAt: Date) {
-        if isPlaying, playingID == createdAt { stop(); return }
-        stop()
-        guard let url = MemoAudio.fileURL(createdAt: createdAt) else { return }
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
-            try AVAudioSession.sharedInstance().setActive(true)
-            let p = try AVAudioPlayer(contentsOf: url)
-            p.delegate = self
-            p.play()
-            player = p
-            playingID = createdAt
-            isPlaying = true
-        } catch {
-            stop()
-        }
-    }
-
-    func stop() {
-        player?.stop()
-        player = nil
-        isPlaying = false
-        playingID = nil
-    }
-
-    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        Task { @MainActor in self.stop() }
-    }
 }
