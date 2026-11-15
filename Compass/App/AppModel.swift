@@ -10,12 +10,16 @@ import WidgetKit
 ///
 /// Flow folders add their own actions as `extension AppModel` in their folder; keep this file to
 /// shared state and cross-flow navigation.
+///
+/// **One save path.** `snapshot` is read-only outside this file. Every change goes through
+/// `mutate(_:)` (or `commit(_:origin:)` for a whole snapshot), which saves to the store, tells sync
+/// about local changes and reloads the widget timelines. Never save the store directly.
 @MainActor
 @Observable
 final class AppModel {
     // MARK: State
 
-    var snapshot: CompassSnapshot
+    private(set) var snapshot: CompassSnapshot
     var conditions: SystemConditions
     var calendar: Calendar
     /// Present when launched with `-screen`; carries transient state (live words, selected day).
@@ -32,9 +36,12 @@ final class AppModel {
     let transcriber: SpeechTranscriber
     let cloud: CloudAssist
     @ObservationIgnored private let clock: () -> Date
+    /// What happens after every save (widget reload, sync notification). Spies replace it in tests.
+    @ObservationIgnored let effects: SnapshotEffects
 
     init(launch: LaunchOptions = .parse()) {
         self.launch = launch
+        effects = launch.screen == nil ? .live : .none
         if let id = launch.screen {
             let f = Fixtures.fixture(for: id)
             fixture = f
@@ -57,7 +64,6 @@ final class AppModel {
             calendar = SharedStorage.calendar(for: loaded.settings)
             clock = { Date() }
             store = fileStore
-            // Real AVAudioRecorder / SFSpeechRecognizer / cloud clients replace these fakes later.
             let voice = LiveVoiceServices.make() // LiveServices+Voice.swift
             recorder = voice.recorder
             transcriber = voice.transcriber
@@ -66,6 +72,26 @@ final class AppModel {
             path = [entryScreen]
             LiveSync.start(with: self)
         }
+    }
+
+    /// For unit tests: a live-path model (no fixture) on the given store, with fakes and a fixed clock.
+    init(snapshot: CompassSnapshot, store: Store, calendar: Calendar, now: @escaping () -> Date,
+         effects: SnapshotEffects, conditions: SystemConditions = .normal,
+         recorder: AudioRecorder = FakeAudioRecorder(), transcriber: SpeechTranscriber = FakeSpeechTranscriber(),
+         cloud: CloudAssist = FakeCloudAssist(isEnabled: false)) {
+        launch = LaunchOptions()
+        fixture = nil
+        self.snapshot = snapshot
+        self.conditions = conditions
+        self.calendar = calendar
+        clock = now
+        self.store = store
+        self.recorder = recorder
+        self.transcriber = transcriber
+        self.cloud = cloud
+        self.effects = effects
+        path = []
+        path = [entryScreen]
     }
 
     // MARK: Derived
@@ -112,12 +138,41 @@ final class AppModel {
     /// Recompute the entry screen (after the clock crosses noon/21:00 or data changes).
     func goToEntry() { reset(to: entryScreen) }
 
-    // MARK: Domain actions (shared by several flows)
+    // MARK: Saving (the only way to change the snapshot)
+
+    /// Change the snapshot, then save, notify sync and reload the widget (if anything changed).
+    func mutate(_ body: (inout CompassSnapshot) -> Void) {
+        var next = snapshot
+        body(&next)
+        commit(next)
+    }
+
+    /// Replace the whole snapshot (restore, sync merge, the widget's copy) and save it.
+    /// - `.local`: this device changed it, so sync pushes it as this device's change.
+    /// - `.remote`: a merge from other devices; sync already knows, so it is not told again.
+    func commit(_ next: CompassSnapshot, origin: SnapshotOrigin = .local) {
+        guard next != snapshot else { return }
+        snapshot = next
+        save(origin: origin)
+    }
+
+    private func save(origin: SnapshotOrigin) {
+        try? store.save(snapshot)
+        if origin == .local { effects.didChangeLocally() }
+        effects.reloadWidgets()
+    }
 
     func updateToday(_ body: (inout Day) -> Void) {
-        snapshot.updateDay(todayKey, body)
-        persist()
+        let key = todayKey
+        mutate { $0.updateDay(key, body) }
     }
+
+    /// Change any day (History edits). Same save path as `updateToday`.
+    func updateDay(_ key: DayKey, _ body: (inout Day) -> Void) {
+        mutate { $0.updateDay(key, body) }
+    }
+
+    // MARK: Domain actions (shared by several flows)
 
     func skipMorning() { updateToday { $0.morningSkipped = true } }
 
@@ -144,34 +199,55 @@ final class AppModel {
     func saveReflection(_ reflection: Reflection) { updateToday { $0.reflection = reflection } }
 
     func setGoal(_ goal: Goal) {
-        if let old = snapshot.goal, old.id != goal.id {
+        let ended: Goal? = snapshot.goal.flatMap { old in
+            guard old.id != goal.id else { return nil }
             var ended = old
             if ended.status == .active { ended.status = .replaced }
             ended.endedAt = ended.endedAt ?? now
-            snapshot.pastGoals.insert(ended, at: 0)
+            return ended
         }
-        snapshot.goal = goal
-        persist()
+        mutate { s in
+            if let ended { s.pastGoals.insert(ended, at: 0) }
+            s.goal = goal
+        }
     }
 
     func updateSettings(_ body: (inout Settings) -> Void) {
-        body(&snapshot.settings)
+        mutate { body(&$0.settings) }
         calendar = SharedStorage.calendar(for: snapshot.settings)
         if fixture != nil, let tz = fixture?.calendar.timeZone, snapshot.settings.timeZoneID == nil { calendar.timeZone = tz }
-        persist()
     }
 
-    /// H2: everything goes, on this iPhone and in iCloud.
+    /// Clear the snapshot here (H2 on this device, or a wipe from another device). The store file is
+    /// removed and the widget reloads. Sync is told separately (`LiveSync.wipeEverywhere`), never as
+    /// an ordinary local change, so an empty snapshot is not pushed over the wipe marker.
     func deleteEverything() {
         snapshot = .empty
-        if let fileStore = store as? JSONFileStore { try? fileStore.deleteAll() } else { persist() }
+        if let fileStore = store as? JSONFileStore { try? fileStore.deleteAll() } else { try? store.save(.empty) }
+        effects.reloadWidgets()
         reset(to: .a1)
     }
+}
 
-    private func persist() {
-        try? store.save(snapshot)
-        #if canImport(WidgetKit)
-        if fixture == nil { WidgetCenter.shared.reloadTimelines(ofKind: SharedStorage.widgetKind) }
-        #endif
-    }
+/// Where a snapshot change came from (see `AppModel.commit`).
+enum SnapshotOrigin: Equatable {
+    case local
+    case remote
+}
+
+/// Side effects of a save. `.live` reloads the widget and tells iCloud sync; tests pass spies.
+struct SnapshotEffects: Sendable {
+    var reloadWidgets: @MainActor @Sendable () -> Void
+    var didChangeLocally: @MainActor @Sendable () -> Void
+
+    static let none = SnapshotEffects(reloadWidgets: {}, didChangeLocally: {})
+
+    static let live = SnapshotEffects(
+        reloadWidgets: {
+            #if canImport(WidgetKit)
+            WidgetCenter.shared.reloadTimelines(ofKind: SharedStorage.widgetKind)
+            #endif
+        },
+        didChangeLocally: { LiveSync.didChangeLocally() }
+    )
 }

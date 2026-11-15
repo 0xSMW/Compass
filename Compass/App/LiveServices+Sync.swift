@@ -49,15 +49,8 @@ extension AppModel {
 
     /// Put a restored snapshot into the app (R2) and save it; sync carries on from it.
     func applyRestoredSnapshot(_ restored: CompassSnapshot) {
-        snapshot = restored
+        commit(restored)
         calendar = SharedStorage.calendar(for: restored.settings)
         if let http = cloud as? HTTPCloudAssist { http.switchOn = restored.settings.cloudAssist }
-        saveAndSync()
-    }
-
-    /// Save through the store and tell sync (AppModel.persist is private to the shared file).
-    func saveAndSync() {
-        try? store.save(snapshot)
-        LiveSync.didChangeLocally()
     }
 }

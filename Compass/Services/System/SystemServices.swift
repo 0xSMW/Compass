@@ -85,7 +85,8 @@ final class SystemServices {
     /// The widget completes steps in its own process; adopt the shared file when it differs.
     private func reloadFromStore(_ model: AppModel) {
         guard let stored = try? model.store.load(), stored != model.snapshot else { return }
-        model.snapshot = stored
+        // A local change (made on this phone), so it syncs and the widget reloads like any other.
+        model.commit(stored)
     }
 
     /// Opened on Today but the day moved on (a new morning, or 21:00 passed): show the right screen.

@@ -48,8 +48,8 @@ struct SyncState: Codable, Equatable {
 
 /// Keeps the app's snapshot and audio in step with the user's other devices through iCloud.
 ///
-/// - Watches `AppModel.snapshot` (Observation) and pushes this device's envelope 2 s after the last change,
-///   and when the app goes to the background.
+/// - `AppModel`'s single save path calls `noteLocalChange()` after every local change; this pushes
+///   this device's envelope 2 s after the last change, and when the app goes to the background.
 /// - Pulls when the app becomes active and whenever iCloud reports changed files (NSMetadataQuery),
 ///   merges every device's envelope with `SnapshotMerger` and puts the result back into the model.
 ///   Two devices editing the same day surface as E5 (`Day.mergeCandidates`).
@@ -65,7 +65,6 @@ final class SyncCoordinator {
     private var query: NSMetadataQuery?
     private var pushTask: Task<Void, Never>?
     private var pullTask: Task<Void, Never>?
-    private var applyingRemote = false
     private var observers: [NSObjectProtocol] = []
 
     private(set) var iCloudAvailable = false
@@ -85,7 +84,6 @@ final class SyncCoordinator {
     }
 
     func start() {
-        observeSnapshot()
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.pullSoon(delay: 0) }
@@ -137,28 +135,6 @@ final class SyncCoordinator {
     }
 
     // MARK: Local changes → push
-
-    private func observeSnapshot() {
-        guard let model else { return }
-        withObservationTracking {
-            _ = model.snapshot
-        } onChange: { [weak self] in
-            // Called synchronously from the mutation, which always happens on the main actor (AppModel
-            // is @MainActor), so the applyingRemote flag read here belongs to this very change.
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                let fromRemote = self.applyingRemote
-                Task { @MainActor in
-                    if !fromRemote {
-                        self.state.lastLocalChange = Date()
-                        self.state.save()
-                        self.pushSoon()
-                    }
-                    self.observeSnapshot()
-                }
-            }
-        }
-    }
 
     func noteLocalChange() {
         state.lastLocalChange = Date()
@@ -226,9 +202,7 @@ final class SyncCoordinator {
             state.tombstones = []
             DataEraser.eraseLocalData()
             state.save()
-            applyingRemote = true
             model.deleteEverything()
-            applyingRemote = false
             return
         }
 
@@ -237,10 +211,8 @@ final class SyncCoordinator {
         if let wipe = merged.wipedAt, wipe > (state.appliedWipe ?? .distantPast) { state.appliedWipe = wipe }
         state.save()
         if merged.snapshot != model.snapshot {
-            applyingRemote = true
-            model.snapshot = merged.snapshot
-            try? model.store.save(merged.snapshot)
-            applyingRemote = false
+            // Saves and reloads the widget, without counting as this device's own change.
+            model.commit(merged.snapshot, origin: .remote)
             // Our envelope should now carry the merged result too.
             pushSoon()
         }

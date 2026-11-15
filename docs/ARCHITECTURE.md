@@ -41,9 +41,19 @@ Compass/
   Resources/                    Fonts (Inter Tight 400/500/600, IBM Plex Mono 400/500 + OFL), Assets, click.wav
 CompassWidget/                  WidgetKit extension: TodayStepWidget + CompleteStepIntent (interactive)
 Shared/                         SharedStorage (App Group JSON file), compiled into app and widget
-CompassUITests/                 ScreenshotTests: launches every ScreenID, saves <ID>.png
+CompassTests/                   App-target unit tests (hosted, `@testable import Compass`): AppModel save path, store
+CompassUITests/                 ScreenshotTests: launches every ScreenID, saves <ID>.png; fails if `screen-<ID>` is missing
 renders/ios/<ID>.png            Screenshots committed by CI (390×844, compare to design renders)
 ```
+
+## Saving: one path
+
+`AppModel.snapshot` is `private(set)`. Change it only with `mutate { snapshot in … }`, the helpers built
+on it (`updateToday`, `updateDay(_:_:)`, `updateSettings`, `setGoal`, …) or `commit(_:origin:)` for a
+whole snapshot (restore, sync merge with `.remote`, the widget's copy). Every change saves to the store,
+tells sync (`.local` only) and reloads the widget timelines (`SnapshotEffects`, spied in `CompassTests`).
+`deleteEverything()` clears the store and reloads the widget; sync hears about a wipe through
+`LiveSync.wipeEverywhere`. There is no other save call: never call `store.save` from a feature.
 
 ## Rules for flow agents
 
@@ -145,11 +155,12 @@ Layout: `FlowScreen { … }` + `.region(.nav | .subject | .focal | .focalTop | .
 
 ## CI loop and screenshots
 
-`.github/workflows/ios.yml` runs on every push to `claude/friendly-ritchie-5q2nh9` (and manual dispatch,
-optional `screens` input like `C3,C4`):
+`.github/workflows/ios.yml` runs on pushes to `main` and `claude/friendly-ritchie-5q2nh9`, on pull requests,
+and on manual dispatch (optional `screens` input like `C3,C4`). Only pushes to the screenshot branch commit
+PNGs back:
 1. `core` (ubuntu, swift:6.2): `swift test` in `Packages/CompassCore`.
 2. `app` (macos-26, Xcode 26.6): `xcodegen generate`, build app + widget + UI tests on the iPhone 16e
-   simulator (iOS 26.2, 390×844 pt; falls back to 17e), run `ScreenshotTests`, scale each PNG to
+   simulator (iOS 26.2, 390×844 pt; falls back to 17e), run `CompassTests` (unit), run `ScreenshotTests`, scale each PNG to
    390×844 with `sips`, commit `renders/ios/<ID>.png` (+ `README.txt` with run URL) back to the branch
    with `[skip ci]`.
 

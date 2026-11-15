@@ -7,7 +7,6 @@ extension AppModel {
         updateSettings { $0.cloudAssist = on }
         if let http = cloud as? HTTPCloudAssist { http.switchOn = on }
         if let fake = cloud as? FakeCloudAssist { fake.isEnabled = on }
-        LiveSync.didChangeLocally()
     }
 
     /// H2: everything goes — the snapshot, every recording, the widget's copy, sync bookkeeping — on this

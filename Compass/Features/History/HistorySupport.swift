@@ -56,7 +56,8 @@ extension AppModel {
 
     /// E4 Save.
     func saveHistoryEdit(_ key: DayKey, summary: String, moved: Bool, partID: UUID?) {
-        snapshot.updateDay(key) { day in
+        let now = self.now, calendar = self.calendar, device = SyncDevice.label
+        updateDay(key) { day in
             let text = summary.trimmingCharacters(in: .whitespacesAndNewlines)
             if var r = day.reflection {
                 r.summary = text.isEmpty ? nil : text
@@ -65,7 +66,7 @@ extension AppModel {
                 day.reflection = r
             } else if !text.isEmpty || moved {
                 day.reflection = Reflection(outcome: moved ? .moved : .notToday, transcript: text, summary: text.isEmpty ? nil : text,
-                                            partID: partID, createdAt: now, device: SyncDevice.label)
+                                            partID: partID, createdAt: now, device: device)
             }
             if !moved { day.step?.completedAt = nil }
             if moved, var step = day.step, !step.isDone {
@@ -74,16 +75,14 @@ extension AppModel {
             }
             if var step = day.step { step.partID = partID ?? step.partID; day.step = step }
         }
-        saveAndSync()
     }
 
     /// E4 "Delete this day’s entry": the evening entry, step and notes for that day, and their audio.
     func deleteHistoryDay(_ key: DayKey) {
         let removed = snapshot.day(key)
-        snapshot.days.removeAll { $0.key == key }
         LiveSync.recordDeletion(of: key, at: now)
         if let removed { MemoAudio.deleteFiles(for: removed) }
-        saveAndSync()
+        mutate { $0.days.removeAll { $0.key == key } }
     }
 
     /// E5 "Use this summary" / "Keep both".
@@ -92,10 +91,9 @@ extension AppModel {
         let shown = chosen ?? snapshot.day(key)?.reflection
         // Both recordings are kept: the set-aside version's audio gets its note's file name too.
         MemoAudio.keepRecordings(of: versions.filter { $0.createdAt != shown?.createdAt })
-        snapshot.updateDay(key) { day in
+        updateDay(key) { day in
             if let chosen { day.resolveConflict(keeping: chosen) } else { day.keepBothVersions() }
         }
-        saveAndSync()
     }
 }
 

@@ -218,8 +218,7 @@ extension AppModel {
         }
         if let fake = cloud as? FakeCloudAssist { fake.isEnabled = draft.cloudAssist }
         if let http = cloud as? HTTPCloudAssist { http.switchOn = draft.cloudAssist }
-        // Sync picks up the new goal; System reschedules the two reminders from the saved settings.
-        saveAndSync()
+        // setGoal/updateSettings saved, told sync and reloaded the widget; System reschedules the reminders.
         draft.reset()
         goToEntry()
     }

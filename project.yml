@@ -109,6 +109,19 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: app.compass.Compass.Widget
         SKIP_INSTALL: YES
 
+  # App-target unit tests (hosted in Compass, so `@testable import Compass` reaches AppModel and services).
+  CompassTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: CompassTests
+    dependencies:
+      - target: Compass
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.compass.CompassTests
+        GENERATE_INFOPLIST_FILE: YES
+
   CompassUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -133,5 +146,6 @@ schemes:
     test:
       config: Debug
       targets:
+        - CompassTests
         - CompassUITests
       gatherCoverageData: false

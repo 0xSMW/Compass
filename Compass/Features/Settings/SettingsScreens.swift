@@ -53,7 +53,6 @@ struct SettingsListView: View {
                         })
                         ListRow(title: "Start with", value: s.input == .voice ? "Voice" : "Typing", action: {
                             model.updateSettings { $0.input = $0.input == .voice ? .typing : .voice }
-                            LiveSync.didChangeLocally()
                         })
                         ListRow(title: "Cloud help") {
                             CompassSwitch(label: "Cloud help", isOn: Binding(
@@ -86,7 +85,6 @@ struct SettingsListView: View {
                            calendar: model.calendar,
                            onSave: { t in
                                model.updateSettings { if sheet == .morning { $0.rhythm.morning = t } else { $0.rhythm.evening = t } }
-                               LiveSync.didChangeLocally()
                                timeSheet = nil
                            },
                            onCancel: { timeSheet = nil })

@@ -2,7 +2,8 @@ name: iOS
 
 on:
   push:
-    branches: [claude/friendly-ritchie-5q2nh9]
+    branches: [main, claude/friendly-ritchie-5q2nh9]
+  pull_request:
   workflow_dispatch:
     inputs:
       screens:
@@ -12,13 +13,15 @@ on:
 
 # No concurrency group: several agents push in parallel and each needs its own
 # run to finish. Screenshot commits rebase before pushing; README.txt names the
-# commit that produced the current PNGs.
+# commit that produced the current PNGs. Only pushes to the screenshot branch
+# commit PNGs back; pull requests and main build and test without writing.
 
 permissions:
   contents: write
 
 env:
   XCODE_APP: /Applications/Xcode_26.6.app
+  SCREENSHOT_BRANCH: claude/friendly-ritchie-5q2nh9
 
 jobs:
   core:
@@ -37,8 +40,6 @@ jobs:
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
 
       - name: Select Xcode
         run: |
@@ -87,6 +88,22 @@ jobs:
             | tee build/build.log | grep -E "error:|warning: .*deprecated|BUILD|\*\*" || true
           grep -q "TEST BUILD SUCCEEDED" build/build.log || { grep -E "error:" -A3 build/build.log | head -200; exit 1; }
 
+      - name: Run app unit tests (CompassTests)
+        id: unit
+        run: |
+          set +e
+          xcodebuild test-without-building \
+            -project Compass.xcodeproj -scheme Compass \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build/DerivedData \
+            -resultBundlePath build/UnitTests.xcresult \
+            -only-testing:CompassTests \
+            > build/unit.log 2>&1
+          STATUS=$?
+          grep -E "Test Case|error:|failed|passed|Executed|TEST" build/unit.log | tail -80
+          if ! grep -q "Executed [1-9]" build/unit.log; then echo "No unit tests ran"; STATUS=1; fi
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
       - name: Run screenshot tests
         id: tests
         env:
@@ -100,6 +117,7 @@ jobs:
             -destination "id=${{ steps.sim.outputs.udid }}" \
             -derivedDataPath build/DerivedData \
             -resultBundlePath build/Screenshots.xcresult \
+            -only-testing:CompassUITests \
             > build/test.log 2>&1
           STATUS=$?
           grep -E "Test Case|error:|failed|passed|TEST" build/test.log | tail -80
@@ -109,7 +127,7 @@ jobs:
           echo "status=$STATUS" >> "$GITHUB_OUTPUT"
 
       - name: Normalise screenshots to 390x844 and commit
-        if: always() && steps.sim.outcome == 'success'
+        if: always() && steps.sim.outcome == 'success' && github.event_name == 'push' && github.ref_name == env.SCREENSHOT_BRANCH
         run: |
           set -euo pipefail
           mkdir -p renders/ios
@@ -144,14 +162,18 @@ jobs:
           name: ios-results
           path: |
             build/*.log
-            build/Screenshots.xcresult
+            build/*.xcresult
           if-no-files-found: ignore
           retention-days: 7
 
       - name: Fail if tests failed
         if: always()
         run: |
-          if [ "${{ steps.tests.outputs.status }}" != "0" ]; then
-            grep -E "error:|failed" build/test.log | head -60 || true
-            exit 1
+          FAIL=0
+          if [ "${{ steps.unit.outputs.status }}" != "0" ]; then
+            echo "Unit tests failed"; grep -E "error:|failed" build/unit.log | head -60 || true; FAIL=1
           fi
+          if [ "${{ steps.tests.outputs.status }}" != "0" ]; then
+            echo "Screenshot tests failed"; grep -E "error:|failed" build/test.log | head -60 || true; FAIL=1
+          fi
+          exit $FAIL

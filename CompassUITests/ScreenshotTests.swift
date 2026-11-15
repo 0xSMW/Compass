@@ -6,6 +6,7 @@ import CompassCore
 /// Output: `$SCREENSHOT_DIR` (set `TEST_RUNNER_SCREENSHOT_DIR` on the xcodebuild command line), else the
 /// test's temporary directory. Each image is also attached to the result bundle.
 /// One test per flow so a failure names the flow; `continueAfterFailure` keeps going.
+/// A screen whose `screen-<ID>` accessibility marker is missing fails its flow's test.
 final class ScreenshotTests: XCTestCase {
     override func setUp() {
         continueAfterFailure = true
@@ -30,8 +31,10 @@ final class ScreenshotTests: XCTestCase {
             if id.isLargestText { app.launchArguments.append("-ax5") }
             app.launch()
             let marker = app.descendants(matching: .any)["screen-\(id.rawValue)"]
+            // The screen must say which ID it is drawing: a missing marker means the wrong screen (or none)
+            // rendered, so the test fails. The screenshot is still taken to show what came up instead.
             if !marker.waitForExistence(timeout: 10) {
-                XCTContext.runActivity(named: "\(id.rawValue): marker not found, capturing anyway") { _ in }
+                XCTFail("\(id.rawValue): accessibility marker screen-\(id.rawValue) not found")
             }
             // Let fonts, layout and any first-frame work settle.
             Thread.sleep(forTimeInterval: 0.6)
