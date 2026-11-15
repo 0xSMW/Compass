@@ -18,7 +18,7 @@ final class SystemServices {
 
     @ObservationIgnored private weak var model: AppModel?
     @ObservationIgnored private let scheduler = NotificationScheduler()
-    @ObservationIgnored private let tapHandler = NotificationTapHandler()
+    @ObservationIgnored private var tapHandler: NotificationTapHandler?
     @ObservationIgnored private let network = NetworkMonitor()
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var rescheduleTask: Task<Void, Never>?
@@ -45,8 +45,9 @@ final class SystemServices {
         started = true
         self.model = model
 
-        tapHandler.onOpen = { [weak self] in self?.model?.goToEntry() }
-        UNUserNotificationCenter.current().delegate = tapHandler
+        let handler = NotificationTapHandler { [weak self] in self?.model?.goToEntry() }
+        tapHandler = handler
+        UNUserNotificationCenter.current().delegate = handler
 
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: .NSSystemTimeZoneDidChange, object: nil, queue: .main) { [weak self] _ in

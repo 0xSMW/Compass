@@ -16,9 +16,9 @@ struct CompassWidgetBundle: WidgetBundle {
 /// shared JSON store, and WidgetKit reloads the timeline afterwards. The app picks the change up from
 /// the store when it becomes active. Tap for completion, never voice: the intent is not offered to Siri.
 struct CompleteStepIntent: AppIntent {
-    static var title: LocalizedStringResource = "Complete today’s step"
-    static var description = IntentDescription("Marks today’s Compass step done. Tap again to reopen it.")
-    static var isDiscoverable: Bool = false
+    static let title: LocalizedStringResource = "Complete today’s step"
+    static let description = IntentDescription("Marks today’s Compass step done. Tap again to reopen it.")
+    static let isDiscoverable: Bool = false
 
     @Parameter(title: "Done")
     var done: Bool

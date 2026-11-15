@@ -204,7 +204,7 @@ jobs:
           ls renders/ios | wc -l
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch --depth=50 origin "${GITHUB_REF_NAME}"
+          for i in 1 2 3 4; do git fetch --depth=50 origin "${GITHUB_REF_NAME}" && break; sleep $((i * 10)); done
           latest=$(git log "origin/${GITHUB_REF_NAME}" --format=%H --invert-grep --grep='\[skip ci\]' -1)
           if [ "$latest" != "${GITHUB_SHA}" ]; then echo "Newer code ($latest) is on the branch; its run publishes screenshots"; exit 0; fi
           git add renders/ios
@@ -213,12 +213,14 @@ jobs:
           git commit -m "Update iOS screenshots from ${GITHUB_SHA::7} [skip ci]"
           for i in 1 2 3 4; do
             git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
-            sleep $((i * 5))
+            sleep $((i * 10))
           done
-          exit 1
+          # Network trouble publishing PNGs is not a test failure; the next run publishes them.
+          echo "::warning::Could not push screenshots"
 
       - name: Upload logs and results
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: ios-results

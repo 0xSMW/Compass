@@ -17,6 +17,7 @@ final class SmallScreenKeyboardTests: XCTestCase {
         "C10": (["Save note", "Save step"], false),
     ]
 
+    @MainActor
     func testKeyboardScreensFitOnSmallScreens() throws {
         let env = ProcessInfo.processInfo.environment
         let ids = (env["SMALL_SCREENS"] ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }

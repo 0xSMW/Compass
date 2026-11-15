@@ -20,6 +20,7 @@ final class ScreenshotTests: XCTestCase {
         return url
     }
 
+    @MainActor
     private func capture(_ ids: [ScreenID]) {
         // Optional filter: SCREENS="C3,C4" (TEST_RUNNER_SCREENS in CI). Empty = all.
         let filter = (ProcessInfo.processInfo.environment["SCREENS"] ?? "")
@@ -53,13 +54,13 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
-    func testA_Onboarding() { capture(Flow.onboarding.screens) }
-    func testB_Morning() { capture(Flow.morning.screens) }
-    func testC_Today() { capture(Flow.today.screens) }
-    func testD_Evening() { capture(Flow.evening.screens) }
-    func testE_History() { capture(Flow.history.screens) }
-    func testF_Return() { capture(Flow.lapse.screens) }
-    func testG_Goal() { capture(Flow.goal.screens) }
-    func testH_Settings() { capture(Flow.settings.screens) }
-    func testI_System() { capture(Flow.system.screens) }
+    @MainActor func testA_Onboarding() { capture(Flow.onboarding.screens) }
+    @MainActor func testB_Morning() { capture(Flow.morning.screens) }
+    @MainActor func testC_Today() { capture(Flow.today.screens) }
+    @MainActor func testD_Evening() { capture(Flow.evening.screens) }
+    @MainActor func testE_History() { capture(Flow.history.screens) }
+    @MainActor func testF_Return() { capture(Flow.lapse.screens) }
+    @MainActor func testG_Goal() { capture(Flow.goal.screens) }
+    @MainActor func testH_Settings() { capture(Flow.settings.screens) }
+    @MainActor func testI_System() { capture(Flow.system.screens) }
 }

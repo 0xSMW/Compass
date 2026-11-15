@@ -100,21 +100,20 @@ final class NotificationScheduler {
 
 /// Opening a reminder opens the app on the screen for the moment (Center at 07:00, the evening
 /// question at 21:00). Reminders that arrive while Compass is open stay quiet.
-final class NotificationTapHandler: NSObject, UNUserNotificationCenterDelegate {
-    var onOpen: (@MainActor () -> Void)?
+final class NotificationTapHandler: NSObject, UNUserNotificationCenterDelegate, Sendable {
+    private let onOpen: @MainActor @Sendable () -> Void
 
-    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
-                                withCompletionHandler completionHandler: @escaping () -> Void) {
-        let open = onOpen
-        Task { @MainActor in
-            open?()
-            completionHandler()
-        }
+    init(onOpen: @escaping @MainActor @Sendable () -> Void) {
+        self.onOpen = onOpen
     }
 
-    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
-                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.list])
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        await onOpen()
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        [.list]
     }
 }
 

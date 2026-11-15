@@ -18,17 +18,17 @@ final class KeyboardFrame {
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main) { [weak self] note in
             let end = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue
-            // The notification's object is the keyboard's screen (iOS 16.1+).
-            let screenHeight = (note.object as? UIScreen)?.bounds.height
-            MainActor.assumeIsolated { self?.update(end, screenHeight: screenHeight) }
+            MainActor.assumeIsolated { self?.update(end) }
         })
         observers.append(center.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.update(nil, screenHeight: nil) }
+            MainActor.assumeIsolated { self?.update(nil) }
         })
     }
 
-    private func update(_ end: CGRect?, screenHeight: CGFloat?) {
-        guard let end, end.height > 0, end.minY < (screenHeight ?? .greatestFiniteMagnitude) else {
+    private func update(_ end: CGRect?) {
+        let screenHeight = UIApplication.shared.connectedScenes.lazy
+            .compactMap { ($0 as? UIWindowScene)?.screen.bounds.height }.first ?? .greatestFiniteMagnitude
+        guard let end, end.height > 0, end.minY < screenHeight else {
             if top != nil { top = nil }
             return
         }
