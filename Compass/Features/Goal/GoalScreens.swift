@@ -300,7 +300,8 @@ struct PastGoalsView: View {
 }
 
 /// goal.html `.gcard`: goal sentence, "Jan–Apr 2026 · 64 steps · achieved", and its line as 6pt dots
-/// (one per day: ink = moved, #3A3A3E = not), the goal's last two rows of days; the card opens the whole line.
+/// (one per evening answered: ink = moved, #3A3A3E = not), up to two rows of the most recent; the card
+/// opens the whole line.
 private struct PastGoalCard: View {
     @Environment(AppModel.self) private var model
     let goal: Goal
@@ -309,7 +310,8 @@ private struct PastGoalCard: View {
     var body: some View {
         let days = model.snapshot.days(for: goal)
         let movedKeys = Set(days.filter(\.moved).map(\.key))
-        let marks = lineMarks(movedKeys: movedKeys)
+        // goal.html `.mdots`: one dot per evening answered, ink when it moved, dim when not.
+        let marks = days.filter { $0.reflection != nil }.map(\.moved)
         let end = goal.endedAt ?? model.now
         let caption = "\(HistoryFormat.monthSpan(from: goal.createdAt, to: end, calendar: model.calendar)) · \(HistoryFormat.steps(movedKeys.count)) · \(goal.status == .achieved ? "achieved" : "replaced")"
 
@@ -333,19 +335,10 @@ private struct PastGoalCard: View {
         .accessibilityLabel("\(goal.text) \(caption)")
         .accessibilityHint("Opens its weeks")
     }
-
-    private func lineMarks(movedKeys: Set<DayKey>) -> [Bool] {
-        guard !movedKeys.isEmpty else { return [] }
-        let cal = model.calendar
-        let start = DayKey(goal.createdAt, calendar: cal)
-        let end = DayKey(goal.endedAt ?? model.now, calendar: cal)
-        let count = max(0, min(730, start.days(to: end, calendar: cal) + 1))
-        return (0..<count).map { movedKeys.contains(start.adding(days: $0, calendar: cal)) }
-    }
 }
 
-/// goal.html `.mdots`: 6pt dots, 4pt gap, at most two rows: the goal's most recent days that fit, oldest
-/// first (the board's ~57 dots on a 294pt card).
+/// goal.html `.mdots`: 6pt dots, 4pt gap, wrapping, at most two rows (the most recent marks that fit,
+/// oldest first): 29 to a row on the 294pt card.
 private struct DotLine: View {
     let marks: [Bool]
     var rows: Int = 2

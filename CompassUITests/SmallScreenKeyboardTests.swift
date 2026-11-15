@@ -2,7 +2,7 @@ import XCTest
 import CompassCore
 
 /// Keyboard screens on a 667pt phone (iPhone SE): the lifted action must sit above the keyboard and
-/// clear the field. CI runs this on an iPhone SE simulator with `SMALL_SCREENS=A4k,B5,C10`
+/// clear the field (B5: and the part chip stays visible). CI runs this on an iPhone SE simulator with `SMALL_SCREENS=A4k,B5,C10`
 /// (`TEST_RUNNER_SMALL_SCREENS`) and saves `<ID>.png` to `SCREENSHOT_DIR`; elsewhere it is skipped.
 final class SmallScreenKeyboardTests: XCTestCase {
     override func setUp() {
@@ -60,6 +60,20 @@ final class SmallScreenKeyboardTests: XCTestCase {
                 }
             } else {
                 XCTFail("\(id.rawValue): action button \(spec.labels) not found")
+            }
+            if id == .b5 {
+                // The step's part chip stays visible and tappable: under the field, or beside the action.
+                let chip = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Counts toward'")).firstMatch
+                if chip.waitForExistence(timeout: 2) {
+                    XCTAssertTrue(chip.isHittable, "B5: part chip isn't hittable (\(chip.frame))")
+                    XCTAssertLessThanOrEqual(chip.frame.maxY, keyboardTop + 0.5, "B5: part chip under the keyboard (\(chip.frame))")
+                    XCTAssertFalse(chip.frame.intersects(field.frame), "B5: part chip \(chip.frame) overlaps the field \(field.frame)")
+                    if let action {
+                        XCTAssertFalse(chip.frame.intersects(action.frame), "B5: part chip \(chip.frame) covered by the action \(action.frame)")
+                    }
+                } else {
+                    XCTFail("B5: part chip (Counts toward …) not found")
+                }
             }
             app.terminate()
         }

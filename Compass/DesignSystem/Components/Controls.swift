@@ -68,6 +68,8 @@ struct Chip: View {
     var accessibilityLabel: String? = nil
     /// Label colour: #A1A1A6, or ink for a chip that is the screen's one action (F2 "Hear why you started").
     var tint: Color = .ink2
+    /// Let the label shorten with "…" instead of always taking its full width (a chip sharing a row).
+    var truncates: Bool = false
     var action: (() -> Void)? = nil
 
     @Environment(\.dynamicTypeSize) private var dts
@@ -90,7 +92,7 @@ struct Chip: View {
             if let icon { Icon(icon, size: ax ? IconSize.m : IconSize.s).foregroundStyle(iconTint ?? tint) }
             CompassText(title, style: .caption, color: tint)
                 .lineLimit(ax ? nil : 1)
-                .fixedSize(horizontal: !ax, vertical: true)
+                .fixedSize(horizontal: !ax && !truncates, vertical: true)
             if let trailing, !ax { Icon(trailing, size: IconSize.xs).foregroundStyle(tint) }
         }
         // CSS padding 0 16 0 12 sits inside the 1pt border.
@@ -141,7 +143,10 @@ struct ListRow<Accessory: View>: View {
             }
             accessory
         }
+        // A row that isn't a button is a `div.lr` on the boards: content-box, so 56 below its 1pt top line
+        // (H1 "Cloud help" is 57 tall); button rows are border-box, 56 in all.
         .frame(minHeight: 56)
+        .padding(.top, action == nil && showsTopLine ? 1 : 0)
         .overlay(alignment: .top) {
             if showsTopLine { Rectangle().fill(lineColor).frame(height: 1) }
         }
@@ -189,7 +194,9 @@ struct TimeStepperRow: View {
             IconButton(.minus, label: "\(title) earlier", iconSize: IconSize.xs, action: earlier)
             IconButton(.plus, label: "\(title) later", iconSize: IconSize.xs, action: later)
         }
-        .frame(minHeight: 72)
+        // `div.lr` with min-height 72 is content-box: 72 below its 1pt top line.
+        .padding(.top, showsTopLine ? 1 : 0)
+        .frame(minHeight: showsTopLine ? 73 : 72)
         .overlay(alignment: .top) {
             if showsTopLine { Rectangle().fill(Color.line).frame(height: 1) }
         }

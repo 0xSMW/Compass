@@ -196,6 +196,12 @@ final class BackupTests: XCTestCase {
     func testPastGoalLines() {
         let s = Fixtures.fixture(for: .g3).snapshot
         XCTAssertEqual(s.pastGoals.map { s.steps(for: $0) }, [64, 38])
+        // goal.html G3 dot lines: one dot per evening answered (ink = moved).
+        let lines = s.pastGoals.map { g in
+            String(s.days(for: g).filter { $0.reflection != nil }.map { $0.moved ? "1" : "0" })
+        }
+        XCTAssertEqual(lines, ["110111101110111111011110110111111101111011101111110111101",
+                               "1100110100111001000110011000101100100011010001100010011"])
         XCTAssertEqual(s.steps(for: s.goal!), Fixtures.fixture(for: .g1).snapshot.movedCount)
         for g in s.pastGoals {
             XCTAssertTrue(s.days(for: g).allSatisfy { $0.key.date(in: Fixtures.calendar) <= g.endedAt! })

@@ -93,23 +93,34 @@ struct TypeInsteadDock: View {
 }
 
 /// Typing in a ritual: the action rides above the keyboard at 436–492. With `drawsKeyboard` (fixture
-/// screenshots) the keyboard is drawn; in the app the real keyboard rises underneath.
-struct AboveKeyboardAction: View {
+/// screenshots) the keyboard is drawn; in the app the real keyboard rises underneath. `leading` shares
+/// the action's row (B5's part chip on small phones, where it can't fit under the field).
+struct AboveKeyboardAction<Leading: View>: View {
     let title: String
     var enabled: Bool = true
     var drawsKeyboard: Bool = false
     let action: () -> Void
+    @ViewBuilder var leading: Leading
 
     var body: some View {
         Group {
-            PrimaryButton(title, action: action)
-                .disabled(!enabled)
-                .opacity(enabled ? 1 : 0.4)
-                .region(.aboveKeyboard)
+            HStack(spacing: Space.s) {
+                leading
+                PrimaryButton(title, action: action)
+                    .disabled(!enabled)
+                    .opacity(enabled ? 1 : 0.4)
+            }
+            .region(.aboveKeyboard)
             if drawsKeyboard {
                 KeyboardPlaceholder().region(.keyboard)
             }
         }
+    }
+}
+
+extension AboveKeyboardAction where Leading == EmptyView {
+    init(title: String, enabled: Bool = true, drawsKeyboard: Bool = false, action: @escaping () -> Void) {
+        self.init(title: title, enabled: enabled, drawsKeyboard: drawsKeyboard, action: action, leading: { EmptyView() })
     }
 }
 

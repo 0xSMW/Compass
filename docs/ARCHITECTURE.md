@@ -144,6 +144,7 @@ snapshot refers to are uploaded or downloaded.
 
 ## Design system (SwiftUI port of kit.css)
 
+Deliberate differences from the renders are listed in `docs/DESIGN_DEVIATIONS.md`.
 Everything on screen comes from `Compass/DesignSystem`. Features compose these pieces; they don't set
 fonts, draw their own docks, notices, chips or sheets, or use system menus, alerts or pickers.
 

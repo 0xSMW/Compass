@@ -263,6 +263,8 @@ public final class FakeBackupRestoring: BackupRestoring, @unchecked Sendable {
 
 extension Fixtures {
     /// G3: the past goals' own lines ("64 steps · achieved", "38 steps · replaced"), patterned like goal.html.
+    /// The first weeks were steps ticked off without an evening entry; then every evening was answered,
+    /// moved or not, exactly as goal.html's dot lines (57 and 55 evenings).
     public static func pastGoalDays(calendar: Calendar = Fixtures.calendar) -> [Day] {
         let lines: [(Goal, String, Int, Int)] = [
             (pastGoals[0], "110111101110111111011110110111111101111011101111110111101", 64, 31),
@@ -271,13 +273,19 @@ extension Fixtures {
         var days: [Day] = []
         for (goal, pattern, steps, part) in lines {
             let marks = Array(pattern)
+            let quietStart = steps - marks.filter { $0 == "1" }.count
             var key = DayKey(goal.createdAt, calendar: calendar)
             var moved = 0, i = 0
             while moved < steps {
                 var day = Day(key: key, goalID: goal.id)
                 let at = { (h: Int) in key.date(in: calendar, hour: h) }
                 let partID = UUID(uuidString: String(format: "00000000-0000-4000-8000-%012d", part))
-                if marks[i % marks.count] == "1" {
+                if i < quietStart {
+                    moved += 1
+                    let title = goal.parts.first?.symbol == .strength ? "Ran \(3 + i % 8) km" : "Wrote a page"
+                    day.step = Step(id: UUID(uuidString: String(format: "00000000-0000-4000-9000-%012d", part * 1000 + i))!,
+                                    title: title, partID: partID, createdAt: at(7), completedAt: at(18))
+                } else if marks[(i - quietStart) % marks.count] == "1" {
                     moved += 1
                     let title = goal.parts.first?.symbol == .strength ? "Ran \(3 + i % 8) km" : "Wrote a page"
                     day.step = Step(id: UUID(uuidString: String(format: "00000000-0000-4000-9000-%012d", part * 1000 + i))!,

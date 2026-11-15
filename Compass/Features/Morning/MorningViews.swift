@@ -234,26 +234,26 @@ struct MorningTypingView: View {
             SubjectLine(text: purpose == .step ? model.morningPlanningSubject : (model.goal?.text ?? ""))
                 .region(.subject)
 
-            VStack(alignment: .leading, spacing: Space.s) {
-                UnderlineField(prompt: purpose.question, text: $text, style: .title, focused: $focused, showsFocus: isFixture,
-                               label: purpose == .step ? "Today’s step" : purpose.question, onSubmit: save)
-                if purpose == .step, model.goal != nil {
-                    let part = model.part(partID)
-                    Chip(title: part?.title ?? "Choose a part", icon: part.map { CompassIcon($0.symbol) }, iconTint: .ink,
-                         trailing: .down, accessibilityLabel: part.map { "Counts toward \($0.title). Change" } ?? "Choose a part") {
-                        focused = false
-                        pickingPart = true
-                    }
+            // Planned reflow: the chip sits under the field (B5) while a two-line step, the chip and the
+            // lifted action fit above the keyboard; on smaller phones (iPhone SE) it shares the action's row.
+            ScreenMetricsReader { m in
+                let chipBesideAction = m.aboveKeyboardSpan.top < m.y(Region.focal.top ?? 224) + Self.focalNeed
+                VStack(alignment: .leading, spacing: Space.s) {
+                    UnderlineField(prompt: purpose.question, text: $text, style: .title, focused: $focused, showsFocus: isFixture,
+                                   label: purpose == .step ? "Today’s step" : purpose.question, onSubmit: save)
+                    if !chipBesideAction { partChip(truncates: false) }
+                }
+                .region(.focal)
+
+                AboveKeyboardAction(
+                    title: purpose == .step ? "Add step" : "Save",
+                    enabled: !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    drawsKeyboard: isFixture,
+                    action: save
+                ) {
+                    if chipBesideAction { partChip(truncates: true) }
                 }
             }
-            .region(.focal)
-
-            AboveKeyboardAction(
-                title: purpose == .step ? "Add step" : "Save",
-                enabled: !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                drawsKeyboard: isFixture,
-                action: save
-            )
         }
         .partPickerSheet(isPresented: $pickingPart, parts: model.goal?.activeParts ?? [], selected: partID) { id in
             partID = id
@@ -267,6 +267,23 @@ struct MorningTypingView: View {
                 text = session.draft
                 partID = session.draftPartID ?? model.morningDefaultPartID
                 DispatchQueue.main.async { focused = true }
+            }
+        }
+    }
+
+    /// A two-line title field (80), its underline (16 + 1.5), 16, the chip (44), 16 above the action.
+    private static let focalNeed: CGFloat = 2 * 40 + Space.s + 1.5 + Space.s + ControlSize.minTarget + Space.s
+
+    /// "Counts toward" for a typed step: the goal's part, tap to change.
+    @ViewBuilder
+    private func partChip(truncates: Bool) -> some View {
+        if purpose == .step, model.goal != nil {
+            let part = model.part(partID)
+            Chip(title: part?.title ?? "Choose a part", icon: part.map { CompassIcon($0.symbol) }, iconTint: .ink,
+                 trailing: .down, accessibilityLabel: part.map { "Counts toward \($0.title). Change" } ?? "Choose a part",
+                 truncates: truncates) {
+                focused = false
+                pickingPart = true
             }
         }
     }

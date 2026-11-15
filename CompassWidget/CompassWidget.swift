@@ -117,15 +117,8 @@ struct TodayStepWidgetView: View {
     private var content: some View {
         TodayWidgetContent(data: entry.data, layout: layout) { done in
             Button(intent: CompleteStepIntent(done: !done)) {
-                if family == .accessoryRectangular {
-                    ZStack {
-                        Circle().strokeBorder(lineWidth: 2)
-                        if done { Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)) }
-                    }
-                    .frame(width: 28, height: 28)
-                } else {
-                    TodayWidgetCircle(done: done)
-                }
+                // The DS completion circle and check icon at the Lock Screen's 28pt.
+                TodayWidgetCircle(done: done, size: family == .accessoryRectangular ? 28 : 44)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(done ? "Done. Tap to reopen" : "Mark step done")

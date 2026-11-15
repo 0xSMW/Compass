@@ -218,3 +218,12 @@ extension View {
         .region(region)
     }
 }
+
+/// Reads the screen's metrics inside a `FlowScreen` (keyboard-relative lines, real size), for layouts
+/// that reflow on small phones: `ScreenMetricsReader { m in … }`.
+struct ScreenMetricsReader<Content: View>: View {
+    @Environment(\.screenMetrics) private var metrics
+    @ViewBuilder var content: (ScreenMetrics) -> Content
+
+    var body: some View { content(metrics) }
+}

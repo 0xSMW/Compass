@@ -49,7 +49,8 @@ struct TodayWidgetCircle: View {
             Circle().strokeBorder(Color.ink, lineWidth: 2)
             if done {
                 Circle().fill(Color.ink)
-                Icon(.ok, size: IconSize.s).foregroundStyle(.ground)
+                // The check keeps the circle's proportions: 20 in 44 (`svg.s`), 16 in the Lock Screen's 28.
+                Icon(.ok, size: size >= 44 ? IconSize.s : IconSize.xs).foregroundStyle(.ground)
             }
         }
         .frame(width: size, height: size)
@@ -119,9 +120,8 @@ struct TodayWidgetContent<Toggle: View, Words: View>: View {
 
     private var rectangular: some View {
         HStack(spacing: Space.xs) {
-            Text(data.step ?? data.emptyText)
-                .font(.custom(CompassType.Weight.medium.interTight, size: 15))
-                .lineLimit(3)
+            // Lock Screen: caption 500 (15/20), three lines.
+            text(data.step ?? data.emptyText, .caption, .medium, .ink, 3)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if data.step != nil { toggle(data.done) }
         }

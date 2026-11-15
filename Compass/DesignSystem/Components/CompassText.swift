@@ -67,10 +67,12 @@ final class CompassUILabel: UILabel {
     private var resolvedWidth: CGFloat = -1
 
     func apply(_ text: NSAttributedString, headLines: Int?) {
+        let modeChanged = headLines != self.headLines
         self.headLines = headLines
-        if text != full || attributedText == nil {
+        if text != full || attributedText == nil || modeChanged {
             full = text
             resolvedWidth = -1
+            // Shown whole until layout trims it again (only while `headLines` is set).
             attributedText = text
         }
         setNeedsLayout()

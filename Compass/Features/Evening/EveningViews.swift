@@ -292,7 +292,7 @@ struct EveningSavedView: View {
 
 // MARK: - Saved-state pieces
 
-/// kit.css `.lr` "Transcript ⌄" (#A1A1A6), ink once open (⌃).
+/// kit.css `.lr` "Transcript ⌄" in ink; the chevron greys once open (⌃).
 struct TranscriptRow: View {
     @Binding var expanded: Bool
     @Environment(\.dynamicTypeSize) private var dts
@@ -300,11 +300,11 @@ struct TranscriptRow: View {
     var body: some View {
         Button { expanded.toggle() } label: {
             HStack(spacing: Space.s) {
-                // evening.html: quiet while closed (`.lr.ink2`), ink once open; the chevron stays quiet.
-                CompassText("Transcript", color: expanded ? .ink : .ink2).lineLimit(1)
+                // kit.css `.lr` sets ink after `.ink2`, so the label is ink; the chevron greys once open (`svg.ink2`).
+                CompassText("Transcript").lineLimit(1)
                 Spacer(minLength: 0)
                 Icon(expanded ? .up : .down, size: dts.isAccessibilitySize ? IconSize.m : IconSize.s)
-                    .foregroundStyle(Color.ink2)
+                    .foregroundStyle(expanded ? Color.ink2 : Color.ink)
             }
             .frame(minHeight: 56)
             .overlay(alignment: .top) { Rectangle().fill(Color.line).frame(height: 1) }
