@@ -57,9 +57,7 @@ struct SystemMicrophoneOffView: View {
                     .region(.aboveKeyboard)
             } else {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(model.goal?.text ?? "")
-                        .compassTightFont(.display)
-                        .fixedSize(horizontal: false, vertical: true)
+                    TodayLineBoxText(text: model.goal?.text ?? "", style: .display)
                         .accessibilityAddTraits(.isHeader)
                     Text("Who will you be today?")
                         .compassFont(.heading)

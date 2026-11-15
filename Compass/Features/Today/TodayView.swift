@@ -8,6 +8,7 @@ import CompassCore
 struct TodayView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.motionReduced) private var reduced
+    @Environment(\.dynamicTypeSize) private var typeSize
     let id: ScreenID
 
     enum TypingTarget: Equatable { case note, step }
@@ -105,9 +106,7 @@ struct TodayView: View {
     private func header(_ today: Day?) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if let goal = model.goal {
-                Text(goal.text)
-                    .compassTightFont(.title)
-                    .fixedSize(horizontal: false, vertical: true)
+                TodayLineBoxText(text: goal.text, style: .title)
                     .accessibilityAddTraits(.isHeader)
             }
             if let intention = today?.intention {
@@ -201,7 +200,16 @@ struct TodayView: View {
 
     private var dock: some View {
         HStack(spacing: Space.s) {
-            CircleButton(.kb, label: mode == .recording ? "Switch to typing" : "Type a note") { keyboardTapped() }
+            // kit.css `.c56`; the glyph is 28 at AX (C11), the circle keeps its size.
+            Button { keyboardTapped() } label: {
+                Icon(.kb, size: typeSize.isAccessibilitySize ? IconSize.m : IconSize.i)
+                    .foregroundStyle(.ink2)
+                    .frame(width: ControlSize.secondary, height: ControlSize.secondary)
+                    .overlay(Circle().strokeBorder(Color.line, lineWidth: 1))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(PressableStyle())
+            .accessibilityLabel(mode == .recording ? "Switch to typing" : "Type a note")
             NotePill(recording: mode == .recording, levels: pillLevels) { noteTapped() }
         }
         .frame(height: ControlSize.notePill)

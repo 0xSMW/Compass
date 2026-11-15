@@ -9,6 +9,8 @@ struct NotePill: View {
     var levels: [Float] = FakeAudioRecorder.designLevels
     let action: () -> Void
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         if recording {
             HStack(spacing: Space.s) {
@@ -40,7 +42,7 @@ struct NotePill: View {
         } else {
             Button(action: action) {
                 HStack(spacing: Space.xs) {
-                    Icon(.mic)
+                    Icon(.mic, size: typeSize.isAccessibilitySize ? IconSize.m : IconSize.i)
                     Text(title).compassFont(.body, weight: .medium)
                 }
                 .foregroundStyle(.ink)

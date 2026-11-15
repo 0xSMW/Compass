@@ -1,28 +1,56 @@
 import SwiftUI
 import UIKit
 
-/// `compassFont` keeps the spec's line height only when it is taller than the font's natural line
-/// (leading ≥ 0). Title and display are tighter than Inter Tight's natural line (34/40, 48/52 at AX5;
-/// display 44/48), so the goal would grow 1–6pt per line and push Today's header and I1's question
-/// down. This variant also applies negative leading, keeping the board's line boxes.
-private struct CompassTightFontModifier: ViewModifier {
-    @Environment(\.dynamicTypeSize) private var dts
+/// Text set on the board's line boxes even when they are tighter than the font's natural line.
+///
+/// `compassFont` can only add leading (SwiftUI ignores negative `lineSpacing`), and title (34/40,
+/// 48/52 at AX5) and display (44/48) are tighter than Inter Tight's natural line, so a three-line goal
+/// would grow 3pt (18pt at AX5) and push Today's header and I1's question off the boards. A UILabel
+/// with a fixed paragraph line height keeps CSS's line boxes, with glyphs centred in each box.
+struct TodayLineBoxText: UIViewRepresentable {
+    let text: String
     let style: CompassType
+    var color: Color = .ink
 
-    func body(content: Content) -> some View {
-        let size = style.size(for: dts)
-        let leading = style.lineHeight(for: dts) - style.uiFont(for: dts).lineHeight
-        content
-            .font(style.font(for: dts))
-            .tracking(style.spec.tracking * size)
-            .lineSpacing(leading)
-            .padding(.vertical, leading / 2)
+    func makeUIView(context: Context) -> UILabel {
+        let label = UILabel()
+        label.numberOfLines = 0
+        label.lineBreakMode = .byWordWrapping
+        label.backgroundColor = .clear
+        label.adjustsFontForContentSizeCategory = false
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        label.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        return label
     }
-}
 
-extension View {
-    /// `compassFont` with the spec's line height even when it is tighter than the font's own.
-    func compassTightFont(_ style: CompassType) -> some View {
-        modifier(CompassTightFontModifier(style: style))
+    func updateUIView(_ label: UILabel, context: Context) {
+        label.attributedText = attributed(context.environment.dynamicTypeSize)
+        label.accessibilityLabel = text
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView label: UILabel, context: Context) -> CGSize? {
+        let width = proposal.width ?? 342
+        label.attributedText = attributed(context.environment.dynamicTypeSize)
+        label.preferredMaxLayoutWidth = width
+        let fitted = label.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        return CGSize(width: width, height: ceil(fitted.height))
+    }
+
+    private func attributed(_ dts: DynamicTypeSize) -> NSAttributedString {
+        let font = style.uiFont(for: dts)
+        let lineHeight = style.lineHeight(for: dts)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.minimumLineHeight = lineHeight
+        paragraph.maximumLineHeight = lineHeight
+        paragraph.lineBreakMode = .byWordWrapping
+        // UIKit keeps the descender at the bottom of a short line box; CSS splits the leading evenly.
+        let baselineOffset = (lineHeight - font.lineHeight) / 2
+        return NSAttributedString(string: text, attributes: [
+            .font: font,
+            .foregroundColor: UIColor(color),
+            .kern: style.spec.tracking * style.size(for: dts),
+            .paragraphStyle: paragraph,
+            .baselineOffset: baselineOffset,
+        ])
     }
 }
