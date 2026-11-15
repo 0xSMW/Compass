@@ -15,3 +15,6 @@ Packages/CompassCore/.build/
 Packages/CompassCore/Package.resolved
 *.xcresult
 .DS_Store
+
+# Agent worktrees
+.claude/worktrees/
