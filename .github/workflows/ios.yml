@@ -1,0 +1,149 @@
+name: iOS
+
+on:
+  push:
+    branches: [claude/friendly-ritchie-5q2nh9]
+  workflow_dispatch:
+    inputs:
+      screens:
+        description: "Comma-separated ScreenIDs to capture (empty = all 66)"
+        required: false
+        default: ""
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  XCODE_APP: /Applications/Xcode_26.6.app
+
+jobs:
+  core:
+    name: CompassCore (Linux, swift test)
+    runs-on: ubuntu-latest
+    container: swift:6.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift test
+        working-directory: Packages/CompassCore
+        run: swift test
+
+  app:
+    name: App + widget build, UI screenshots (macOS 26, Xcode 26.6)
+    runs-on: macos-26
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "$XCODE_APP"
+          xcodebuild -version
+          xcrun simctl list runtimes
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Pick simulator (390x844 pt preferred)
+        id: sim
+        run: |
+          set -euo pipefail
+          # iPhone 16e (390x844 pt) ships with the iOS 26.2 runtime on this image; 17e is the fallback.
+          UDID=""
+          for NAME in "iPhone 16e" "iPhone 17e" "iPhone 17"; do
+            UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys
+          name=sys.argv[1]
+          d=json.load(sys.stdin)['devices']
+          c=[(rt,x['udid']) for rt,l in d.items() if 'iOS' in rt for x in l if x['name']==name]
+          c.sort(reverse=True)
+          print(c[0][1] if c else '')" "$NAME")
+            if [ -n "$UDID" ]; then echo "Using $NAME ($UDID)"; echo "name=$NAME" >> "$GITHUB_OUTPUT"; break; fi
+          done
+          if [ -z "$UDID" ]; then echo "No simulator found"; xcrun simctl list devices available; exit 1; fi
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl status_bar "$UDID" override --time "9:41" --dataNetwork wifi --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100 || true
+          xcrun simctl ui "$UDID" appearance dark || true
+
+      - name: Build app, widget and UI tests
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing \
+            -project Compass.xcodeproj -scheme Compass \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee build/build.log | grep -E "error:|warning: .*deprecated|BUILD|\*\*" || true
+          grep -q "TEST BUILD SUCCEEDED" build/build.log || { grep -E "error:" -A3 build/build.log | head -200; exit 1; }
+
+      - name: Run screenshot tests
+        id: tests
+        env:
+          TEST_RUNNER_SCREENSHOT_DIR: ${{ github.workspace }}/build/screens-raw
+          TEST_RUNNER_SCREENS: ${{ github.event.inputs.screens }}
+        run: |
+          set +e
+          mkdir -p build/screens-raw
+          xcodebuild test-without-building \
+            -project Compass.xcodeproj -scheme Compass \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build/DerivedData \
+            -resultBundlePath build/Screenshots.xcresult \
+            > build/test.log 2>&1
+          STATUS=$?
+          grep -E "Test Case|error:|failed|passed|TEST" build/test.log | tail -80
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          ls build/screens-raw | wc -l
+
+      - name: Normalise screenshots to 390x844 and commit
+        if: always() && steps.sim.outcome == 'success'
+        run: |
+          set -euo pipefail
+          mkdir -p renders/ios
+          shopt -s nullglob
+          for f in build/screens-raw/*.png; do
+            sips -z 844 390 "$f" --out "renders/ios/$(basename "$f")" > /dev/null
+          done
+          echo "Simulator: ${{ steps.sim.outputs.name }}" > renders/ios/README.txt
+          echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> renders/ios/README.txt
+          echo "Commit: ${{ github.sha }}" >> renders/ios/README.txt
+          ls renders/ios | wc -l
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add renders/ios
+          if git diff --cached --quiet; then echo "No screenshot changes"; exit 0; fi
+          git commit -m "Update iOS screenshots from ${GITHUB_SHA::7} [skip ci]"
+          for i in 1 2 3 4; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            sleep $((i * 5))
+          done
+          exit 1
+
+      - name: Upload logs and results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-results
+          path: |
+            build/*.log
+            build/Screenshots.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Fail if tests failed
+        if: always()
+        run: |
+          if [ "${{ steps.tests.outputs.status }}" != "0" ]; then
+            grep -E "error:|failed" build/test.log | head -60 || true
+            exit 1
+          fi

@@ -1,0 +1,409 @@
+import Foundation
+
+// MARK: - Goal
+
+/// The symbol drawn next to a goal part. Raw values match the ids in
+/// design/compass-v3/source/tools/symbols.html (the app renders `icon-<rawValue>`).
+public enum PartSymbol: String, Codable, Hashable, Sendable, CaseIterable {
+    case wealth = "we"
+    case strength = "sg"
+    case friends = "fr"
+    case flag
+    case sun
+    case moon
+}
+
+public struct GoalPart: Identifiable, Codable, Hashable, Sendable {
+    public var id: UUID
+    public var title: String
+    public var symbol: PartSymbol
+    /// Removing a part archives it; its past steps stay visible.
+    public var isArchived: Bool
+
+    public init(id: UUID = UUID(), title: String, symbol: PartSymbol, isArchived: Bool = false) {
+        self.id = id
+        self.title = title
+        self.symbol = symbol
+        self.isArchived = isArchived
+    }
+}
+
+public enum GoalStatus: String, Codable, Hashable, Sendable {
+    case active
+    case achieved
+    case replaced
+}
+
+public struct Goal: Identifiable, Codable, Hashable, Sendable {
+    public var id: UUID
+    /// One sentence. It can have parts.
+    public var text: String
+    public var parts: [GoalPart]
+    public var createdAt: Date
+    public var status: GoalStatus
+    public var endedAt: Date?
+    /// Day 3 answer to "Why does this matter to you?" (B7). Played back on hard days.
+    public var why: Note?
+    /// True once B7 has been shown (asked once, skippable).
+    public var whyAsked: Bool
+
+    public init(
+        id: UUID = UUID(),
+        text: String,
+        parts: [GoalPart] = [],
+        createdAt: Date,
+        status: GoalStatus = .active,
+        endedAt: Date? = nil,
+        why: Note? = nil,
+        whyAsked: Bool = false
+    ) {
+        self.id = id
+        self.text = text
+        self.parts = parts
+        self.createdAt = createdAt
+        self.status = status
+        self.endedAt = endedAt
+        self.why = why
+        self.whyAsked = whyAsked
+    }
+
+    public var activeParts: [GoalPart] { parts.filter { !$0.isArchived } }
+
+    public func part(_ id: UUID?) -> GoalPart? {
+        guard let id else { return nil }
+        return parts.first { $0.id == id }
+    }
+}
+
+// MARK: - Day content
+
+/// A short recording or typed line. `duration == nil` means it was typed.
+public struct Note: Identifiable, Codable, Hashable, Sendable {
+    public var id: UUID
+    public var text: String
+    public var duration: TimeInterval?
+    public var createdAt: Date
+    /// Device that captured it, e.g. "This iPhone" or "iPad" (E5 merges two devices).
+    public var device: String?
+
+    public init(id: UUID = UUID(), text: String, duration: TimeInterval? = nil, createdAt: Date, device: String? = nil) {
+        self.id = id
+        self.text = text
+        self.duration = duration
+        self.createdAt = createdAt
+        self.device = device
+    }
+
+    public var isSpoken: Bool { duration != nil }
+}
+
+/// Morning "Who will you be today?" answer, e.g. "Patient. Ship one thing."
+public struct Intention: Codable, Hashable, Sendable {
+    public var text: String
+    public var duration: TimeInterval?
+    public var createdAt: Date
+
+    public init(text: String, duration: TimeInterval? = nil, createdAt: Date) {
+        self.text = text
+        self.duration = duration
+        self.createdAt = createdAt
+    }
+}
+
+public enum StepSize: String, Codable, Hashable, Sendable {
+    case regular
+    /// After 1–2 quiet days the suggestion is smaller (F1): "Smaller than usual. It still counts."
+    case smaller
+}
+
+public enum StepSource: String, Codable, Hashable, Sendable {
+    /// Named by the user (first week, typed or spoken).
+    case user
+    /// Proposed by CloudAssist (B3) and accepted with "Use this".
+    case suggested
+}
+
+public struct Step: Identifiable, Codable, Hashable, Sendable {
+    public var id: UUID
+    public var title: String
+    public var partID: UUID?
+    public var createdAt: Date
+    public var completedAt: Date?
+    public var size: StepSize
+    public var source: StepSource
+
+    public init(
+        id: UUID = UUID(),
+        title: String,
+        partID: UUID? = nil,
+        createdAt: Date,
+        completedAt: Date? = nil,
+        size: StepSize = .regular,
+        source: StepSource = .user
+    ) {
+        self.id = id
+        self.title = title
+        self.partID = partID
+        self.createdAt = createdAt
+        self.completedAt = completedAt
+        self.size = size
+        self.source = source
+    }
+
+    public var isDone: Bool { completedAt != nil }
+}
+
+public enum ReflectionOutcome: String, Codable, Hashable, Sendable {
+    /// "Done" / "Yes"
+    case moved
+    /// "Not today" — the answer becomes that day's reason.
+    case notToday
+}
+
+public enum SummaryState: String, Codable, Hashable, Sendable {
+    /// Summary is available (or cloud help is off and the transcript is shown plainly).
+    case ready
+    /// Offline: "Saved as audio. Text and summary appear here when you reconnect." (D6)
+    case waitingForNetwork
+    /// "Couldn't turn this recording into text." (D6b)
+    case transcriptionFailed
+}
+
+/// The evening entry for a day.
+public struct Reflection: Codable, Hashable, Sendable {
+    public var outcome: ReflectionOutcome
+    public var transcript: String
+    public var summary: String?
+    public var summaryState: SummaryState
+    public var duration: TimeInterval?
+    public var partID: UUID?
+    public var createdAt: Date
+    /// Device that recorded it ("This iPhone", "iPad"); used when two devices changed the same day (E5).
+    public var device: String?
+
+    public init(
+        outcome: ReflectionOutcome,
+        transcript: String,
+        summary: String? = nil,
+        summaryState: SummaryState = .ready,
+        duration: TimeInterval? = nil,
+        partID: UUID? = nil,
+        createdAt: Date,
+        device: String? = nil
+    ) {
+        self.outcome = outcome
+        self.transcript = transcript
+        self.summary = summary
+        self.summaryState = summaryState
+        self.duration = duration
+        self.partID = partID
+        self.createdAt = createdAt
+        self.device = device
+    }
+
+    /// Text shown in History and on the saved screen: summary if any, else transcript.
+    public var displayText: String { summary ?? transcript }
+}
+
+// MARK: - Day
+
+/// A calendar date independent of time zone ("2026-11-10").
+public struct DayKey: Hashable, Comparable, Codable, Sendable, CustomStringConvertible {
+    public var year: Int
+    public var month: Int
+    public var day: Int
+
+    public init(year: Int, month: Int, day: Int) {
+        self.year = year
+        self.month = month
+        self.day = day
+    }
+
+    public init(_ date: Date, calendar: Calendar) {
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        self.init(year: c.year ?? 1970, month: c.month ?? 1, day: c.day ?? 1)
+    }
+
+    public func date(in calendar: Calendar, hour: Int = 0, minute: Int = 0) -> Date {
+        calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour, minute: minute)) ?? Date(timeIntervalSince1970: 0)
+    }
+
+    public func adding(days: Int, calendar: Calendar) -> DayKey {
+        DayKey(calendar.date(byAdding: .day, value: days, to: date(in: calendar, hour: 12)) ?? date(in: calendar), calendar: calendar)
+    }
+
+    /// Whole days from `self` to `other` (positive if other is later).
+    public func days(to other: DayKey, calendar: Calendar) -> Int {
+        calendar.dateComponents([.day], from: date(in: calendar, hour: 12), to: other.date(in: calendar, hour: 12)).day ?? 0
+    }
+
+    public static func < (a: DayKey, b: DayKey) -> Bool {
+        (a.year, a.month, a.day) < (b.year, b.month, b.day)
+    }
+
+    public var description: String { String(format: "%04d-%02d-%02d", year, month, day) }
+}
+
+public struct Day: Identifiable, Codable, Hashable, Sendable {
+    public var key: DayKey
+    public var goalID: UUID?
+    public var intention: Intention?
+    public var step: Step?
+    public var notes: [Note]
+    public var reflection: Reflection?
+    /// Close (top-left) on the morning ritual sends you to Today; the morning isn't offered again that day.
+    public var morningSkipped: Bool
+    /// E5: the same day was changed on another device. Notes and audio merge; only the summary asks.
+    public var mergeCandidates: [Reflection]?
+
+    public var id: DayKey { key }
+
+    public init(
+        key: DayKey,
+        goalID: UUID? = nil,
+        intention: Intention? = nil,
+        step: Step? = nil,
+        notes: [Note] = [],
+        reflection: Reflection? = nil,
+        morningSkipped: Bool = false,
+        mergeCandidates: [Reflection]? = nil
+    ) {
+        self.key = key
+        self.goalID = goalID
+        self.intention = intention
+        self.step = step
+        self.notes = notes
+        self.reflection = reflection
+        self.morningSkipped = morningSkipped
+        self.mergeCandidates = mergeCandidates
+    }
+
+    /// Moved toward the goal: the step was completed or the evening answer was "Done"/"Yes".
+    public var moved: Bool {
+        (step?.isDone ?? false) || reflection?.outcome == .moved
+    }
+
+    /// Any trace of the user on this day. Quiet days have none.
+    public var hasActivity: Bool {
+        intention != nil || step != nil || !notes.isEmpty || reflection != nil || morningSkipped
+    }
+
+    /// The morning ritual has been done or dismissed.
+    public var morningHandled: Bool {
+        intention != nil || step != nil || morningSkipped
+    }
+}
+
+// MARK: - Settings
+
+public struct TimeOfDay: Codable, Hashable, Comparable, Sendable, CustomStringConvertible {
+    public var hour: Int
+    public var minute: Int
+
+    public init(hour: Int, minute: Int = 0) {
+        self.hour = hour
+        self.minute = minute
+    }
+
+    public init(_ date: Date, calendar: Calendar) {
+        let c = calendar.dateComponents([.hour, .minute], from: date)
+        self.init(hour: c.hour ?? 0, minute: c.minute ?? 0)
+    }
+
+    public var minutesSinceMidnight: Int { hour * 60 + minute }
+
+    public static func < (a: TimeOfDay, b: TimeOfDay) -> Bool { a.minutesSinceMidnight < b.minutesSinceMidnight }
+
+    public static let noon = TimeOfDay(hour: 12)
+
+    /// "07:00" — always 24-hour, shown in IBM Plex Mono.
+    public var description: String { String(format: "%02d:%02d", hour, minute) }
+}
+
+/// Two moments a day: Center (morning) and Look back (evening).
+public struct Rhythm: Codable, Hashable, Sendable {
+    public var morning: TimeOfDay
+    public var evening: TimeOfDay
+
+    public init(morning: TimeOfDay = TimeOfDay(hour: 7), evening: TimeOfDay = TimeOfDay(hour: 21)) {
+        self.morning = morning
+        self.evening = evening
+    }
+
+    public static let standard = Rhythm()
+}
+
+public enum InputPreference: String, Codable, Hashable, Sendable {
+    case voice
+    case typing
+}
+
+public struct Settings: Codable, Hashable, Sendable {
+    public var rhythm: Rhythm
+    /// The one switch: summaries and step ideas from a private cloud model. Off = plain transcripts, no ideas.
+    public var cloudAssist: Bool
+    public var notificationsEnabled: Bool
+    public var input: InputPreference
+    /// Time zone the rhythm follows. nil = device time zone. (I3: the day follows you.)
+    public var timeZoneID: String?
+
+    public init(
+        rhythm: Rhythm = .standard,
+        cloudAssist: Bool = true,
+        notificationsEnabled: Bool = true,
+        input: InputPreference = .voice,
+        timeZoneID: String? = nil
+    ) {
+        self.rhythm = rhythm
+        self.cloudAssist = cloudAssist
+        self.notificationsEnabled = notificationsEnabled
+        self.input = input
+        self.timeZoneID = timeZoneID
+    }
+}
+
+// MARK: - Snapshot
+
+/// Everything Compass stores. Synced through iCloud in the real app; no account.
+public struct CompassSnapshot: Codable, Hashable, Sendable {
+    public var goal: Goal?
+    public var pastGoals: [Goal]
+    /// All days, any order. Use `day(_:)` / `sortedDays`.
+    public var days: [Day]
+    public var settings: Settings
+
+    public init(goal: Goal? = nil, pastGoals: [Goal] = [], days: [Day] = [], settings: Settings = Settings()) {
+        self.goal = goal
+        self.pastGoals = pastGoals
+        self.days = days
+        self.settings = settings
+    }
+
+    public static let empty = CompassSnapshot()
+
+    public func day(_ key: DayKey) -> Day? { days.first { $0.key == key } }
+
+    public var sortedDays: [Day] { days.sorted { $0.key < $1.key } }
+
+    /// Insert or replace a day by key.
+    public mutating func upsert(_ day: Day) {
+        if let i = days.firstIndex(where: { $0.key == day.key }) {
+            days[i] = day
+        } else {
+            days.append(day)
+        }
+    }
+
+    /// Mutate (creating if needed) the day for `key`.
+    public mutating func updateDay(_ key: DayKey, _ body: (inout Day) -> Void) {
+        var d = day(key) ?? Day(key: key, goalID: goal?.id)
+        body(&d)
+        upsert(d)
+    }
+
+    /// Steps completed toward the current goal (shown as totals, never as a streak).
+    public var movedCount: Int {
+        guard let goal else { return 0 }
+        return days.filter { ($0.goalID == nil || $0.goalID == goal.id) && $0.moved }.count
+    }
+}
