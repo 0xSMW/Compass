@@ -23,8 +23,6 @@ enum LiveSync {
         let c = SyncCoordinator(model: model)
         coordinator = c
         c.start()
-        // R1–R3 (Onboarding) restore from the user's iCloud.
-        OnboardingRestoreService.live = backupRestorer
     }
 
     static func didChangeLocally() { coordinator?.noteLocalChange() }
@@ -42,6 +40,21 @@ enum LiveSync {
 }
 
 extension AppModel {
+    /// R1–R3 use this: the user's iCloud in the live app, `FakeBackupRestoring` in screenshot runs
+    /// (R1/R2 restore the fixture; R3 has nothing).
+    var backupRestorer: BackupRestoring {
+        if fixture != nil { return FakeBackupRestoring(conditions: conditions) }
+        return LiveSync.backupRestorer
+    }
+
+    /// Put a restored snapshot into the app (R2) and save it; sync carries on from it.
+    func applyRestoredSnapshot(_ restored: CompassSnapshot) {
+        snapshot = restored
+        calendar = SharedStorage.calendar(for: restored.settings)
+        if let http = cloud as? HTTPCloudAssist { http.switchOn = restored.settings.cloudAssist }
+        saveAndSync()
+    }
+
     /// Save through the store and tell sync (AppModel.persist is private to the shared file).
     func saveAndSync() {
         try? store.save(snapshot)
