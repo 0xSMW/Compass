@@ -1,0 +1,62 @@
+<!--title: Compass v3 · Goal changes-->
+<!--size: 1394x1200-->
+<style data-extra>
+.gcard{border:none;border-radius:24px;background:#161618;padding:24px;display:flex;flex-direction:column;gap:8px;color:#F4F4F2;font-family:inherit;text-align:left;cursor:pointer;width:100%;box-sizing:border-box}
+.mdots{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+.mdots i{width:6px;height:6px;border-radius:50%;background:#F4F4F2}
+.mdots i.n{background:#3A3A3E}
+</style>
+<script data-vals>
+const mk = (s) => s.split('').map((c) => ({ c: c === '1' ? '' : 'n' }));
+return {
+  a: mk('110111101110111111011110110111111101111011101111110111101'),
+  b: mk('1100110100111001000110011000101100100011010001100010011')
+};
+</script>
+<div class="hd">
+<h1>G · Goal changes</h1>
+<p>Reached from the goal at the top of History, or from Settings. Every change keeps your history. Removing a part archives its symbol, and its past steps stay visible. Reaching the goal fills the end marker of the line and shows your first and last steps side by side.</p>
+</div>
+
+<div class="strip">
+
+<div class="cell"><div class="cap"><b>G1 · Your goal</b><span>Edit wording or parts, or end it</span></div>
+<div class="ph">
+<div class="nav"><button class="navb quiet"><svg class="xs"><use href="#back"></use></svg>Back</button><button class="navb">Edit</button></div>
+<div class="foc top" data-anchor="foc"><h1 class="title">Earn my first million, stay strong, keep close friends.</h1><p class="caption ink3" style="margin-top: 8px">Since 14 Apr · 212 steps</p>
+<div style="margin-top: 24px">
+<button class="lr"><span class="tile"><svg class="s"><use href="#we"></use></svg></span>Earn my first million<svg class="s ink3" style="margin-left: auto"><use href="#right"></use></svg></button>
+<button class="lr"><span class="tile"><svg class="s"><use href="#sg"></use></svg></span>Stay strong<svg class="s ink3" style="margin-left: auto"><use href="#right"></use></svg></button>
+<button class="lr"><span class="tile"><svg class="s"><use href="#fr"></use></svg></span>Keep close friends<svg class="s ink3" style="margin-left: auto"><use href="#right"></use></svg></button>
+<button class="lr ink2"><span class="tile" style="background: none; border: 1.5px dashed #3A3A3E; box-sizing: border-box"><svg class="xs"><use href="#plus"></use></svg></span>Add a part</button>
+</div>
+<div style="margin-top: 24px">
+<button class="lr"><svg class="i"><use href="#flag"></use></svg>Mark as achieved</button>
+<button class="lr"><svg class="i"><use href="#swap"></use></svg>Replace with a new goal</button>
+<button class="lr" style="border-bottom: 1px solid #2A2A2D"><svg class="i"><use href="#arch"></use></svg>Past goals<svg class="s ink3" style="margin-left: auto"><use href="#right"></use></svg></button>
+</div></div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>G2 · Achieved</b><span>The end marker fills; first and last steps side by side</span></div>
+<div class="ph">
+<div style="position: absolute; top: 128px; left: 24px; width: 48px; height: 48px; border-radius: 50%; background: #F4F4F2; display: flex; align-items: center; justify-content: center" aria-hidden="true"><div style="width: 12px; height: 12px; border-radius: 50%; background: #0B0B0C"></div></div>
+<div class="foc" data-anchor="foc"><h1 class="display">You arrived.</h1><p class="heading ink2" style="margin-top: 16px">212 steps over seven months.</p>
+<div style="margin-top: 32px; display: flex; flex-direction: column; gap: 24px">
+<div><p class="caption ink3">First step · 14 Apr</p><p class="heading" style="margin-top: 4px">Opened a savings account</p></div>
+<div><p class="caption ink3">Last step · 10 Nov</p><p class="heading" style="margin-top: 4px">Signed Ridgeline</p></div>
+</div></div>
+<div class="dockb"><button class="btn" data-anchor="ctrl">Set the next goal</button></div>
+<div class="dockl"><button class="lnk">Later</button></div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>G3 · Past goals</b><span>Each keeps its full line and memos</span></div>
+<div class="ph">
+<div class="nav"><button class="navb quiet"><svg class="xs"><use href="#back"></use></svg>Back</button></div>
+<div class="foc top" data-anchor="foc"><h1 class="title">Past goals</h1>
+<div style="margin-top: 24px; display: flex; flex-direction: column; gap: 16px">
+<button class="gcard"><span class="heading">Run a half marathon.</span><span class="caption ink3">Jan–Apr 2026 · 64 steps · achieved</span><span class="mdots" aria-hidden="true"><sc-for list="{{a}}" as="x" hint-placeholder-count="40"><i class="{{x.c}}"></i></sc-for></span></button>
+<button class="gcard"><span class="heading">Write every morning.</span><span class="caption ink3">Sep–Dec 2025 · 38 steps · replaced</span><span class="mdots" aria-hidden="true"><sc-for list="{{b}}" as="x" hint-placeholder-count="40"><i class="{{x.c}}"></i></sc-for></span></button>
+</div></div>
+</div></div>
+
+</div>

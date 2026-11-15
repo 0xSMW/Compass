@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Compass v3 · Today</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+/* ---------- board ---------- */
+.bd{box-sizing:border-box;background:#111113;color:#F4F4F2;font-family:'Inter Tight',system-ui,sans-serif;padding:64px}
+.hd h1{margin:0;font-size:44px;line-height:48px;font-weight:600;letter-spacing:-0.03em}
+.hd p{margin:16px 0 0;font-size:18px;line-height:28px;color:#A1A1A6;max-width:1560px}
+.strip{display:flex;gap:48px;align-items:flex-start;margin-top:40px}
+.cell{width:390px;flex-shrink:0;display:flex;flex-direction:column;gap:16px}
+.cap{height:56px;display:flex;flex-direction:column;gap:4px}
+.cap b{font-size:18px;line-height:24px;font-weight:600}
+.cap span{font-size:15px;line-height:20px;color:#A1A1A6}
+/* ---------- phone frame: 390 x 844, safe top 56, safe bottom 792 ---------- */
+.ph{width:390px;height:844px;box-sizing:border-box;position:relative;overflow:hidden;background:#0B0B0C;color:#F4F4F2;border-radius:48px;font-family:'Inter Tight',system-ui,sans-serif}
+.ph::before{content:"";position:absolute;top:11px;left:132px;width:126px;height:37px;border-radius:20px;background:#000;z-index:9}
+.ph::after{content:"";position:absolute;bottom:8px;left:128px;width:134px;height:5px;border-radius:3px;background:#F4F4F2;opacity:.55;z-index:9}
+/* ---------- type: size/line-height on a 4pt rhythm ---------- */
+.display{margin:0;font-size:44px;line-height:48px;font-weight:600;letter-spacing:-0.03em}
+.title{margin:0;font-size:34px;line-height:40px;font-weight:600;letter-spacing:-0.025em}
+.live{margin:0;font-size:24px;line-height:32px;font-weight:500;letter-spacing:-0.01em}
+.heading{margin:0;font-size:22px;line-height:28px;font-weight:500;letter-spacing:-0.005em}
+.body{margin:0;font-size:17px;line-height:24px;font-weight:400}
+.caption{margin:0;font-size:15px;line-height:20px;font-weight:400}
+.micro{font-size:13px;line-height:16px;font-weight:500}
+.mono{font-family:'IBM Plex Mono',monospace}
+.ink2{color:#A1A1A6}.ink3{color:#8A8A90}.dim{color:#6E6E74}
+/* largest accessibility size (AX5 approximations) */
+/* ---------- regions (fixed anchors) ---------- */
+.nav{position:absolute;top:56px;left:14px;right:14px;height:48px;display:flex;align-items:center;justify-content:space-between;z-index:2}
+.navb{height:44px;min-width:44px;box-sizing:border-box;border:none;background:none;color:#F4F4F2;font-family:inherit;font-size:17px;line-height:24px;display:flex;align-items:center;justify-content:center;gap:4px;cursor:pointer;padding:0 10px}
+.navb.icon{padding:0;width:44px}
+.navb.quiet{color:#A1A1A6}
+.navb[disabled]{visibility:hidden}
+.prog{flex:1;margin:0 16px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.prog i{height:4px;border-radius:2px;background:#2A2A2D}
+.prog i.on{background:#F4F4F2}
+.ctx{position:absolute;top:128px;left:24px;right:24px;display:flex;gap:8px;align-items:flex-start;color:#A1A1A6}
+.ctx svg{margin-top:2px}
+.ctx .t{flex:1;min-width:0}
+.foc{position:absolute;top:224px;left:24px;right:24px;display:flex;flex-direction:column}
+.foc.top{top:128px}
+.foc.rec{bottom:252px}
+.tx{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;margin-top:16px}
+.tx.long{justify-content:flex-end;-webkit-mask-image:linear-gradient(transparent,#000 72px);mask-image:linear-gradient(transparent,#000 72px)}
+.mid{position:absolute;left:24px;right:24px;display:flex;flex-direction:column}
+.wavebar{position:absolute;top:616px;left:24px;right:24px;height:40px;display:flex;align-items:center;justify-content:center;gap:4px;overflow:hidden}
+.wavebar i{width:4px;flex-shrink:0;border-radius:2px}
+/* voice dock: keyboard | mic | side, mic centre on the 712 line */
+.dock{position:absolute;left:24px;right:24px;top:664px;height:96px;display:flex;align-items:center;justify-content:space-between}
+.side{width:56px;height:56px;display:flex;align-items:center;justify-content:center}
+/* button dock: primary row centred on 712, link row 744-792 */
+.dockb{position:absolute;left:24px;right:24px;top:684px;height:56px;display:flex;gap:16px}
+.dockb2{position:absolute;left:24px;right:24px;top:612px;height:56px;display:flex;gap:16px}
+.dockl{position:absolute;left:24px;right:24px;top:744px;height:48px;display:flex;justify-content:center}
+/* choice dock: two 96 circles on the 712 line, labels 768-792 */
+.dockc{position:absolute;left:24px;right:24px;top:664px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+.choice{display:flex;flex-direction:column;align-items:center;gap:8px;background:none;border:none;color:#F4F4F2;font-family:inherit;font-size:17px;line-height:24px;font-weight:500;padding:0;cursor:pointer}
+.choice .o{width:96px;height:96px;border-radius:50%;box-sizing:border-box;display:flex;align-items:center;justify-content:center;color:#0B0B0C}
+.choice .o.yes{background:#F4F4F2}
+.choice .o.no{border:2px solid #6E6E74}
+.choice.no{color:#A1A1A6}
+/* player: 80 tall, centred on 712 */
+.player{position:absolute;left:24px;right:24px;top:672px;height:80px;box-sizing:border-box;background:#161618;border-radius:24px;padding:0 12px 0 12px;display:flex;align-items:center;gap:16px}
+.minw{flex:1;min-width:0;display:flex;align-items:center;gap:3px;height:40px;overflow:hidden}
+.minw i{width:3px;flex-shrink:0;border-radius:2px;background:#6E6E74}
+/* Today: notes region bottom-anchored at 456, step slot bottom-anchored at 656, dock row on 712 */
+.stack{position:absolute;left:24px;right:24px;bottom:188px;display:flex;flex-direction:column;gap:24px}
+.notes{display:flex;flex-direction:column;gap:8px}
+.note{min-height:44px;display:flex;align-items:center;gap:8px;border:none;background:none;color:#A1A1A6;font-family:inherit;font-size:15px;line-height:20px;padding:0;text-align:left;cursor:pointer;width:100%}
+.note .t{flex:1;min-width:0}
+.slot{min-height:176px;box-sizing:border-box;background:#161618;border-radius:24px;padding:24px;display:flex;flex-direction:column;justify-content:space-between;gap:16px}
+.slot .tt{border:none;background:none;padding:0;text-align:left;color:#F4F4F2;font-family:inherit;cursor:pointer}
+.slot .bot{display:flex;align-items:center;gap:8px;height:56px}
+.slot .bot .lab{flex:1;min-width:0;display:flex;align-items:center;gap:8px;font-size:15px;line-height:20px;color:#8A8A90}
+.stopb{width:48px;height:48px;border-radius:50%;border:none;background:#F4F4F2;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0}
+.tdock{position:absolute;left:24px;right:24px;top:680px;height:64px;display:flex;gap:16px;align-items:center}
+/* ---------- controls ---------- */
+.mic{width:96px;height:96px;border-radius:50%;border:none;background:#F4F4F2;color:#0B0B0C;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:relative;flex-shrink:0}
+.ringw{position:relative;width:96px;height:96px;display:flex}
+.ringw::before{content:"";position:absolute;inset:-32px;border-radius:50%;border:1px solid #2A2A2D}
+.ringw::after{content:"";position:absolute;inset:-16px;border-radius:50%;border:1px solid #3A3A3E}
+.glow{position:relative;width:96px;height:96px;display:flex}
+.glow::before{content:"";position:absolute;inset:-24px;border-radius:50%;background:#F4F4F2;opacity:.1}
+.stop{width:28px;height:28px;border-radius:4px;background:#0B0B0C}
+.c56{width:56px;height:56px;box-sizing:border-box;border-radius:50%;border:1px solid #2A2A2D;background:none;color:#A1A1A6;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0}
+.c56.ink{border:1.5px solid #F4F4F2;color:#F4F4F2}
+.c56.done{border:2px solid #F4F4F2;color:#0B0B0C}
+.c56.done.on{background:#F4F4F2}
+.ic44{width:44px;height:44px;box-sizing:border-box;border-radius:50%;border:1px solid #2A2A2D;background:none;color:#A1A1A6;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0}
+.ic44.bare{border:none}
+.btn{flex:1;height:56px;border-radius:28px;border:none;background:#F4F4F2;color:#0B0B0C;font-family:inherit;font-size:17px;line-height:24px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;padding:0 24px}
+.btn2{flex:1;height:56px;box-sizing:border-box;border-radius:28px;border:1.5px solid #3A3A3E;background:none;color:#F4F4F2;font-family:inherit;font-size:17px;line-height:24px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;padding:0 24px}
+.btn.danger{background:#FF8A7A}
+.lnk{height:48px;border:none;background:none;color:#A1A1A6;font-family:inherit;font-size:17px;line-height:24px;cursor:pointer;padding:0 12px}
+.lnk.ink{color:#F4F4F2;font-weight:500}
+.pill{flex:1;min-width:0;box-sizing:border-box;height:64px;border-radius:32px;border:none;background:#161618;color:#F4F4F2;font-family:inherit;font-size:17px;line-height:24px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer}
+.chip{height:44px;box-sizing:border-box;padding:0 16px 0 12px;border-radius:22px;border:1px solid #2A2A2D;background:none;color:#A1A1A6;font-family:inherit;font-size:15px;line-height:20px;display:inline-flex;align-items:center;gap:8px;cursor:pointer;flex-shrink:0}
+.tile{width:40px;height:40px;border-radius:12px;background:#161618;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#F4F4F2}
+.row{display:flex;align-items:center;gap:16px}
+.lr{min-height:56px;display:flex;align-items:center;gap:16px;border:none;border-top:1px solid #2A2A2D;background:none;color:#F4F4F2;font-family:inherit;font-size:17px;line-height:24px;width:100%;padding:0;text-align:left;cursor:pointer}
+.lr .v{margin-left:auto;color:#A1A1A6}
+.sw{width:52px;height:32px;border-radius:16px;border:none;background:#F4F4F2;position:relative;flex-shrink:0;cursor:pointer;padding:0}
+.sw span{position:absolute;top:3px;right:3px;width:26px;height:26px;border-radius:50%;background:#0B0B0C}
+.field{background:none;border:none;border-bottom:1.5px solid #3A3A3E;padding:0 0 16px;resize:none;color:#F4F4F2;font-family:inherit;outline:none;width:100%;box-sizing:border-box}
+.field.focus{border-bottom-color:#F4F4F2}
+/* overlays */
+.scrim{position:absolute;inset:0;background:rgba(0,0,0,.64);z-index:3}
+.sheet{position:absolute;left:0;right:0;bottom:0;z-index:4;background:#1C1C1F;border-radius:24px 24px 48px 48px}
+.grab{position:absolute;top:8px;left:175px;width:40px;height:5px;border-radius:3px;background:#3A3A3E}
+.keys{position:absolute;left:0;right:0;bottom:0;height:336px;box-sizing:border-box;background:#1C1C1F;padding:8px 4px 0;display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:12px 6px;align-content:start;z-index:2}
+.keys i{height:44px;border-radius:6px;background:#3A3A3E}
+.abovekb{position:absolute;left:24px;right:24px;top:436px;height:56px;display:flex;gap:16px;z-index:2}
+.notice{display:flex;align-items:flex-start;gap:8px;background:#161618;border-radius:24px;padding:16px 16px 16px 16px;font-size:15px;line-height:20px;color:#D6D6D8}
+svg.i{width:24px;height:24px;flex-shrink:0}
+svg.s{width:20px;height:20px;flex-shrink:0}
+svg.xs{width:16px;height:16px;flex-shrink:0}
+svg.m{width:28px;height:28px;flex-shrink:0}
+svg.l{width:36px;height:36px;flex-shrink:0}
+/* largest accessibility size (AX5 approximations), applied last */
+.ph .axD{font-size:56px;line-height:60px} .ph .axT{font-size:48px;line-height:52px} .ph .axL{font-size:34px;line-height:40px} .ph .axH{font-size:30px;line-height:36px} .ph .axB{font-size:26px;line-height:32px} .ph .axC{font-size:22px;line-height:28px}
+.ph .slot .bot .lab.axC{font-size:22px;line-height:28px}
+
+
+</style>
+</helmet>
+<div class="bd" style="width: 5336px; height: 1200px">
+<svg width="0" height="0" style="position: absolute" aria-hidden="true"><defs>
+<symbol id="mic" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0"></path><path d="M12 18v3"></path></g></symbol>
+<symbol id="micoff" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0"></path><path d="M12 18v3"></path><path d="M4 4l16 16"></path></g></symbol>
+<symbol id="kb" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2.5" y="6" width="19" height="12" rx="2"></rect><path d="M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M8 14h8"></path></g></symbol>
+<symbol id="ok" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="square"></path></symbol>
+<symbol id="x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></symbol>
+<symbol id="back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></symbol>
+<symbol id="right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2"></path></symbol>
+<symbol id="down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2"></path></symbol>
+<symbol id="up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2"></path></symbol>
+<symbol id="redo" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.3-5.6"></path><path d="M4 4v4h4"></path></g></symbol>
+<symbol id="pen" viewBox="0 0 24 24"><path d="M3 21l1.5-5.5L16 4l4 4L8.5 19.5Z" fill="currentColor"></path></symbol>
+<symbol id="play" viewBox="0 0 24 24"><path d="M7 4l13 8-13 8Z" fill="currentColor"></path></symbol>
+<symbol id="wave" viewBox="0 0 24 24"><g fill="currentColor"><rect x="3" y="9" width="3" height="6" rx="1.5"></rect><rect x="10.5" y="4" width="3" height="16" rx="1.5"></rect><rect x="18" y="7" width="3" height="10" rx="1.5"></rect></g></symbol>
+<symbol id="we" viewBox="0 0 24 24"><path d="M3 21V15H9V9H15V3H21V21Z" fill="currentColor"></path></symbol>
+<symbol id="sg" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="15.5" cy="4" r="2.4" fill="currentColor" stroke="none"></circle><path d="M7.5 10.5l4.5-2.5 3 3.5h3"></path><path d="M12 8l-2 7"></path><path d="M10 15l-4 6"></path><path d="M10 15l4.5 2.5V22"></path></g></symbol>
+<symbol id="fr" viewBox="0 0 24 24"><g fill="currentColor"><circle cx="7" cy="6" r="3"></circle><circle cx="17" cy="6" r="3"></circle><path d="M2.5 21v-6a4 4 0 0 1 4-4h1a4 4 0 0 1 4 4v6Z"></path><path d="M12.5 21v-6a4 4 0 0 1 4-4h1a4 4 0 0 1 4 4v6Z"></path></g></symbol>
+<symbol id="set" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"></path><circle cx="16" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></g></symbol>
+<symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2"></path></symbol>
+<symbol id="minus" viewBox="0 0 24 24"><path d="M5 12h14" fill="none" stroke="currentColor" stroke-width="2"></path></symbol>
+<symbol id="sun" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"></circle><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"></path></g></symbol>
+<symbol id="moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" fill="currentColor"></path></symbol>
+<symbol id="lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2" fill="currentColor"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2.4"></path></symbol>
+<symbol id="cloud" viewBox="0 0 24 24"><path d="M7 19a5 5 0 0 1-.6-10A6 6 0 0 1 18 9.5a4.5 4.5 0 0 1-.5 9.5Z" fill="currentColor"></path></symbol>
+<symbol id="sync" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14.3-4.3"></path><path d="M4 4v3h3"></path><path d="M4 13a8 8 0 0 0 14.3 4.3"></path><path d="M20 20v-3h-3"></path></g></symbol>
+<symbol id="bell" viewBox="0 0 24 24"><g fill="currentColor"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4Z"></path><rect x="10" y="19" width="4" height="3" rx="1.5"></rect></g></symbol>
+<symbol id="globe" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"></path></g></symbol>
+<symbol id="disk" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 13h18"></path></g><circle cx="17" cy="16" r="1.4" fill="currentColor"></circle></symbol>
+<symbol id="trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></symbol>
+<symbol id="flag" viewBox="0 0 24 24"><g fill="currentColor"><rect x="4" y="3" width="2.4" height="18" rx="1.2"></rect><path d="M6.4 4h12l-3 4.5 3 4.5h-12Z"></path></g></symbol>
+<symbol id="swap" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h14l-3-3"></path><path d="M20 16H6l3 3"></path></g></symbol>
+<symbol id="arch" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="4" width="18" height="5" rx="1"></rect><path d="M5 9v11h14V9M10 13h4"></path></g></symbol>
+<symbol id="phone" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="3" fill="none" stroke="currentColor" stroke-width="2"></rect></symbol>
+<symbol id="tablet" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke="currentColor" stroke-width="2"></rect></symbol>
+<symbol id="more" viewBox="0 0 24 24"><g fill="currentColor"><circle cx="5" cy="12" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="19" cy="12" r="2"></circle></g></symbol>
+</defs></svg>
+<div class="hd">
+<h1>C · Today</h1>
+<p>Only what matters now: the goal, today’s step, today’s note. Three anchors never move between states: the step card’s bottom edge (656), its control and ••• options (centre 604), and the Note row (centre 712). The header grows down from 128. At the largest text size it scrolls in its own region and starts fully visible. The card grows up only for a long step. History and Settings sit in the nav row on every Today state.</p>
+</div>
+
+<div class="strip">
+
+<div class="cell"><div class="cap"><b>C1 · Nothing planned</b><span>Morning skipped. + opens planning (voice or typing).</span></div>
+<div class="ph">
+<div class="nav"><button class="navb quiet">History</button><button class="navb icon quiet" aria-label="Settings"><svg class="i"><use href="#set"></use></svg></button></div>
+<div class="foc top"><h1 class="title" data-anchor="goal">Earn my first million, stay strong, keep close friends.</h1></div>
+<div class="stack">
+<div class="slot" data-anchor="slot"><p class="heading ink2">No step yet</p><div class="bot"><span class="lab">Add one step for today</span><button class="c56 ink" aria-label="Plan a step" data-anchor="ctrl"><svg class="i"><use href="#plus"></use></svg></button></div></div>
+</div>
+<div class="tdock"><button class="c56" aria-label="Type a note"><svg class="i"><use href="#kb"></use></svg></button><button class="pill" data-anchor="dock"><svg class="i"><use href="#mic"></use></svg>Note</button></div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>C2 · Intention, no step</b><span>Allowed. Evening asks if you moved anyway.</span></div>
+<div class="ph">
+<div class="nav"><button class="navb quiet">History</button><button class="navb icon quiet" aria-label="Settings"><svg class="i"><use href="#set"></use></svg></button></div>
+<div class="foc top"><h1 class="title" data-anchor="goal">Earn my first million, stay strong, keep close friends.</h1><p class="body ink2" style="margin-top: 16px">“Patient. Ship one thing.”</p></div>
+<div class="stack">
+<div class="slot" data-anchor="slot"><p class="heading ink2">No step today</p><div class="bot"><span class="lab">You can still add one</span><button class="c56 ink" aria-label="Plan a step" data-anchor="ctrl"><svg class="i"><use href="#plus"></use></svg></button></div></div>
+</div>
+<div class="tdock"><button class="c56" aria-label="Type a note"><svg class="i"><use href="#kb"></use></svg></button><button class="pill" data-anchor="dock"><svg class="i"><use href="#mic"></use></svg>Note</button></div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>C3 · Step open</b><span>The everyday state, with today’s latest note</span></div>
+<div class="ph">
+<div class="nav"><button class="navb quiet">History</button><button class="navb icon quiet" aria-label="Settings"><svg class="i"><use href="#set"></use></svg></button></div>
+<div class="foc top"><h1 class="title" data-anchor="goal">Earn my first million, stay strong, keep close friends.</h1><p class="body ink2" style="margin-top: 16px">“Patient. Ship one thing.”</p></div>
+<div class="stack">
+<div class="notes"><button class="note"><svg class="s"><use href="#wave"></use></svg><span class="t">Sam is free Friday after 7</span><span class="micro mono ink3">0:12</span></button></div>
+<div class="slot" data-anchor="slot"><p class="heading">Text Sam about Friday dinner</p><div class="bot"><span class="lab"><svg class="s"><use href="#fr"></use></svg>Keep close friends</span><button class="ic44 bare" aria-label="Step options"><svg class="s"><use href="#more"></use></svg></button><button class="c56 done" aria-label="Mark step done" data-anchor="ctrl"></button></div></div>
+</div>
+<div class="tdock"><button class="c56" aria-label="Type a note"><svg class="i"><use href="#kb"></use></svg></button><button class="pill" data-anchor="dock"><svg class="i"><use href="#mic"></use></svg>Note</button></div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>C4 · Just completed</b><span>Circle fills, one click. Undo sits where you tapped, for 5 s.</span></div>
+<div class="ph">
+<div class="nav"><button class="navb quiet">History</button><button class="navb icon quiet" aria-label="Settings"><svg class="i"><use href="#set"></use></svg></button></div>
+<div class="foc top"><h1 class="title" data-anchor="goal">Earn my first million, stay strong, keep close friends.</h1><p class="body ink2" style="margin-top: 16px">“Patient. Ship one thing.”</p></div>
+<div class="stack">
+<div class="notes"><button class="note"><svg class="s"><use href="#wave"></use></svg><span class="t">Sam is free Friday after 7</span><span class="micro mono ink3">0:12</span></button></div>
+<div class="slot" data-anchor="slot"><p class="heading ink2">Text Sam about Friday dinner</p><div class="bot"><span class="lab" style="color: #F4F4F2" role="status">Done<button class="lnk ink" style="padding: 0 8px">Undo</button></span><button class="ic44 bare" aria-label="Step options"><svg class="s"><use href="#more"></use></svg></button><button class="c56 done on" aria-label="Done. Tap to reopen" data-anchor="ctrl"><svg class="i"><use href="#ok"></use></svg></button></div></div>
+</div>
+<div class="tdock"><button class="c56" aria-label="Type a note"><svg class="i"><use href="#kb"></use></svg></button><button class="pill" data-anchor="dock"><svg class="i"><use href="#mic"></use></svg>Note</button></div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>C5 · Recording a note</b><span>Note row becomes the recorder; words appear where notes live</span></div>
+<div class="ph">
+<div class="nav"><button class="navb quiet">History</button><button class="navb icon quiet" aria-label="Settings"><svg class="i"><use href="#set"></use></svg></button></div>
+<div class="foc top"><h1 class="title" data-anchor="goal">Earn my first million, stay strong, keep close friends.</h1><p class="body ink2" style="margin-top: 16px">“Patient. Ship one thing.”</p></div>
+<div class="stack">
+<div class="notes"><p class="live">Sam is free Friday after <span class="dim">seven</span></p></div>
+<div class="slot" data-anchor="slot"><p class="heading">Text Sam about Friday dinner</p><div class="bot"><span class="lab"><svg class="s"><use href="#fr"></use></svg>Keep close friends</span><button class="ic44 bare" aria-label="Step options"><svg class="s"><use href="#more"></use></svg></button><button class="c56 done" aria-label="Mark step done" data-anchor="ctrl"></button></div></div>
+</div>
+<div class="tdock"><button class="c56" aria-label="Switch to typing"><svg class="i"><use href="#kb"></use></svg></button><div class="pill" data-anchor="dock" role="group" aria-label="Recording note" style="justify-content: flex-start; padding: 0 8px 0 24px; gap: 16px"><span class="minw" aria-hidden="true"><sc-for list="{{bars}}" as="b" hint-placeholder-count="30"><i style="height: {{b.h}}px; background: {{b.c}}"></i></sc-for></span><button class="stopb" aria-label="Stop and save note"><span style="width: 16px; height: 16px; border-radius: 3px; background: #0B0B0C"></span></button></div></div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>C6 · Step options</b><span>Tap ••• on the card: change, move to another part, delete</span></div>
+<div class="ph">
+<div class="nav"><button class="navb quiet">History</button><button class="navb icon quiet" aria-label="Settings"><svg class="i"><use href="#set"></use></svg></button></div>
+<div class="foc top"><h1 class="title" data-anchor="goal">Earn my first million, stay strong, keep close friends.</h1><p class="body ink2" style="margin-top: 16px">“Patient. Ship one thing.”</p></div>
+<div class="stack">
+<div class="slot" data-anchor="slot"><span class="heading">Text Sam about Friday dinner</span><div class="bot"><span class="lab"><svg class="s"><use href="#fr"></use></svg>Keep close friends</span><span class="c56 done" data-anchor="ctrl"></span></div></div>
+</div>
+<div class="scrim" aria-hidden="true"></div>
+<div class="sheet" role="dialog" aria-label="Step options" style="height: 312px">
+<div class="grab" aria-hidden="true"></div>
+<div style="position: absolute; top: 24px; left: 24px; right: 24px">
+<button class="lr" style="border-top: none"><svg class="i"><use href="#mic"></use></svg>Change step</button>
+<button class="lr"><svg class="i"><use href="#fr"></use></svg>Counts toward: Keep close friends<svg class="s ink3" style="margin-left: auto"><use href="#right"></use></svg></button>
+<button class="lr"><svg class="i"><use href="#trash"></use></svg>Delete step</button>
+</div>
+<div class="dockl" style="top: 212px"><button class="lnk">Cancel</button></div>
+</div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>C7 · Short content</b><span>One-line goal and step: same anchors, more air</span></div>
+<div class="ph">
+<div class="nav"><button class="navb quiet">History</button><button class="navb icon quiet" aria-label="Settings"><svg class="i"><use href="#set"></use></svg></button></div>
+<div class="foc top"><h1 class="title" data-anchor="goal">Run a marathon.</h1><p class="body ink2" style="margin-top: 16px">“Easy miles.”</p></div>
+<div class="stack">
+<div class="slot" data-anchor="slot"><p class="heading">Run 5 km</p><div class="bot"><span class="lab"><svg class="s"><use href="#sg"></use></svg>Run a marathon</span><button class="ic44 bare" aria-label="Step options"><svg class="s"><use href="#more"></use></svg></button><button class="c56 done" aria-label="Mark step done" data-anchor="ctrl"></button></div></div>
+</div>
+<div class="tdock"><button class="c56" aria-label="Type a note"><svg class="i"><use href="#kb"></use></svg></button><button class="pill" data-anchor="dock"><svg class="i"><use href="#mic"></use></svg>Note</button></div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>C8 · Long goal</b><span>Header grows down; nothing below it moves</span></div>
+<div class="ph">
+<div class="nav"><button class="navb quiet">History</button><button class="navb icon quiet" aria-label="Settings"><svg class="i"><use href="#set"></use></svg></button></div>
+<div class="foc top"><h1 class="title" data-anchor="goal">Build a calm, profitable studio, stay strong for my kids, keep close friends.</h1><p class="body ink2" style="margin-top: 16px">“Finish one thing properly.”</p></div>
+<div class="stack">
+<div class="notes"><button class="note"><svg class="s"><use href="#wave"></use></svg><span class="t">Lena: price the pilot per seat</span><span class="micro mono ink3">3 notes</span></button></div>
+<div class="slot" data-anchor="slot"><p class="heading">Send Lena the pilot price</p><div class="bot"><span class="lab"><svg class="s"><use href="#we"></use></svg>Build a calm, profitable studio</span><button class="ic44 bare" aria-label="Step options"><svg class="s"><use href="#more"></use></svg></button><button class="c56 done" aria-label="Mark step done" data-anchor="ctrl"></button></div></div>
+</div>
+<div class="tdock"><button class="c56" aria-label="Type a note"><svg class="i"><use href="#kb"></use></svg></button><button class="pill" data-anchor="dock"><svg class="i"><use href="#mic"></use></svg>Note</button></div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>C9 · Long step</b><span>Card grows upward; its bottom and control stay put</span></div>
+<div class="ph">
+<div class="nav"><button class="navb quiet">History</button><button class="navb icon quiet" aria-label="Settings"><svg class="i"><use href="#set"></use></svg></button></div>
+<div class="foc top"><h1 class="title" data-anchor="goal">Earn my first million, stay strong, keep close friends.</h1><p class="body ink2" style="margin-top: 16px">“Patient. Ship one thing.”</p></div>
+<div class="stack">
+<div class="notes"><button class="note"><svg class="s"><use href="#wave"></use></svg><span class="t">Needed before Thursday’s board meeting</span><span class="micro mono ink3">0:21</span></button></div>
+<div class="slot" data-anchor="slot"><p class="heading">Draft the pricing section of the Ridgeline proposal and send it to Lena</p><div class="bot"><span class="lab"><svg class="s"><use href="#we"></use></svg>Earn my first million</span><button class="ic44 bare" aria-label="Step options"><svg class="s"><use href="#more"></use></svg></button><button class="c56 done" aria-label="Mark step done" data-anchor="ctrl"></button></div></div>
+</div>
+<div class="tdock"><button class="c56" aria-label="Type a note"><svg class="i"><use href="#kb"></use></svg></button><button class="pill" data-anchor="dock"><svg class="i"><use href="#mic"></use></svg>Note</button></div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>C10 · Typing a note</b><span>Keyboard covers the card; the field sits on the keyboard</span></div>
+<div class="ph">
+<div class="nav"><button class="navb quiet">History</button><button class="navb icon quiet" aria-label="Settings"><svg class="i"><use href="#set"></use></svg></button></div>
+<div class="foc top"><h1 class="title" data-anchor="goal">Earn my first million, stay strong, keep close friends.</h1><p class="body ink2" style="margin-top: 16px">“Patient. Ship one thing.”</p></div>
+<div class="abovekb"><input aria-label="Note" value="Sam is free Friday after 7" style="flex: 1; height: 56px; box-sizing: border-box; border-radius: 28px; border: 1.5px solid #F4F4F2; background: #161618; color: #F4F4F2; font-family: inherit; font-size: 17px; padding: 0 20px; outline: none"><button class="c56 done on" aria-label="Save note"><svg class="i"><use href="#ok"></use></svg></button></div>
+<div class="keys" aria-hidden="true"><sc-for list="{{keys}}" as="k" hint-placeholder-count="30"><i></i></sc-for></div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>C11 · Largest text, at rest</b><span>Goal starts at 128 below the nav, fully visible; the rest scrolls</span></div>
+<div class="ph">
+<div class="nav"><button class="navb quiet axC">History</button><button class="navb icon quiet" aria-label="Settings"><svg class="m"><use href="#set"></use></svg></button></div>
+<div class="hscroll" data-scroll-region style="position: absolute; top: 104px; left: 24px; right: 24px; bottom: 472px; overflow: hidden; -webkit-mask-image: linear-gradient(#000 calc(100% - 48px), transparent); mask-image: linear-gradient(#000 calc(100% - 48px), transparent)"><div style="padding: 24px 0"><h1 class="title axT" data-anchor="goal">Earn my first million, stay strong, keep close friends.</h1><p class="body ink2 axB" style="margin-top: 16px" data-anchor="last">“Patient. Ship one thing.”</p></div></div>
+<div class="stack">
+<div class="notes" data-anchor="notes"><button class="note axC" style="height: auto; min-height: 44px"><svg class="m"><use href="#wave"></use></svg><span class="t">Sam is free Friday after 7</span></button></div>
+<div class="slot" data-anchor="slot"><p class="heading axH">Text Sam about Friday dinner</p><div class="bot" style="height: auto; min-height: 56px"><span class="lab axC"><svg class="m"><use href="#fr"></use></svg>Keep close friends</span><button class="ic44 bare" aria-label="Step options"><svg class="s"><use href="#more"></use></svg></button><button class="c56 done" aria-label="Mark step done" data-anchor="ctrl"></button></div></div>
+</div>
+<div class="tdock"><button class="c56" aria-label="Type a note"><svg class="m"><use href="#kb"></use></svg></button><button class="pill axB" data-anchor="dock"><svg class="m"><use href="#mic"></use></svg>Note</button></div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>C11b · Largest text, scrolled to end</b><span>Last line clears the notes row by 24; nav turns solid</span></div>
+<div class="ph">
+<div aria-hidden="true" style="position: absolute; top: 0; left: 0; right: 0; height: 104px; background: #0B0B0C; box-shadow: 0 1px 0 #2A2A2D; z-index: 1"></div>
+<div class="nav"><button class="navb quiet axC">History</button><button class="navb icon quiet" aria-label="Settings"><svg class="m"><use href="#set"></use></svg></button></div>
+<div class="hscroll" data-scroll-region style="position: absolute; top: 104px; left: 24px; right: 24px; bottom: 472px; overflow: hidden"><div data-scroll-content style="padding: 24px 0; margin-top: -{{scrollEnd}}px"><h1 class="title axT" data-anchor="goal">Earn my first million, stay strong, keep close friends.</h1><p class="body ink2 axB" style="margin-top: 16px" data-anchor="last">“Patient. Ship one thing.”</p></div></div>
+<div class="stack">
+<div class="notes" data-anchor="notes"><button class="note axC" style="height: auto; min-height: 44px"><svg class="m"><use href="#wave"></use></svg><span class="t">Sam is free Friday after 7</span></button></div>
+<div class="slot" data-anchor="slot"><p class="heading axH">Text Sam about Friday dinner</p><div class="bot" style="height: auto; min-height: 56px"><span class="lab axC"><svg class="m"><use href="#fr"></use></svg>Keep close friends</span><button class="ic44 bare" aria-label="Step options"><svg class="s"><use href="#more"></use></svg></button><button class="c56 done" aria-label="Mark step done" data-anchor="ctrl"></button></div></div>
+</div>
+<div class="tdock"><button class="c56" aria-label="Type a note"><svg class="m"><use href="#kb"></use></svg></button><button class="pill axB" data-anchor="dock"><svg class="m"><use href="#mic"></use></svg>Note</button></div>
+</div></div>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":5336,"height":1200}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const H = [10,18,30,22,40,40,34,26,40,40,36,20,14,28,40,40,30,24,38,40,32,18,12,28,40,36,22,10,8,6,12,20,30,24,16,10,8,6,6,6];
+    const bars = (n, lit) => H.slice(0, n).map((h, i) => ({ h, c: i < lit ? '#F4F4F2' : '#2A2A2D' }));
+    const mini = H.slice(0, 20).map((h) => ({ h: Math.max(4, Math.round(h * 0.75)) }));
+    const keys = Array.from({ length: 30 }, (_, i) => ({ i }));
+    const custom = (() => { return { scrollEnd: 36 }; })() || {};
+    return Object.assign({ bars: bars(38, 32), mini, keys }, custom);
+  }
+}
+</script>
+</body>
+</html>

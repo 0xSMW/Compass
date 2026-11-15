@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Compass v3 · System sheet</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+/* ---------- board ---------- */
+.bd{box-sizing:border-box;background:#111113;color:#F4F4F2;font-family:'Inter Tight',system-ui,sans-serif;padding:64px}
+.hd h1{margin:0;font-size:44px;line-height:48px;font-weight:600;letter-spacing:-0.03em}
+.hd p{margin:16px 0 0;font-size:18px;line-height:28px;color:#A1A1A6;max-width:1560px}
+.strip{display:flex;gap:48px;align-items:flex-start;margin-top:40px}
+.cell{width:390px;flex-shrink:0;display:flex;flex-direction:column;gap:16px}
+.cap{height:56px;display:flex;flex-direction:column;gap:4px}
+.cap b{font-size:18px;line-height:24px;font-weight:600}
+.cap span{font-size:15px;line-height:20px;color:#A1A1A6}
+/* ---------- phone frame: 390 x 844, safe top 56, safe bottom 792 ---------- */
+.ph{width:390px;height:844px;box-sizing:border-box;position:relative;overflow:hidden;background:#0B0B0C;color:#F4F4F2;border-radius:48px;font-family:'Inter Tight',system-ui,sans-serif}
+.ph::before{content:"";position:absolute;top:11px;left:132px;width:126px;height:37px;border-radius:20px;background:#000;z-index:9}
+.ph::after{content:"";position:absolute;bottom:8px;left:128px;width:134px;height:5px;border-radius:3px;background:#F4F4F2;opacity:.55;z-index:9}
+/* ---------- type: size/line-height on a 4pt rhythm ---------- */
+.display{margin:0;font-size:44px;line-height:48px;font-weight:600;letter-spacing:-0.03em}
+.title{margin:0;font-size:34px;line-height:40px;font-weight:600;letter-spacing:-0.025em}
+.live{margin:0;font-size:24px;line-height:32px;font-weight:500;letter-spacing:-0.01em}
+.heading{margin:0;font-size:22px;line-height:28px;font-weight:500;letter-spacing:-0.005em}
+.body{margin:0;font-size:17px;line-height:24px;font-weight:400}
+.caption{margin:0;font-size:15px;line-height:20px;font-weight:400}
+.micro{font-size:13px;line-height:16px;font-weight:500}
+.mono{font-family:'IBM Plex Mono',monospace}
+.ink2{color:#A1A1A6}.ink3{color:#8A8A90}.dim{color:#6E6E74}
+/* largest accessibility size (AX5 approximations) */
+/* ---------- regions (fixed anchors) ---------- */
+.nav{position:absolute;top:56px;left:14px;right:14px;height:48px;display:flex;align-items:center;justify-content:space-between;z-index:2}
+.navb{height:44px;min-width:44px;box-sizing:border-box;border:none;background:none;color:#F4F4F2;font-family:inherit;font-size:17px;line-height:24px;display:flex;align-items:center;justify-content:center;gap:4px;cursor:pointer;padding:0 10px}
+.navb.icon{padding:0;width:44px}
+.navb.quiet{color:#A1A1A6}
+.navb[disabled]{visibility:hidden}
+.prog{flex:1;margin:0 16px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.prog i{height:4px;border-radius:2px;background:#2A2A2D}
+.prog i.on{background:#F4F4F2}
+.ctx{position:absolute;top:128px;left:24px;right:24px;display:flex;gap:8px;align-items:flex-start;color:#A1A1A6}
+.ctx svg{margin-top:2px}
+.ctx .t{flex:1;min-width:0}
+.foc{position:absolute;top:224px;left:24px;right:24px;display:flex;flex-direction:column}
+.foc.top{top:128px}
+.foc.rec{bottom:252px}
+.tx{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;margin-top:16px}
+.tx.long{justify-content:flex-end;-webkit-mask-image:linear-gradient(transparent,#000 72px);mask-image:linear-gradient(transparent,#000 72px)}
+.mid{position:absolute;left:24px;right:24px;display:flex;flex-direction:column}
+.wavebar{position:absolute;top:616px;left:24px;right:24px;height:40px;display:flex;align-items:center;justify-content:center;gap:4px;overflow:hidden}
+.wavebar i{width:4px;flex-shrink:0;border-radius:2px}
+/* voice dock: keyboard | mic | side, mic centre on the 712 line */
+.dock{position:absolute;left:24px;right:24px;top:664px;height:96px;display:flex;align-items:center;justify-content:space-between}
+.side{width:56px;height:56px;display:flex;align-items:center;justify-content:center}
+/* button dock: primary row centred on 712, link row 744-792 */
+.dockb{position:absolute;left:24px;right:24px;top:684px;height:56px;display:flex;gap:16px}
+.dockb2{position:absolute;left:24px;right:24px;top:612px;height:56px;display:flex;gap:16px}
+.dockl{position:absolute;left:24px;right:24px;top:744px;height:48px;display:flex;justify-content:center}
+/* choice dock: two 96 circles on the 712 line, labels 768-792 */
+.dockc{position:absolute;left:24px;right:24px;top:664px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+.choice{display:flex;flex-direction:column;align-items:center;gap:8px;background:none;border:none;color:#F4F4F2;font-family:inherit;font-size:17px;line-height:24px;font-weight:500;padding:0;cursor:pointer}
+.choice .o{width:96px;height:96px;border-radius:50%;box-sizing:border-box;display:flex;align-items:center;justify-content:center;color:#0B0B0C}
+.choice .o.yes{background:#F4F4F2}
+.choice .o.no{border:2px solid #6E6E74}
+.choice.no{color:#A1A1A6}
+/* player: 80 tall, centred on 712 */
+.player{position:absolute;left:24px;right:24px;top:672px;height:80px;box-sizing:border-box;background:#161618;border-radius:24px;padding:0 12px 0 12px;display:flex;align-items:center;gap:16px}
+.minw{flex:1;min-width:0;display:flex;align-items:center;gap:3px;height:40px;overflow:hidden}
+.minw i{width:3px;flex-shrink:0;border-radius:2px;background:#6E6E74}
+/* Today: notes region bottom-anchored at 456, step slot bottom-anchored at 656, dock row on 712 */
+.stack{position:absolute;left:24px;right:24px;bottom:188px;display:flex;flex-direction:column;gap:24px}
+.notes{display:flex;flex-direction:column;gap:8px}
+.note{min-height:44px;display:flex;align-items:center;gap:8px;border:none;background:none;color:#A1A1A6;font-family:inherit;font-size:15px;line-height:20px;padding:0;text-align:left;cursor:pointer;width:100%}
+.note .t{flex:1;min-width:0}
+.slot{min-height:176px;box-sizing:border-box;background:#161618;border-radius:24px;padding:24px;display:flex;flex-direction:column;justify-content:space-between;gap:16px}
+.slot .tt{border:none;background:none;padding:0;text-align:left;color:#F4F4F2;font-family:inherit;cursor:pointer}
+.slot .bot{display:flex;align-items:center;gap:8px;height:56px}
+.slot .bot .lab{flex:1;min-width:0;display:flex;align-items:center;gap:8px;font-size:15px;line-height:20px;color:#8A8A90}
+.stopb{width:48px;height:48px;border-radius:50%;border:none;background:#F4F4F2;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0}
+.tdock{position:absolute;left:24px;right:24px;top:680px;height:64px;display:flex;gap:16px;align-items:center}
+/* ---------- controls ---------- */
+.mic{width:96px;height:96px;border-radius:50%;border:none;background:#F4F4F2;color:#0B0B0C;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:relative;flex-shrink:0}
+.ringw{position:relative;width:96px;height:96px;display:flex}
+.ringw::before{content:"";position:absolute;inset:-32px;border-radius:50%;border:1px solid #2A2A2D}
+.ringw::after{content:"";position:absolute;inset:-16px;border-radius:50%;border:1px solid #3A3A3E}
+.glow{position:relative;width:96px;height:96px;display:flex}
+.glow::before{content:"";position:absolute;inset:-24px;border-radius:50%;background:#F4F4F2;opacity:.1}
+.stop{width:28px;height:28px;border-radius:4px;background:#0B0B0C}
+.c56{width:56px;height:56px;box-sizing:border-box;border-radius:50%;border:1px solid #2A2A2D;background:none;color:#A1A1A6;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0}
+.c56.ink{border:1.5px solid #F4F4F2;color:#F4F4F2}
+.c56.done{border:2px solid #F4F4F2;color:#0B0B0C}
+.c56.done.on{background:#F4F4F2}
+.ic44{width:44px;height:44px;box-sizing:border-box;border-radius:50%;border:1px solid #2A2A2D;background:none;color:#A1A1A6;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0}
+.ic44.bare{border:none}
+.btn{flex:1;height:56px;border-radius:28px;border:none;background:#F4F4F2;color:#0B0B0C;font-family:inherit;font-size:17px;line-height:24px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;padding:0 24px}
+.btn2{flex:1;height:56px;box-sizing:border-box;border-radius:28px;border:1.5px solid #3A3A3E;background:none;color:#F4F4F2;font-family:inherit;font-size:17px;line-height:24px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;padding:0 24px}
+.btn.danger{background:#FF8A7A}
+.lnk{height:48px;border:none;background:none;color:#A1A1A6;font-family:inherit;font-size:17px;line-height:24px;cursor:pointer;padding:0 12px}
+.lnk.ink{color:#F4F4F2;font-weight:500}
+.pill{flex:1;min-width:0;box-sizing:border-box;height:64px;border-radius:32px;border:none;background:#161618;color:#F4F4F2;font-family:inherit;font-size:17px;line-height:24px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer}
+.chip{height:44px;box-sizing:border-box;padding:0 16px 0 12px;border-radius:22px;border:1px solid #2A2A2D;background:none;color:#A1A1A6;font-family:inherit;font-size:15px;line-height:20px;display:inline-flex;align-items:center;gap:8px;cursor:pointer;flex-shrink:0}
+.tile{width:40px;height:40px;border-radius:12px;background:#161618;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#F4F4F2}
+.row{display:flex;align-items:center;gap:16px}
+.lr{min-height:56px;display:flex;align-items:center;gap:16px;border:none;border-top:1px solid #2A2A2D;background:none;color:#F4F4F2;font-family:inherit;font-size:17px;line-height:24px;width:100%;padding:0;text-align:left;cursor:pointer}
+.lr .v{margin-left:auto;color:#A1A1A6}
+.sw{width:52px;height:32px;border-radius:16px;border:none;background:#F4F4F2;position:relative;flex-shrink:0;cursor:pointer;padding:0}
+.sw span{position:absolute;top:3px;right:3px;width:26px;height:26px;border-radius:50%;background:#0B0B0C}
+.field{background:none;border:none;border-bottom:1.5px solid #3A3A3E;padding:0 0 16px;resize:none;color:#F4F4F2;font-family:inherit;outline:none;width:100%;box-sizing:border-box}
+.field.focus{border-bottom-color:#F4F4F2}
+/* overlays */
+.scrim{position:absolute;inset:0;background:rgba(0,0,0,.64);z-index:3}
+.sheet{position:absolute;left:0;right:0;bottom:0;z-index:4;background:#1C1C1F;border-radius:24px 24px 48px 48px}
+.grab{position:absolute;top:8px;left:175px;width:40px;height:5px;border-radius:3px;background:#3A3A3E}
+.keys{position:absolute;left:0;right:0;bottom:0;height:336px;box-sizing:border-box;background:#1C1C1F;padding:8px 4px 0;display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:12px 6px;align-content:start;z-index:2}
+.keys i{height:44px;border-radius:6px;background:#3A3A3E}
+.abovekb{position:absolute;left:24px;right:24px;top:436px;height:56px;display:flex;gap:16px;z-index:2}
+.notice{display:flex;align-items:flex-start;gap:8px;background:#161618;border-radius:24px;padding:16px 16px 16px 16px;font-size:15px;line-height:20px;color:#D6D6D8}
+svg.i{width:24px;height:24px;flex-shrink:0}
+svg.s{width:20px;height:20px;flex-shrink:0}
+svg.xs{width:16px;height:16px;flex-shrink:0}
+svg.m{width:28px;height:28px;flex-shrink:0}
+svg.l{width:36px;height:36px;flex-shrink:0}
+/* largest accessibility size (AX5 approximations), applied last */
+.ph .axD{font-size:56px;line-height:60px} .ph .axT{font-size:48px;line-height:52px} .ph .axL{font-size:34px;line-height:40px} .ph .axH{font-size:30px;line-height:36px} .ph .axB{font-size:26px;line-height:32px} .ph .axC{font-size:22px;line-height:28px}
+
+
+.grid8{background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.045) 0 1px,transparent 1px 8px),repeating-linear-gradient(90deg,rgba(255,255,255,.045) 0 1px,transparent 1px 8px)}
+.band{position:absolute;left:0;right:0;box-sizing:border-box;display:flex;align-items:flex-start;justify-content:flex-end;padding:4px 8px;font-size:13px;line-height:16px;font-weight:500;color:#F4F4F2}
+.band.l{justify-content:flex-start}
+.b1{background:rgba(76,141,255,.16);border-top:1px solid rgba(76,141,255,.5);border-bottom:1px solid rgba(76,141,255,.5)}
+.b2{background:rgba(255,138,122,.14);border-top:1px solid rgba(255,138,122,.5);border-bottom:1px solid rgba(255,138,122,.5)}
+.b3{background:rgba(244,244,242,.08);border-top:1px solid rgba(244,244,242,.3);border-bottom:1px solid rgba(244,244,242,.3)}
+.hatch{background:repeating-linear-gradient(45deg,rgba(255,255,255,.07) 0 6px,transparent 6px 12px)}
+.vline{position:absolute;top:0;bottom:0;width:0;border-left:1px dashed rgba(255,138,122,.7)}
+.hline{position:absolute;left:0;right:0;height:0;border-top:1px dashed #F4F4F2}
+.tag{position:absolute;font-size:13px;line-height:16px;font-weight:500;color:#F4F4F2;background:#0B0B0C;padding:2px 6px;border-radius:4px}
+.sec{display:flex;flex-direction:column;gap:16px}
+.sec h2{margin:0;font-size:28px;line-height:32px;font-weight:600;letter-spacing:-0.02em}
+.trow{display:flex;align-items:baseline;gap:16px;border-top:1px solid #2A2A2D;padding:12px 0}
+.trow .meta{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:13px;line-height:16px;color:#A1A1A6;white-space:nowrap}
+.sw2{display:flex;align-items:center;gap:16px;border-top:1px solid #2A2A2D;padding:12px 0}
+.sw2 i{width:40px;height:40px;border-radius:12px;border:1px solid #3A3A3E;flex-shrink:0}
+.sw2 .meta{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:13px;color:#A1A1A6}
+.sp i{display:block;height:16px;background:#F4F4F2;border-radius:2px}
+.rule{border-top:1px solid #2A2A2D;padding:12px 0;font-size:15px;line-height:20px;color:#A1A1A6}
+.rule b{color:#F4F4F2;font-weight:600}
+
+</style>
+</helmet>
+<div class="bd" style="width: 1840px; height: 2520px">
+<svg width="0" height="0" style="position: absolute" aria-hidden="true"><defs>
+<symbol id="mic" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0"></path><path d="M12 18v3"></path></g></symbol>
+<symbol id="micoff" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0"></path><path d="M12 18v3"></path><path d="M4 4l16 16"></path></g></symbol>
+<symbol id="kb" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2.5" y="6" width="19" height="12" rx="2"></rect><path d="M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M8 14h8"></path></g></symbol>
+<symbol id="ok" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="square"></path></symbol>
+<symbol id="x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></symbol>
+<symbol id="back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></symbol>
+<symbol id="right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2"></path></symbol>
+<symbol id="down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2"></path></symbol>
+<symbol id="up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2"></path></symbol>
+<symbol id="redo" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.3-5.6"></path><path d="M4 4v4h4"></path></g></symbol>
+<symbol id="pen" viewBox="0 0 24 24"><path d="M3 21l1.5-5.5L16 4l4 4L8.5 19.5Z" fill="currentColor"></path></symbol>
+<symbol id="play" viewBox="0 0 24 24"><path d="M7 4l13 8-13 8Z" fill="currentColor"></path></symbol>
+<symbol id="wave" viewBox="0 0 24 24"><g fill="currentColor"><rect x="3" y="9" width="3" height="6" rx="1.5"></rect><rect x="10.5" y="4" width="3" height="16" rx="1.5"></rect><rect x="18" y="7" width="3" height="10" rx="1.5"></rect></g></symbol>
+<symbol id="we" viewBox="0 0 24 24"><path d="M3 21V15H9V9H15V3H21V21Z" fill="currentColor"></path></symbol>
+<symbol id="sg" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="15.5" cy="4" r="2.4" fill="currentColor" stroke="none"></circle><path d="M7.5 10.5l4.5-2.5 3 3.5h3"></path><path d="M12 8l-2 7"></path><path d="M10 15l-4 6"></path><path d="M10 15l4.5 2.5V22"></path></g></symbol>
+<symbol id="fr" viewBox="0 0 24 24"><g fill="currentColor"><circle cx="7" cy="6" r="3"></circle><circle cx="17" cy="6" r="3"></circle><path d="M2.5 21v-6a4 4 0 0 1 4-4h1a4 4 0 0 1 4 4v6Z"></path><path d="M12.5 21v-6a4 4 0 0 1 4-4h1a4 4 0 0 1 4 4v6Z"></path></g></symbol>
+<symbol id="set" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"></path><circle cx="16" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></g></symbol>
+<symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2"></path></symbol>
+<symbol id="minus" viewBox="0 0 24 24"><path d="M5 12h14" fill="none" stroke="currentColor" stroke-width="2"></path></symbol>
+<symbol id="sun" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"></circle><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"></path></g></symbol>
+<symbol id="moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" fill="currentColor"></path></symbol>
+<symbol id="lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2" fill="currentColor"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2.4"></path></symbol>
+<symbol id="cloud" viewBox="0 0 24 24"><path d="M7 19a5 5 0 0 1-.6-10A6 6 0 0 1 18 9.5a4.5 4.5 0 0 1-.5 9.5Z" fill="currentColor"></path></symbol>
+<symbol id="sync" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14.3-4.3"></path><path d="M4 4v3h3"></path><path d="M4 13a8 8 0 0 0 14.3 4.3"></path><path d="M20 20v-3h-3"></path></g></symbol>
+<symbol id="bell" viewBox="0 0 24 24"><g fill="currentColor"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4Z"></path><rect x="10" y="19" width="4" height="3" rx="1.5"></rect></g></symbol>
+<symbol id="globe" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"></path></g></symbol>
+<symbol id="disk" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 13h18"></path></g><circle cx="17" cy="16" r="1.4" fill="currentColor"></circle></symbol>
+<symbol id="trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></symbol>
+<symbol id="flag" viewBox="0 0 24 24"><g fill="currentColor"><rect x="4" y="3" width="2.4" height="18" rx="1.2"></rect><path d="M6.4 4h12l-3 4.5 3 4.5h-12Z"></path></g></symbol>
+<symbol id="swap" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h14l-3-3"></path><path d="M20 16H6l3 3"></path></g></symbol>
+<symbol id="arch" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="4" width="18" height="5" rx="1"></rect><path d="M5 9v11h14V9M10 13h4"></path></g></symbol>
+<symbol id="phone" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="3" fill="none" stroke="currentColor" stroke-width="2"></rect></symbol>
+<symbol id="tablet" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke="currentColor" stroke-width="2"></rect></symbol>
+<symbol id="more" viewBox="0 0 24 24"><g fill="currentColor"><circle cx="5" cy="12" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="19" cy="12" r="2"></circle></g></symbol>
+</defs></svg>
+<div class="hd">
+<h1>System sheet · v3</h1>
+<p>Built in this order. First an 8pt base grid with 24pt insets and a 24pt container radius. Then safe areas and content regions, then grouping, then structure and controls, then the actual type sizes. Every screen on this page uses these tokens from one shared stylesheet. Spacing is 24 by default, 8–16 within a group, 32–48 between groups.</p>
+</div>
+
+<div class="strip">
+
+<div class="cell"><div class="cap"><b>1 · Grid, insets, safe areas</b><span>8pt grid · 24 insets · safe top 56 · safe bottom 792</span></div>
+<div class="ph grid8">
+<div class="band hatch l" style="top: 0; height: 56px; padding-top: 20px; padding-left: 24px">safe top 0–56</div>
+<div class="band hatch l" style="top: 792px; height: 52px; padding-left: 24px">safe bottom 792–844</div>
+<div class="vline" style="left: 24px"></div><div class="vline" style="left: 366px"></div>
+<div class="tag" style="top: 400px; left: 30px">24</div><div class="tag" style="top: 400px; left: 334px">24</div>
+<div style="position: absolute; top: 224px; left: 24px; right: 24px; height: 176px; border-radius: 24px; border: 1px solid #F4F4F2; display: flex; align-items: center; justify-content: center" class="caption">radius 24 · padding 24</div>
+<div class="tag" style="top: 560px; left: 120px">content width 342</div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>2 · Flow regions</b><span>Morning, Evening, Onboarding, History day</span></div>
+<div class="ph grid8">
+<div class="band b1" style="top: 56px; height: 48px">nav 56–104 · close/back left</div>
+<div class="band b3" style="top: 128px; height: 72px">subject 128 · up to 3 lines</div>
+<div class="band b2" style="top: 224px; height: 40px">focal 224</div>
+<div class="band b3" style="top: 280px; height: 312px">transcript / middle · scrolls inside, ends 592</div>
+<div class="band b1" style="top: 616px; height: 40px">wave 616–656</div>
+<div class="band b2" style="top: 664px; height: 96px">dock 664–760</div>
+<div class="hline" style="top: 712px"></div><div class="tag" style="top: 703px; left: 24px">primary line 712</div>
+<div class="band b3" style="top: 768px; height: 24px">labels / link to 792</div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>3 · Today regions</b><span>Header grows down; stack grows up; dock fixed</span></div>
+<div class="ph grid8">
+<div class="band b1" style="top: 56px; height: 48px">History · Settings</div>
+<div class="band b3" style="top: 128px; height: 160px">goal + intention · grows ↓</div>
+<div class="band b3" style="top: 412px; height: 44px">notes row · notices</div>
+<div class="band b2" style="top: 480px; height: 176px">step card · min 176 · grows ↑ · bottom 656</div>
+<div class="tag" style="top: 596px; left: 290px">control 604</div>
+<div class="band b1" style="top: 680px; height: 64px">keyboard + Note 680–744</div>
+<div class="hline" style="top: 712px"></div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>4 · Sheets and keyboard</b><span>Overlays keep the 712 line; the keyboard lifts the action</span></div>
+<div class="ph grid8">
+<div class="band b3" style="top: 128px; height: 80px">field at its normal anchor</div>
+<div class="band b2" style="top: 436px; height: 56px">action 436–492 · 16 above keys</div>
+<div class="band hatch" style="top: 508px; height: 336px; padding-top: 12px">keyboard 508–844</div>
+<div class="tag" style="top: 300px; left: 24px">sheets: radius 24 top · Save on 712 · Cancel 744–792</div>
+</div></div>
+
+</div>
+
+<div style="margin-top: 64px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 48px">
+
+<div class="sec"><h2>Type</h2>
+<div class="trow"><span class="display" style="font-size: 44px">Goal</span><span class="meta">Display 44/48 600 · AX 56</span></div>
+<div class="trow"><span class="title">Focal</span><span class="meta">Title 34/40 600 · AX 48</span></div>
+<div class="trow"><span class="live">Live words</span><span class="meta">Live 24/32 500 · AX 34</span></div>
+<div class="trow"><span class="heading">Step title</span><span class="meta">Heading 22/28 500 · AX 30</span></div>
+<div class="trow"><span class="body">Subject, list rows</span><span class="meta">Body 17/24 400 · AX 26</span></div>
+<div class="trow"><span class="caption ink2">Part, meta</span><span class="meta">Caption 15/20 400 · AX 22</span></div>
+<div class="trow"><span class="micro mono ink2">0:14 · 07:00</span><span class="meta">Micro 13/16 500 mono</span></div>
+<p class="caption ink3">Inter Tight for everything, IBM Plex Mono for times and durations only. Weight carries hierarchy, not colour.</p>
+</div>
+
+<div class="sec"><h2>Space, shape, controls</h2>
+<div class="sw2" style="gap: 24px"><span class="sp" style="display: flex; align-items: flex-end; gap: 8px"><i style="width: 8px"></i><i style="width: 16px"></i><i style="width: 24px"></i><i style="width: 32px"></i><i style="width: 48px"></i></span><span class="meta">8 · 16 · 24 · 32 · 48</span></div>
+<div class="rule"><b>24</b> default gap, insets, card padding</div>
+<div class="rule"><b>8–16</b> inside a group: icon to label, title to meta</div>
+<div class="rule"><b>32–48</b> between groups</div>
+<div class="rule"><b>Radius 24</b> cards, sheets, player, notices, widgets. <b>Pill</b> = height ÷ 2 (buttons 28, Note 32, chips 22). <b>12</b> tiles and fields.</div>
+<div class="rule"><b>Marks</b> (History only): moved = solid dot, missed = half-size grey dot, goal = ringed end marker. No streaks or scores anywhere.</div>
+<div class="rule"><b>44</b> minimum target · <b>56</b> keyboard, completion, secondary voice · <b>96</b> voice and answers</div>
+<div class="row" style="gap: 24px; padding-top: 8px"><span class="c56"><svg class="i"><use href="#kb"></use></svg></span><span class="c56 done"></span><span class="c56 done on"><svg class="i"><use href="#ok"></use></svg></span><span class="mic" style="width: 56px; height: 56px"><svg class="s"><use href="#play"></use></svg></span><span class="mic"><svg class="l"><use href="#mic"></use></svg></span></div>
+</div>
+
+<div class="sec"><h2>Colour</h2>
+<div class="sw2"><i style="background: #0B0B0C"></i><span class="body">Ground</span><span class="meta">#0B0B0C</span></div>
+<div class="sw2"><i style="background: #161618"></i><span class="body">Surface · cards, Note</span><span class="meta">#161618</span></div>
+<div class="sw2"><i style="background: #1C1C1F"></i><span class="body">Raised · sheets</span><span class="meta">#1C1C1F</span></div>
+<div class="sw2"><i style="background: #2A2A2D"></i><span class="body">Line</span><span class="meta">#2A2A2D</span></div>
+<div class="sw2"><i style="background: #6E6E74"></i><span class="body">Missed, dim words</span><span class="meta">3.8:1</span></div>
+<div class="sw2"><i style="background: #8A8A90"></i><span class="body">Tertiary text</span><span class="meta">5.7:1</span></div>
+<div class="sw2"><i style="background: #A1A1A6"></i><span class="body">Secondary text</span><span class="meta">7.6:1</span></div>
+<div class="sw2"><i style="background: #F4F4F2"></i><span class="body">Ink, primary fill</span><span class="meta">17.9:1</span></div>
+<div class="sw2"><i style="background: #FF8A7A"></i><span class="body">Destructive only</span><span class="meta">#FF8A7A</span></div>
+</div>
+
+<div class="sec"><h2>Anchor rules</h2>
+<div class="rule"><b>Same place, same job.</b> Close top-left on every morning and evening screen, back top-left everywhere else. History top-left and Settings top-right on Today. Keyboard bottom-left. Skip bottom-right.</div>
+<div class="rule"><b>One dock line.</b> Every bottom dock is centred on y 712: mic, answers, player, Note, Use this, Save, Continue. Today’s completion circle lives in the card, fixed at 604.</div>
+<div class="rule"><b>Text grows away from controls.</b> Headers and focal text grow down from 128 or 224. The Today card grows up from 656. Transcripts scroll inside their region.</div>
+<div class="rule"><b>Turn-taking slots.</b> Question → prompt → summary share 224. Mic → player share 712. Notes, live words and notices share the row above the card.</div>
+<div class="rule"><b>Planned reflow only.</b> Keyboard lifts the action to 436. Typed text goes where spoken words would appear; if that spot is under the keyboard (Today’s notes), the field rides on the keyboard. At the largest sizes, circles become full-width buttons. The Today header sits in a scroll region from 104 down to 24 above the notes row, with 24 padding at top and bottom. At rest the goal starts at 128 and is never clipped. Only once scrolled does the nav get a solid backdrop.</div>
+</div>
+
+</div>
+
+<div style="margin-top: 48px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 48px">
+<div class="sec"><h2>Motion and sound</h2>
+<div class="trow"><span class="body">Breath</span><span class="caption ink2" style="flex: 1">Center rings expand 4 s, settle 4 s</span><span class="meta">reduced: still</span></div>
+<div class="trow"><span class="body">Turn-taking</span><span class="caption ink2" style="flex: 1">Question, prompt and summary cross-fade in place</span><span class="meta">200 ms · reduced: cut</span></div>
+<div class="trow"><span class="body">Answer → record</span><span class="caption ink2" style="flex: 1">The tapped circle becomes the mic on the same line</span><span class="meta">240 ms · reduced: cut</span></div>
+<div class="trow"><span class="body">Complete</span><span class="caption ink2" style="flex: 1">Circle fills from centre, one dry click, light haptic</span><span class="meta">240 ms · reduced: instant</span></div>
+<div class="trow"><span class="body">Listening</span><span class="caption ink2" style="flex: 1">Waveform follows the voice; words land as said</span><span class="meta">live · reduced: level bar</span></div>
+<p class="caption ink3">One sound in the whole app: the completion click. It follows the silent switch.</p>
+</div>
+<div class="sec"><h2>Accessibility</h2>
+<div class="rule"><b>Dynamic Type to AX5.</b> Text reflows, controls keep their size and line, and choice circles become 72pt labelled buttons. Long headers scroll with 24 padding and start fully visible. Drawn on C11, C11b, B8, D7, D8, A8 and E6.</div>
+<div class="rule"><b>Every verb has two ways.</b> Voice or keyboard for planning, notes and reflection. Tap for completion, never voice.</div>
+<div class="rule"><b>Contrast.</b> All text ≥ 5.7:1 on ground. The missed mark (3.8:1) is a graphic, not text.</div>
+<div class="rule"><b>Screen readers.</b> Every icon button is labelled. Recording announces “Listening” and “Saved”. Completion announces “Done, undo available”.</div>
+<div class="rule"><b>No hidden gestures.</b> Every action on every screen is a visible control.</div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1840,"height":2520}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const H = [10,18,30,22,40,40,34,26,40,40,36,20,14,28,40,40,30,24,38,40,32,18,12,28,40,36,22,10,8,6,12,20,30,24,16,10,8,6,6,6];
+    const bars = (n, lit) => H.slice(0, n).map((h, i) => ({ h, c: i < lit ? '#F4F4F2' : '#2A2A2D' }));
+    const mini = H.slice(0, 20).map((h) => ({ h: Math.max(4, Math.round(h * 0.75)) }));
+    const keys = Array.from({ length: 30 }, (_, i) => ({ i }));
+    const custom = (() => {  })() || {};
+    return Object.assign({ bars: bars(38, 32), mini, keys }, custom);
+  }
+}
+</script>
+</body>
+</html>
