@@ -1,3 +1,3 @@
 Simulator: iPhone 16e
-Run: https://github.com/0xSMW/Compass/actions/runs/43751189166
-Commit: b84c4b9d1997e990dd2c1a32358cce6ed9674e26
+Run: https://github.com/0xSMW/Compass/actions/runs/43752866091
+Commit: 6ec12efb2e855b9084a6ced1a5c50a519c955f1b
