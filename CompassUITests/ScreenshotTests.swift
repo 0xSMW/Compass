@@ -20,7 +20,10 @@ final class ScreenshotTests: XCTestCase {
     }
 
     private func capture(_ ids: [ScreenID]) {
-        let only = ProcessInfo.processInfo.environment["SCREENS"].map { Set($0.split(separator: ",").map(String.init)) }
+        // Optional filter: SCREENS="C3,C4" (TEST_RUNNER_SCREENS in CI). Empty = all.
+        let filter = (ProcessInfo.processInfo.environment["SCREENS"] ?? "")
+            .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        let only: Set<String>? = filter.isEmpty ? nil : Set(filter)
         for id in ids where only?.contains(id.rawValue) ?? true {
             let app = XCUIApplication()
             app.launchArguments = ["-screen", id.rawValue, "-uitest"]

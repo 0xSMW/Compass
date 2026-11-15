@@ -103,8 +103,10 @@ jobs:
             > build/test.log 2>&1
           STATUS=$?
           grep -E "Test Case|error:|failed|passed|TEST" build/test.log | tail -80
+          COUNT=$(ls build/screens-raw | wc -l | tr -d ' ')
+          echo "Screenshots: $COUNT"
+          if [ -z "${TEST_RUNNER_SCREENS}" ] && [ "$COUNT" -lt 66 ] && [ "$STATUS" = "0" ]; then echo "Expected 66 screenshots"; STATUS=1; fi
           echo "status=$STATUS" >> "$GITHUB_OUTPUT"
-          ls build/screens-raw | wc -l
 
       - name: Normalise screenshots to 390x844 and commit
         if: always() && steps.sim.outcome == 'success'
