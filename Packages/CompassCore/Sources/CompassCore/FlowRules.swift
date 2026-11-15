@@ -178,7 +178,8 @@ public enum HistoryEdit {
             r.partID = partID
             day.reflection = r
         } else if (changed && !text.isEmpty) || (moved && day.step == nil) {
-            day.reflection = Reflection(outcome: moved ? .moved : .notToday, transcript: changed ? text : "", summary: nil,
+            // Typed on E4, so it is the summary; there is no recording or transcript behind it.
+            day.reflection = Reflection(outcome: moved ? .moved : .notToday, transcript: "", summary: changed && !text.isEmpty ? text : nil,
                                         partID: partID, createdAt: now, device: device)
         }
         if var step = day.step {

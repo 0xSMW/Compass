@@ -10,6 +10,8 @@ struct HistoryDayView: View {
     @Environment(\.dynamicTypeSize) private var dts
     let id: ScreenID
     private var playback: VoicePlayback { .shared }
+    /// A note opened from the list: it plays as it opens, and can be edited or deleted.
+    @State private var openNoteID: UUID?
 
     var body: some View {
         let key = model.historySelectedDay
@@ -63,7 +65,31 @@ struct HistoryDayView: View {
             )
             .region(.nav)
         }
+        .compassSheet(isPresented: Binding(get: { openNote(day) != nil }, set: { if !$0 { openNoteID = nil } }),
+                      height: openNote(day).map(NoteDetailSheet.height(for:)) ?? 392, label: "Note") {
+            if let note = openNote(day) {
+                NoteDetailSheet(
+                    note: note,
+                    onSave: { text in
+                        model.editNote(note.id, on: key, text: text)
+                        openNoteID = nil
+                    },
+                    onDelete: {
+                        model.deleteNote(note.id, on: key)
+                        Feedback.announce("Note deleted")
+                        openNoteID = nil
+                    },
+                    onClose: { openNoteID = nil }
+                )
+                .id(note.id)
+            }
+        }
         .onDisappear { playback.stop() }
+    }
+
+    private func openNote(_ day: Day?) -> Note? {
+        guard let openNoteID else { return nil }
+        return day?.notes.first { $0.id == openNoteID }
     }
 
     private func summaryText(_ day: Day?) -> String {
@@ -88,8 +114,9 @@ struct HistoryDayView: View {
             if let notes = day?.notes, !notes.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(notes) { note in
-                        NoteRow(text: note.text, duration: note.duration) {
-                            playback.toggle(MemoAudio.fileName(for: note))
+                        // Opens the note: a recording plays (`<note id>.m4a`), and it can be edited or deleted.
+                        NoteRow(text: note.text.isEmpty ? "Voice note" : note.text, duration: note.duration) {
+                            openNoteID = note.id
                         }
                     }
                 }

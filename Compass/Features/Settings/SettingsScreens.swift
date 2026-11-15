@@ -98,9 +98,13 @@ struct SettingsListView: View {
                 TimeEditor(title: sheet == .morning ? "Morning" : "Evening",
                            caption: sheet == .morning ? "When Compass asks who you’ll be today." : "When Compass asks what you did today.",
                            time: sheet == .morning ? s.rhythm.morning : s.rhythm.evening,
+                           range: sheet == .morning ? Rhythm.morningRange : Rhythm.eveningRange,
                            calendar: model.calendar,
                            onSave: { t in
-                               model.updateSettings { if sheet == .morning { $0.rhythm.morning = t } else { $0.rhythm.evening = t } }
+                               // A6's limits (CompassCore): morning 04:00–11:45, evening 17:00–23:45.
+                               model.updateSettings {
+                                   $0.rhythm = sheet == .morning ? $0.rhythm.settingMorning(t) : $0.rhythm.settingEvening(t)
+                               }
                                timeSheet = nil
                            },
                            onCancel: { timeSheet = nil })
@@ -126,6 +130,8 @@ private struct TimeEditor: View {
     let title: String
     let caption: String
     let time: TimeOfDay
+    /// The wheel only offers times inside this range (Rhythm.morningRange / eveningRange).
+    let range: ClosedRange<TimeOfDay>
     let calendar: Calendar
     let onSave: (TimeOfDay) -> Void
     let onCancel: () -> Void
@@ -135,7 +141,7 @@ private struct TimeEditor: View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title).compassFont(.heading).accessibilityAddTraits(.isHeader).padding(.top, Space.xs)
             Text(caption).compassFont(.body).foregroundStyle(.ink2).padding(.top, Space.xs)
-            DatePicker(title, selection: $date, displayedComponents: .hourAndMinute)
+            DatePicker(title, selection: $date, in: dateRange, displayedComponents: .hourAndMinute)
                 .datePickerStyle(.wheel)
                 .labelsHidden()
                 .environment(\.locale, Locale(identifier: "en_GB"))
@@ -151,8 +157,15 @@ private struct TimeEditor: View {
                 .padding(.bottom, 52)
         }
         .onAppear {
-            date = DayKey(Date(), calendar: calendar).date(in: calendar, hour: time.hour, minute: time.minute)
+            let t = time.clamped(to: range)
+            date = DayKey(Date(), calendar: calendar).date(in: calendar, hour: t.hour, minute: t.minute)
         }
+    }
+
+    private var dateRange: ClosedRange<Date> {
+        let day = DayKey(Date(), calendar: calendar)
+        return day.date(in: calendar, hour: range.lowerBound.hour, minute: range.lowerBound.minute)
+            ... day.date(in: calendar, hour: range.upperBound.hour, minute: range.upperBound.minute)
     }
 }
 

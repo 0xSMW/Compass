@@ -23,8 +23,12 @@ final class EveningSession {
     var editingSummary = false
     /// Transcription or summary in flight.
     var working = false
+    /// The day this evening belongs to, fixed when its first screen appears. An answer finished after
+    /// midnight still saves to that day, and the saved screen keeps showing it.
+    var dayKey: DayKey?
 
     func reset() {
+        dayKey = nil
         kind = nil
         outcome = nil
         typing = false
@@ -39,10 +43,23 @@ final class EveningSession {
 // MARK: - Evening actions
 
 extension AppModel {
+    /// The day tonight's answer is for (see `EveningSession.dayKey`).
+    var eveningDayKey: DayKey { EveningSession.shared.dayKey ?? todayKey }
+    var eveningDay: Day? { snapshot.day(eveningDayKey) }
+
+    /// D1 / D2 / D2b appeared: this evening belongs to today.
+    func beginEvening() {
+        let session = EveningSession.shared
+        if session.dayKey == nil { session.dayKey = todayKey }
+    }
+
+    /// "Start with: Typing" (Settings): answers open in the typing state instead of listening.
+    var prefersTyping: Bool { fixture == nil && settings.input == .typing }
+
     /// The evening subject never changes: today's step (with its part, or ✓ when done earlier),
     /// or the goal when there was no step.
     func eveningSubject(kind: EveningKind) -> (icon: CompassIcon?, text: String) {
-        if let step = today?.step {
+        if let step = eveningDay?.step {
             if kind == .doneEarlier { return (.ok, step.title) }
             return (part(step.partID).map { CompassIcon($0.symbol) }, step.title)
         }
@@ -52,17 +69,29 @@ extension AppModel {
     /// Done / Not today (D1, D7) or Yes / Not today (D2): the tapped circle becomes the mic.
     func answerEvening(_ outcome: ReflectionOutcome, kind: EveningKind) {
         let session = EveningSession.shared
+        let day = eveningDayKey
         session.reset()
+        session.dayKey = day
         session.kind = kind
         session.outcome = outcome
-        if outcome == .moved, kind == .stepOpen, today?.step?.isDone == false { setStepDone(true) }
-        startEveningListening()
+        if outcome == .moved, kind == .stepOpen, eveningDay?.step?.isDone == false {
+            let now = self.now
+            updateDay(day) { $0.step?.completedAt = now }
+        }
+        if prefersTyping {
+            session.typing = true
+            replace(with: eveningReflectScreen)
+        } else {
+            startEveningListening()
+        }
     }
 
     /// D2b: "Anything to add?" — mic or keyboard.
     func addToDoneEarlier(typing: Bool) {
         let session = EveningSession.shared
+        let day = eveningDayKey
         session.reset()
+        session.dayKey = day
         session.kind = .doneEarlier
         session.outcome = .moved
         if typing {
@@ -128,27 +157,27 @@ extension AppModel {
 
     func saveEveningTake(transcript: String, recording: Recording?, transcriptionFailed: Bool) {
         let session = EveningSession.shared
-        let old = today?.reflection
+        let old = eveningDay?.reflection
         let reflection = ReflectionRules.draft(
             outcome: session.outcome ?? old?.outcome ?? .moved,
             transcript: transcript,
             recording: recording,
             transcriptionFailed: transcriptionFailed,
-            partID: old?.partID ?? today?.step?.partID,
+            partID: old?.partID ?? eveningDay?.step?.partID,
             now: now
         )
         if let oldFile = old?.audioFileName, oldFile != reflection.audioFileName {
             VoicePlayback.shared.stop()
             VoiceStorage.shared.delete(oldFile)
         }
-        saveReflection(reflection)
+        updateDay(eveningDayKey) { $0.reflection = reflection }
         Feedback.announce("Saved")
     }
 
     /// Words from the saved audio if needed (Try again, D6b), then a summary if cloud help is on.
     /// Offline → "Saved as audio." with the reconnect notice (D6). Off → the plain transcript.
     func refreshReflection() async {
-        guard let start = today?.reflection else { return }
+        guard let start = eveningDay?.reflection else { return }
         let session = EveningSession.shared
         session.working = true
         defer { session.working = false }
@@ -160,7 +189,7 @@ extension AppModel {
             updateReflection(createdAt: stamp) { ReflectionRules.applying(transcript: text, to: $0) }
         }
 
-        guard let current = today?.reflection, current.createdAt == stamp, ReflectionRules.needsSummary(current) else { return }
+        guard let current = eveningDay?.reflection, current.createdAt == stamp, ReflectionRules.needsSummary(current) else { return }
         do {
             let summary = try await cloud.summarize(transcript: current.transcript, goal: goal)
             updateReflection(createdAt: stamp) { ReflectionRules.applying(summary: .success(summary), to: $0) }
@@ -171,11 +200,12 @@ extension AppModel {
         }
     }
 
-    /// Apply a change to today's reflection if it is still the same one (the user may have redone it).
+    /// Apply a change to this evening's reflection if it is still the same one (the user may have redone it).
     func updateReflection(createdAt: Date? = nil, _ change: (Reflection) -> Reflection) {
-        guard let r = today?.reflection else { return }
+        guard let r = eveningDay?.reflection else { return }
         if let createdAt, r.createdAt != createdAt { return }
-        saveReflection(change(r))
+        let next = change(r)
+        updateDay(eveningDayKey) { $0.reflection = next }
     }
 
     func setReflectionPart(_ partID: UUID) {
@@ -194,9 +224,11 @@ extension AppModel {
     /// Redo on the player: the same question again; the new memo replaces the old one.
     func recordReflectionAgain() {
         let session = EveningSession.shared
-        let outcome = today?.reflection?.outcome ?? .moved
-        let kind = session.kind ?? (today?.step == nil ? .noStep : .stepOpen)
+        let day = eveningDayKey
+        let outcome = eveningDay?.reflection?.outcome ?? .moved
+        let kind = session.kind ?? (eveningDay?.step == nil ? .noStep : .stepOpen)
         session.reset()
+        session.dayKey = day
         session.kind = kind
         session.outcome = outcome
         startEveningListening()
@@ -214,7 +246,7 @@ extension AppModel {
                 saveEveningTake(transcript: session.draft, recording: session.pendingRecording, transcriptionFailed: false)
             } else if let recording = session.pendingRecording {
                 saveEveningTake(transcript: "", recording: recording, transcriptionFailed: true)
-            } else if session.outcome != nil, today?.reflection == nil {
+            } else if session.outcome != nil, eveningDay?.reflection == nil {
                 // The answer itself (Done / Not today) is kept even with nothing said.
                 saveEveningTake(transcript: "", recording: nil, transcriptionFailed: false)
             }

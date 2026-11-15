@@ -57,23 +57,10 @@ extension AppModel {
     /// E4 Save.
     func saveHistoryEdit(_ key: DayKey, summary: String, moved: Bool, partID: UUID?) {
         let now = self.now, calendar = self.calendar, device = SyncDevice.label
+        // CompassCore's rule: unchanged text stays as it was (no "summary" copy of the transcript),
+        // and "None" clears the part on the step too.
         updateDay(key) { day in
-            let text = summary.trimmingCharacters(in: .whitespacesAndNewlines)
-            if var r = day.reflection {
-                r.summary = text.isEmpty ? nil : text
-                r.outcome = moved ? .moved : .notToday
-                r.partID = partID
-                day.reflection = r
-            } else if !text.isEmpty || moved {
-                day.reflection = Reflection(outcome: moved ? .moved : .notToday, transcript: text, summary: text.isEmpty ? nil : text,
-                                            partID: partID, createdAt: now, device: device)
-            }
-            if !moved { day.step?.completedAt = nil }
-            if moved, var step = day.step, !step.isDone {
-                step.completedAt = day.key.date(in: calendar, hour: 21)
-                day.step = step
-            }
-            if var step = day.step { step.partID = partID ?? step.partID; day.step = step }
+            HistoryEdit.apply(to: &day, summary: summary, moved: moved, partID: partID, now: now, calendar: calendar, device: device)
         }
     }
 

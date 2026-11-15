@@ -50,6 +50,10 @@ final class VoiceCapture {
     @ObservationIgnored private var watchTask: Task<Void, Never>?
     @ObservationIgnored private var silence = SilenceDetector()
     @ObservationIgnored private var startedAt = Date()
+    /// Bumped by every start and by a stop during `.starting`. A start that finds the generation
+    /// changed after one of its awaits was cancelled: it stops its own recorder and returns false,
+    /// so no take keeps listening without an owner.
+    @ObservationIgnored private var generation = 0
 
     var text: String { TranscriptUpdate(settled: settled, pending: pending).text }
     var isListening: Bool { state == .listening }
@@ -64,16 +68,22 @@ final class VoiceCapture {
     func start(recorder: AudioRecorder, transcriber: SpeechTranscriber) async throws -> Bool {
         guard state == .idle else { return false }
         state = .starting
+        generation += 1
+        let mine = generation
+        /// Still this start's turn (no stop or newer start came in during an await).
+        var current: Bool { self.generation == mine && self.state == .starting }
         VoicePlayback.shared.stop()
 
         var mic = recorder.permission
         if mic == .notDetermined { mic = await recorder.requestPermission() }
+        guard current else { return false }
         guard mic == .granted else {
             state = .idle
             throw StartError.microphoneOff
         }
         var speech = transcriber.permission
         if speech == .notDetermined { speech = await transcriber.requestPermission() }
+        guard current else { return false }
 
         settled = ""
         pending = ""
@@ -99,6 +109,7 @@ final class VoiceCapture {
         do {
             try await recorder.start()
         } catch {
+            guard current else { return false }
             transcriptTask?.cancel()
             transcriptTask = nil
             self.recorder = nil
@@ -110,6 +121,16 @@ final class VoiceCapture {
             }
         }
 
+        guard current else {
+            // Stopped (Close, Back) while the recorder was starting: nothing to keep. `stop()` already
+            // reset the state; end this recorder's take and remove its file, unless a newer start
+            // has the recorder by now.
+            if self.generation == mine + 1, self.state == .idle {
+                let orphan = try? await recorder.stop()
+                VoiceStorage.shared.delete(orphan?.fileName)
+            }
+            return false
+        }
         state = .listening
         Feedback.announce("Listening")
 
@@ -138,7 +159,17 @@ final class VoiceCapture {
 
     /// Stop recording, wait briefly for the last words, and hand back the take.
     func stop() async -> Take {
-        guard state == .listening || state == .starting else {
+        if state == .starting {
+            // The recorder isn't running yet. Cancel the start (it cleans up after its await) and
+            // hand back an empty take; nothing was recorded.
+            generation += 1
+            transcriptTask?.cancel()
+            transcriptTask = nil
+            recorder = nil
+            state = .idle
+            return Take(recording: nil, transcript: "", transcriptionFailed: true)
+        }
+        guard state == .listening else {
             return Take(recording: nil, transcript: text, transcriptionFailed: text.isEmpty)
         }
         state = .stopping

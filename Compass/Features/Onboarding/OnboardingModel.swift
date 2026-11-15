@@ -28,6 +28,9 @@ final class OnboardingDraft {
     var cloudAssist = true
     /// The goal came in by voice (sets the input preference).
     var usedVoice = false
+    /// Setting a new goal over an existing one (G1, G2, F3, Today's "Set the next goal"): the rhythm,
+    /// reminders, cloud help and input come from the current settings, and A6/A7 are skipped.
+    var replacing = false
     /// R1/R2
     var restoreSummary: BackupSummary?
     var restoreProgress: Double = 0
@@ -65,8 +68,18 @@ final class OnboardingDraft {
         notificationsEnabled = false
         cloudAssist = true
         usedVoice = false
+        replacing = false
         restoreSummary = nil
         restoreProgress = 0
+    }
+
+    /// A new goal over an existing one keeps what the user already chose.
+    func seed(from settings: Settings) {
+        rhythm = settings.rhythm.clamped
+        notificationsEnabled = settings.notificationsEnabled
+        cloudAssist = settings.cloudAssist
+        usedVoice = settings.input == .voice
+        replacing = true
     }
 
     /// The A3 → A4 / A4b decision for captured words.
@@ -191,7 +204,7 @@ extension AppModel {
         }
         Task { @MainActor in
             do {
-                try await VoiceCapture.shared.start(recorder: recorder, transcriber: transcriber)
+                guard try await VoiceCapture.shared.start(recorder: recorder, transcriber: transcriber) else { return }
                 draft.answering = answering
                 replace(with: .a3)
             } catch {
@@ -205,19 +218,38 @@ extension AppModel {
         await requestNotificationPermission() == .granted
     }
 
-    /// A7 Start: save the goal and settings, then land by the clock (Center before noon,
-    /// a step in the afternoon, "What did you do today?" after 21:00).
+    /// G1 "Replace with a new goal" / "Set a goal", G2 "Set the next goal", F3 "Set a new goal" and
+    /// Today's "Set the next goal": the goal steps of onboarding (A2–A5), seeded from the current
+    /// settings. A5 then saves the goal; the rhythm, reminders and cloud help stay as they are.
+    func startNewGoal() {
+        let draft = OnboardingDraft.shared
+        draft.reset()
+        draft.seed(from: settings)
+        go(.a2)
+    }
+
+    /// A5 Continue: on to A6 for a first goal; a replacement goal is saved here (A6/A7 were chosen before).
+    func onboardingContinueFromParts(_ draft: OnboardingDraft) {
+        if draft.parts.isEmpty { draft.keepAsOnePart() }
+        if draft.replacing { onboardingFinish(draft) } else { go(.a6) }
+    }
+
+    /// A7 Start (A5 when replacing a goal): save the goal and settings, then land by the clock (Center
+    /// before noon, a step in the afternoon, "What did you do today?" after 21:00). A replacement goal
+    /// leaves the settings alone.
     func onboardingFinish(_ draft: OnboardingDraft) {
         let goal = draft.makeGoal(createdAt: now)
         setGoal(goal)
-        updateSettings { s in
-            s.rhythm = draft.rhythm
-            s.cloudAssist = draft.cloudAssist
-            s.notificationsEnabled = draft.notificationsEnabled
-            s.input = draft.usedVoice ? .voice : .typing
+        if !draft.replacing {
+            updateSettings { s in
+                s.rhythm = draft.rhythm.clamped
+                s.cloudAssist = draft.cloudAssist
+                s.notificationsEnabled = draft.notificationsEnabled
+                s.input = draft.usedVoice ? .voice : .typing
+            }
         }
-        if let fake = cloud as? FakeCloudAssist { fake.isEnabled = draft.cloudAssist }
-        if let http = cloud as? HTTPCloudAssist { http.switchOn = draft.cloudAssist }
+        if let fake = cloud as? FakeCloudAssist { fake.isEnabled = settings.cloudAssist }
+        if let http = cloud as? HTTPCloudAssist { http.switchOn = settings.cloudAssist }
         // setGoal/updateSettings saved, told sync and reloaded the widget; System reschedules the reminders.
         draft.reset()
         goToEntry()

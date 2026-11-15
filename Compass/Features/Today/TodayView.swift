@@ -25,6 +25,9 @@ struct TodayView: View {
         case movePart
         /// All of today's notes.
         case notes
+        /// One note: its words, its recording (plays as it opens), Edit note, Delete note.
+        /// `editing`: a voice note just saved with no words opens on "Add words".
+        case note(UUID, editing: Bool)
     }
 
     @State private var mode: Mode = .resting
@@ -46,7 +49,12 @@ struct TodayView: View {
         return false
     }
 
-    private var isSheetUp: Bool { mode == .options || mode == .movePart || mode == .notes }
+    private var isSheetUp: Bool {
+        switch mode {
+        case .options, .movePart, .notes, .note: return true
+        default: return false
+        }
+    }
 
     var body: some View {
         let today = model.today
@@ -78,6 +86,10 @@ struct TodayView: View {
         .onChange(of: fieldFocused) { wasFocused, focused in
             // Keyboard dismissed (swipe, tap outside): leave typing, keep the draft for next time.
             if wasFocused, !focused, isTyping, !isFixture { mode = .resting }
+        }
+        .onChange(of: mode) { _, mode in
+            // The clock never pulls Today away mid-sentence (AppModel+Clock.swift).
+            if !isFixture { model.isComposing = isComposing(mode) }
         }
     }
 
@@ -144,8 +156,9 @@ struct TodayView: View {
                                       onTurnOn: { model.turnOnNotifications() },
                                       onDismiss: { model.dismissNotificationsNotice() })
         } else if let notes = today?.notes, let latest = notes.last {
+            // One note opens that note (it plays if it's a recording); several open the list.
             TodayNoteRow(note: latest, count: notes.count) {
-                if notes.count > 1 { mode = .notes }
+                mode = notes.count > 1 ? .notes : .note(latest.id, editing: false)
             }
         }
     }
@@ -167,6 +180,14 @@ struct TodayView: View {
                 showsOptions: !(mode == .options || mode == .movePart)
             )
             .allowsHitTesting(mode == .resting || mode == .recording)
+        } else if !model.snapshot.hasActiveGoal {
+            // The goal was achieved (or ended): Today keeps its frame and the card sets the next one.
+            StepCard(
+                title: "",
+                state: .empty(title: model.goal?.status == .achieved ? "You arrived." : "No goal right now",
+                              label: "Set the next goal"),
+                onPlan: { model.startNewGoal() }
+            )
         } else {
             StepCard(
                 title: "",
@@ -201,18 +222,32 @@ struct TodayView: View {
     private var dock: some View {
         HStack(spacing: Space.s) {
             // kit.css `.c56`; the glyph is 28 at AX (C11), the circle keeps its size.
-            Button { keyboardTapped() } label: {
-                Icon(.kb, size: typeSize.isAccessibilitySize ? IconSize.m : IconSize.i)
+            // "Start with: Typing" swaps the two: the pill types, the circle records.
+            Button { typingFirst && mode != .recording ? noteTapped() : keyboardTapped() } label: {
+                Icon(typingFirst && mode != .recording ? .mic : .kb, size: typeSize.isAccessibilitySize ? IconSize.m : IconSize.i)
                     .foregroundStyle(.ink2)
                     .frame(width: ControlSize.secondary, height: ControlSize.secondary)
                     .overlay(Circle().strokeBorder(Color.line, lineWidth: 1))
                     .contentShape(Circle())
             }
             .buttonStyle(PressableStyle())
-            .accessibilityLabel(mode == .recording ? "Switch to typing" : "Type a note")
-            NotePill(recording: mode == .recording, levels: pillLevels) { noteTapped() }
+            .accessibilityLabel(mode == .recording ? "Switch to typing" : (typingFirst ? "Record a note" : "Type a note"))
+            NotePill(icon: typingFirst ? .kb : .mic, recording: mode == .recording, levels: pillLevels) {
+                typingFirst && mode != .recording ? keyboardTapped() : noteTapped()
+            }
         }
         .frame(height: ControlSize.notePill)
+    }
+
+    /// Settings › Start with: Typing.
+    private var typingFirst: Bool { model.prefersTyping }
+
+    private func isComposing(_ mode: Mode) -> Bool {
+        switch mode {
+        case .typing: return true
+        case .note(_, let editing): return editing
+        default: return false
+        }
     }
 
     private var pillLevels: [Float] {
@@ -258,7 +293,8 @@ struct TodayView: View {
         showsRecordingBlock = false
         capture.onSilence = { Task { _ = await finishRecording(save: true) } }
         do {
-            try await capture.start(recorder: model.recorder, transcriber: model.transcriber)
+            // false: a take was already starting, or this one was cancelled before it began.
+            guard try await capture.start(recorder: model.recorder, transcriber: model.transcriber) else { return }
         } catch VoiceCapture.StartError.microphoneOff {
             model.conditions.microphone = .denied
             showsRecordingBlock = true
@@ -273,18 +309,22 @@ struct TodayView: View {
         mode = .recording
     }
 
-    /// Stop the take. Saves the note (words + duration) unless switching to typing; returns the words.
+    /// Stop the take. Saves the note (words, audio and length) unless switching to typing; returns the
+    /// words. The note keeps the recording's id, so its audio stays at `<note id>.m4a` and plays from
+    /// the notes row and History. With no words (speech off, nothing recognised) the audio is kept and
+    /// the note opens on "Add words".
     private func finishRecording(save: Bool) async -> String {
         guard mode == .recording else { return "" }
         capture.onSilence = nil
         let take = await capture.stop()
         mode = .resting
-        if save, take.recording != nil || !take.transcript.isEmpty {
-            model.addNote(take.transcript, duration: take.recording?.duration)
-            Feedback.announce("Note saved")
+        guard save, let note = model.saveVoiceNote(transcript: take.transcript, recording: take.recording) else {
+            // Switching to typing carries the words over; the audio isn't kept without a note.
+            VoiceStorage.shared.delete(take.recording?.fileName)
+            return take.transcript
         }
-        // A note keeps its words and length; the audio file isn't referenced, so don't leave it behind.
-        VoiceStorage.shared.delete(take.recording?.fileName)
+        Feedback.announce("Note saved")
+        if NoteRules.needsWords(note) { mode = .note(note.id, editing: true) }
         return take.transcript
     }
 
@@ -367,7 +407,28 @@ struct TodayView: View {
         case .notes:
             let notes = today?.notes ?? []
             CompassSheet(height: min(620, TodayStepOptions.sheetHeight(rows: max(1, notes.count))), label: "Today’s notes", onDismiss: { mode = .resting }) {
-                TodayNotesList(notes: notes) { mode = .resting }
+                TodayNotesList(notes: notes, onSelect: { mode = .note($0.id, editing: false) }) { mode = .resting }
+            }
+        case .note(let noteID, let editing):
+            if let note = today?.notes.first(where: { $0.id == noteID }) {
+                CompassSheet(height: NoteDetailSheet.height(for: note), label: "Note", onDismiss: { mode = .resting }) {
+                    NoteDetailSheet(
+                        note: note,
+                        startsEditing: editing,
+                        onSave: { text in
+                            model.editNote(noteID, on: model.todayKey, text: text)
+                            Feedback.announce("Note saved")
+                            mode = .resting
+                        },
+                        onDelete: {
+                            model.deleteNote(noteID, on: model.todayKey)
+                            Feedback.announce("Note deleted")
+                            mode = .resting
+                        },
+                        onClose: { mode = .resting }
+                    )
+                    .id(noteID)
+                }
             }
         case .typing where isFixture:
             ZStack(alignment: .top) {

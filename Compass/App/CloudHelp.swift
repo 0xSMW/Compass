@@ -17,7 +17,7 @@ extension AppModel {
     /// The connection came back (or the app became active online): retry what waited for it.
     /// Today's evening summary (D6 "Text and summary appear here when you reconnect.").
     func retryCloudWorkAfterReconnect() async {
-        guard cloudHelpOn, ReflectionRules.waitsForNetwork(today?.reflection), !EveningSession.shared.working else { return }
+        guard cloudHelpOn, ReflectionRules.waitsForNetwork(eveningDay?.reflection), !EveningSession.shared.working else { return }
         await refreshReflection()
     }
 }

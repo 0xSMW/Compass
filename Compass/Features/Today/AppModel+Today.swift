@@ -19,7 +19,7 @@ extension AppModel {
     /// C1/C2 · + opens planning (voice or typing): name your own step in the first week or with cloud
     /// help off (B4), otherwise the suggestion for the quietest part (B3).
     var todayPlanningScreen: ScreenID {
-        guard let goal else { return .a1 }
+        guard let goal, goal.status == .active else { return .a2 }
         let engine = DayEngine(calendar: calendar)
         let firstWeek = engine.goalDayNumber(goal: goal, today: todayKey) <= engine.firstWeekLength
         return firstWeek || !cloudHelpOn ? .b4 : .b3

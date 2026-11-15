@@ -175,7 +175,7 @@ final class FlowRulesTests: XCTestCase {
         HistoryEdit.apply(to: &day, summary: "Sick", moved: false, partID: Fixtures.friendsPartID, now: at(22), calendar: cal, device: nil)
         XCTAssertFalse(day.moved)
         XCTAssertEqual(day.reflection?.outcome, .notToday)
-        XCTAssertEqual(day.reflection?.transcript, "Sick")
-        XCTAssertNil(day.reflection?.summary)
+        XCTAssertEqual(day.reflection?.summary, "Sick")
+        XCTAssertFalse(ReflectionRules.showsTranscript(day.reflection!))
     }
 }

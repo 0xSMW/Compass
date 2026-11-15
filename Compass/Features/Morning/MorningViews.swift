@@ -39,6 +39,10 @@ struct MorningCenterView: View {
                 .region(.dock)
             }
         }
+        .onAppear {
+            // Settings › Start with: Typing. The same question, typed (Skip stays in the nav).
+            if model.prefersTyping, session.micProblem == nil { model.openMorningTyping(.intention) }
+        }
     }
 }
 
@@ -112,7 +116,9 @@ struct MorningPlanView: View {
             subject.region(.subject)
 
             VStack(alignment: .leading, spacing: Space.s) {
-                if let idea {
+                if idea == nil, model.fixture == nil {
+                    StepIdeaLoading(title: "Finding a step…")
+                } else if let idea {
                     RitualText(idea.title, style: .title)
                     let part = model.part(idea.partID)
                     HStack(alignment: .top, spacing: Space.xs) {
@@ -224,7 +230,7 @@ struct MorningTypingView: View {
 
     var body: some View {
         FlowScreen {
-            NavBar(leading: model.morningClose, scalesText: true).region(.nav)
+            NavBar(leading: model.morningClose, trailing: skip, scalesText: true).region(.nav)
 
             RitualSubject(text: purpose == .step ? model.morningPlanningSubject : (model.goal?.text ?? ""))
                 .region(.subject)
@@ -260,6 +266,16 @@ struct MorningTypingView: View {
         }
     }
 
+    /// Skip, as on B1 and B7's docks, when the intention or why is typed (live only; B5's board is a step).
+    private var skip: NavItem? {
+        guard !isFixture else { return nil }
+        switch purpose {
+        case .intention: return .text("Skip") { focused = false; Task { await model.continueToPlanning() } }
+        case .why: return .text("Skip") { focused = false; model.skipWhy() }
+        case .step: return nil
+        }
+    }
+
     private func save() {
         focused = false
         switch purpose {
@@ -268,9 +284,23 @@ struct MorningTypingView: View {
         case .why:
             let tidy = MorningRules.why(from: text)
             guard !tidy.isEmpty else { return }
-            model.saveWhy(tidy, recording: nil)
+            // A spoken answer that didn't become words keeps its recording with the typed words.
+            model.saveWhy(tidy, recording: session.whyRecording)
+            session.whyRecording = nil
             model.replace(with: .b1)
         }
+    }
+}
+
+/// B3 / B6 / F1 while the step idea is on its way (cloud help can take a few seconds): the question
+/// greyed in the focal slot, as when listening, so the frame never sits empty. "Say my own step" stays.
+struct StepIdeaLoading: View {
+    let title: String
+
+    var body: some View {
+        RitualText(title, style: .title, color: .ink2)
+            .accessibilityLabel(title)
+            .accessibilityAddTraits(.updatesFrequently)
     }
 }
 

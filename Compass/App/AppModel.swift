@@ -32,6 +32,12 @@ final class AppModel {
     /// Screen stack; the last element is on screen.
     private(set) var path: [ScreenID]
 
+    /// Clock bookkeeping for the live path (AppModel+Clock.swift): when the entry screen was last
+    /// judged against the clock, and whether Today has a note or step being typed (the clock never
+    /// pulls a screen away mid-sentence).
+    @ObservationIgnored var entryCheckedAt: Date?
+    @ObservationIgnored var isComposing = false
+
     // MARK: Services
 
     let store: Store
@@ -136,12 +142,18 @@ final class AppModel {
 
     /// Close (top-left) on a morning or evening screen: leave the ritual for Today.
     func closeRitual() {
-        if case .morning = phase, !(today?.morningHandled ?? false) { skipMorning() }
+        // Only a morning screen skips the morning (an evening closed after midnight leaves the new one open).
+        if current.flow == .morning, case .morning = phase, !(today?.morningHandled ?? false) { skipMorning() }
         reset(to: ScreenID.entry(for: .today, today: today))
     }
 
     /// Recompute the entry screen (after the clock crosses noon/21:00 or data changes).
     func goToEntry() { reset(to: entryScreen) }
+
+    /// Show `id` under whatever is pushed on top of the root (History, Settings), or on its own.
+    func resetRoot(to id: ScreenID) {
+        if path.count > 1 { path[0] = id } else { path = [id] }
+    }
 
     // MARK: Saving (the only way to change the snapshot)
 

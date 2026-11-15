@@ -346,12 +346,11 @@ struct OnboardingPartsView: View {
             }
             .region(.focalTop)
 
-            ButtonDock(primary: "Continue", link: draft.parts.count > 1 ? "Keep it as one part" : nil, onPrimary: {
-                if draft.parts.isEmpty { draft.keepAsOnePart() }
-                model.go(.a6)
+            ButtonDock(primary: draft.replacing ? "Start" : "Continue", link: draft.parts.count > 1 ? "Keep it as one part" : nil, onPrimary: {
+                model.onboardingContinueFromParts(draft)
             }, onLink: {
                 draft.keepAsOnePart()
-                model.go(.a6)
+                model.onboardingContinueFromParts(draft)
             })
         }
         .compassSheet(isPresented: sheetShown, height: 716, label: "Change this part") {

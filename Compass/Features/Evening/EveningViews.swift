@@ -9,7 +9,7 @@ struct EveningQuestionView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        let hasStep = model.today?.step != nil
+        let hasStep = model.eveningDay?.step != nil
         let kind: EveningKind = hasStep ? .stepOpen : .noStep
         let subject = model.eveningSubject(kind: kind)
         FlowScreen {
@@ -28,6 +28,7 @@ struct EveningQuestionView: View {
             )
             .region(.dock)
         }
+        .onAppear { model.beginEvening() }
     }
 }
 
@@ -55,6 +56,7 @@ struct EveningDoneEarlierView: View {
             )
             .region(.dock)
         }
+        .onAppear { model.beginEvening() }
     }
 }
 
@@ -72,7 +74,7 @@ struct EveningReflectView: View {
     private var capture: VoiceCapture { .shared }
 
     private var outcome: ReflectionOutcome { session.outcome ?? (id == .d4 ? .notToday : .moved) }
-    private var kind: EveningKind { session.kind ?? (model.today?.step == nil ? .noStep : .stepOpen) }
+    private var kind: EveningKind { session.kind ?? (model.eveningDay?.step == nil ? .noStep : .stepOpen) }
     private var question: String { ReflectionRules.question(outcome: outcome, kind: kind) }
     private var showsFixture: Bool { model.fixture != nil && !capture.isBusy && !session.typing && session.micProblem == nil }
 
@@ -175,7 +177,7 @@ struct EveningSavedView: View {
 
             RitualSubject(icon: subject.icon, text: subject.text).region(.subject)
 
-            if let r = model.today?.reflection {
+            if let r = model.eveningDay?.reflection {
                 if session.editingSummary {
                     editor
                 } else {
@@ -184,7 +186,7 @@ struct EveningSavedView: View {
             }
         }
         .task {
-            guard model.fixture == nil, !session.working, let r = model.today?.reflection,
+            guard model.fixture == nil, !session.working, let r = model.eveningDay?.reflection,
                   ReflectionRules.needsSummary(r) else { return }
             await model.refreshReflection()
         }

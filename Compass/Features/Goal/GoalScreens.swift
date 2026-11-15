@@ -93,7 +93,8 @@ struct YourGoalView: View {
                                 ListRow(icon: .flag, title: "Achieved", value: goal.endedAt.map { HistoryFormat.shortDate($0, calendar: model.calendar) },
                                         action: { model.go(.g2) })
                             }
-                            ListRow(icon: .swap, title: "Replace with a new goal", action: { model.go(.a2) })
+                            ListRow(icon: .swap, title: goal.status == .active ? "Replace with a new goal" : "Set the next goal",
+                                    action: { model.startNewGoal() })
                             ListRow(icon: .arch, title: "Past goals", action: { model.go(.g3) }) {
                                 Icon(.right, size: IconSize.s).foregroundStyle(.ink3)
                             }
@@ -102,7 +103,7 @@ struct YourGoalView: View {
                         .padding(.top, Space.m)
                     } else {
                         VStack(spacing: 0) {
-                            ListRow(icon: .plus, title: "Set a goal", action: { model.go(.a2) })
+                            ListRow(icon: .plus, title: "Set a goal", action: { model.startNewGoal() })
                             ListRow(icon: .arch, title: "Past goals", action: { model.go(.g3) }) {
                                 Icon(.right, size: IconSize.s).foregroundStyle(.ink3)
                             }
@@ -256,8 +257,10 @@ struct GoalAchievedView: View {
             }
             .region(.focal)
 
-            ButtonDock(primary: "Set the next goal", link: "Later", onPrimary: { model.go(.a2) }, onLink: {
-                model.reset(to: ScreenID.entry(for: .today, today: model.today))
+            // "Later" keeps the Today frame (DayPhase.goalEnded): History, Settings and Export stay
+            // reachable, and Today's card offers "Set the next goal".
+            ButtonDock(primary: "Set the next goal", link: "Later", onPrimary: { model.startNewGoal() }, onLink: {
+                model.goToEntry()
             })
         }
     }

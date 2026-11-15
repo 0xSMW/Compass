@@ -153,9 +153,10 @@ struct TodayPartPicker: View {
     }
 }
 
-/// All of today's notes (tap the notes row when there's more than one).
+/// All of today's notes (tap the notes row when there's more than one). A row opens that note.
 struct TodayNotesList: View {
     let notes: [Note]
+    var onSelect: (Note) -> Void = { _ in }
     let onClose: () -> Void
 
     var body: some View {
@@ -163,7 +164,7 @@ struct TodayNotesList: View {
             ScrollView {
                 VStack(spacing: 0) {
                     ForEach(Array(notes.reversed().enumerated()), id: \.element.id) { i, note in
-                        TodayNoteRow(note: note)
+                        TodayNoteRow(note: note) { onSelect(note) }
                             .frame(minHeight: 56)
                             .overlay(alignment: .top) {
                                 if i > 0 { Rectangle().fill(Color.line).frame(height: 1) }

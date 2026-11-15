@@ -22,6 +22,8 @@ final class SystemServices {
     @ObservationIgnored private let network = NetworkMonitor()
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var rescheduleTask: Task<Void, Never>?
+    /// Fires at the next noon / evening time / midnight (or shortly after an answer that was in progress).
+    @ObservationIgnored private var entryTimer: Task<Void, Never>?
     @ObservationIgnored private var started = false
     @ObservationIgnored private let defaults = UserDefaults.standard
 
@@ -72,9 +74,10 @@ final class SystemServices {
         c.notifications = await PermissionMonitor.notifications()
         c.storageFull = StorageMonitor.isFull
         if c != model.conditions { model.conditions = c }
-        if c.notifications == .granted, notificationsNoticeDismissed { setNoticeDismissed(false) }
+        // Reminders work again: a later loss shows the notice again.
+        if c.notifications == .granted, model.settings.notificationsEnabled, notificationsNoticeDismissed { setNoticeDismissed(false) }
 
-        moveToEntryIfStale(model)
+        applyClock(model)
         scheduleReminders()
         if network.isOnline { await model.retryCloudWorkAfterReconnect() }
     }
@@ -90,7 +93,7 @@ final class SystemServices {
         guard let model else { return }
         NSTimeZone.resetSystemTimeZone()
         observeTimeZone(model)
-        moveToEntryIfStale(model)
+        applyClock(model)
         scheduleReminders()
     }
 
@@ -101,10 +104,27 @@ final class SystemServices {
         model.commit(stored)
     }
 
-    /// Opened on Today but the day moved on (a new morning, or 21:00 passed): show the right screen.
-    private func moveToEntryIfStale(_ model: AppModel) {
-        guard model.path.count == 1, model.current.flow == .today else { return }
-        if model.entryScreen.flow != .today { model.goToEntry() }
+    // MARK: Clock (the entry screen follows the day, from any screen)
+
+    /// Judge the screen against the clock (AppModel+Clock.swift), then arm the timer for the next
+    /// boundary, or look again in a minute when an answer was in progress.
+    private func applyClock(_ model: AppModel) {
+        let result = model.refreshEntryForClock()
+        scheduleEntryTimer(retryIn: result == .deferred ? 60 : nil)
+    }
+
+    /// Re-arm the boundary timer (also after the rhythm changes).
+    func scheduleEntryTimer(retryIn: TimeInterval? = nil) {
+        guard let model else { return }
+        entryTimer?.cancel()
+        let now = model.now
+        let fire = retryIn.map { now.addingTimeInterval($0) } ?? model.nextEntryBoundary.addingTimeInterval(1)
+        let delay = max(1, fire.timeIntervalSince(now))
+        entryTimer = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, let self, let model = self.model else { return }
+            self.applyClock(model)
+        }
     }
 
     // MARK: Time zone (I3)
@@ -121,7 +141,7 @@ final class SystemServices {
         guard let model, let previous = model.conditions.previousTimeZoneID else { return }
         let change = TimeZoneChange(previousID: previous, currentID: TimeZone.current.identifier)
         apply(keepPrevious ? TimeZoneRules.keepPrevious(change) : TimeZoneRules.acknowledge(change), to: model)
-        moveToEntryIfStale(model)
+        applyClock(model)
         scheduleReminders()
     }
 

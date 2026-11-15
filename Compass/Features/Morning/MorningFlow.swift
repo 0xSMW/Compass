@@ -28,8 +28,13 @@ final class MorningSession {
     var draftPartID: UUID?
     /// Set when recording couldn't start; the dock becomes "Type instead".
     var micProblem: VoiceCapture.StartError?
+    /// B7 said aloud but no words came out: the recording waits for the typed answer (played back on
+    /// hard days, F2). Removed if the morning ends without one.
+    var whyRecording: Recording?
 
     func reset() {
+        if let unsaved = whyRecording { VoiceStorage.shared.delete(unsaved.fileName) }
+        whyRecording = nil
         purpose = nil
         idea = nil
         loadingIdea = false
@@ -99,8 +104,9 @@ extension AppModel {
         let take = await capture.stop()
 
         guard !take.transcriptionFailed else {
-            // No words came out: the same question, typed. Audio of a wordless intention isn't kept.
-            if purpose != .why { VoiceStorage.shared.delete(take.recording?.fileName) }
+            // No words came out: the same question, typed. Audio of a wordless intention isn't kept;
+            // a wordless why keeps its recording for the typed answer.
+            if purpose == .why { session.whyRecording = take.recording } else { VoiceStorage.shared.delete(take.recording?.fileName) }
             openMorningTyping(purpose, draft: "")
             return
         }
@@ -129,7 +135,7 @@ extension AppModel {
         if VoiceCapture.shared.isBusy {
             Task {
                 let take = await VoiceCapture.shared.stop()
-                if purpose != .why { VoiceStorage.shared.delete(take.recording?.fileName) }
+                if purpose == .why, take.recording != nil { session.whyRecording = take.recording } else { VoiceStorage.shared.delete(take.recording?.fileName) }
                 session.draft = draft ?? take.transcript
                 replace(with: .b5)
             }

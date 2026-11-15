@@ -61,7 +61,10 @@ struct ReturnSmallerStepView: View {
                 .region(.subject)
             }
 
-            if let idea {
+            if idea == nil, model.fixture == nil {
+                StepIdeaLoading(title: "Finding a smaller step…")
+                    .region(.focal)
+            } else if let idea {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(idea.title)
                         .compassFont(.title)
@@ -144,11 +147,22 @@ struct ReturnWelcomeView: View {
                 }
 
                 if let why = summary.why {
+                    // B7's recording plays (`<note id>.m4a`); the words show with it, and stand in
+                    // for it when there is no recording on this phone.
+                    let audio = MemoAudio.fileName(for: why).flatMap { VoiceStorage.shared.exists($0) ? $0 : nil }
                     Chip(title: "Hear why you started", icon: showsWhy ? .x : .play,
                          accessibilityLabel: showsWhy ? "Hide why you started" : "Hear why you started",
                          tint: .ink) {
                         withAnimation(Motion.animation(Motion.turnTaking, reduced: reduced)) { showsWhy.toggle() }
-                        if showsWhy { UIAccessibility.post(notification: .announcement, argument: why.text) }
+                        if let audio {
+                            if showsWhy {
+                                if !VoicePlayback.shared.isPlaying(audio) { VoicePlayback.shared.toggle(audio) }
+                            } else {
+                                VoicePlayback.shared.stop()
+                            }
+                        } else if showsWhy {
+                            UIAccessibility.post(notification: .announcement, argument: why.text)
+                        }
                     }
                     .padding(.top, Space.m)
                     if showsWhy {
@@ -175,6 +189,7 @@ struct ReturnWelcomeView: View {
                 model.returnLeaveForToday()
             })
         }
+        .onDisappear { VoicePlayback.shared.stop() }
     }
 }
 
@@ -214,9 +229,9 @@ struct ReturnGoalCheckView: View {
                 // Same goal: back in with a smaller step.
                 model.replace(with: .f1)
             }, onLink: {
-                // A new goal through onboarding; the old one and its history move to past goals.
-                OnboardingDraft.shared.reset()
-                model.go(.a2)
+                // A new goal through onboarding's goal steps; the old one and its history move to past
+                // goals, and the rhythm and privacy choices stay.
+                model.startNewGoal()
             })
         }
     }

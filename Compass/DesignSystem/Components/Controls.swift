@@ -5,6 +5,8 @@ import CompassCore
 /// `recording: true` turns it into the recorder (C5): mini waveform + 48pt stop button.
 struct NotePill: View {
     var title: String = "Note"
+    /// `.kb` when Settings › Start with is Typing: the pill opens the typed note.
+    var icon: CompassIcon = .mic
     var recording: Bool = false
     var levels: [Float] = FakeAudioRecorder.designLevels
     let action: () -> Void
@@ -42,7 +44,7 @@ struct NotePill: View {
         } else {
             Button(action: action) {
                 HStack(spacing: Space.xs) {
-                    Icon(.mic, size: typeSize.isAccessibilitySize ? IconSize.m : IconSize.i)
+                    Icon(icon, size: typeSize.isAccessibilitySize ? IconSize.m : IconSize.i)
                     Text(title).compassFont(.body, weight: .medium)
                 }
                 .foregroundStyle(.ink)
@@ -50,7 +52,7 @@ struct NotePill: View {
                 .background(Color.surface, in: Capsule())
             }
             .buttonStyle(PressableStyle())
-            .accessibilityLabel("Record a note")
+            .accessibilityLabel(icon == .kb ? "Type a note" : "Record a note")
         }
     }
 }

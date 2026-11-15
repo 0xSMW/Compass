@@ -21,7 +21,10 @@ private struct SystemServicesModifier: ViewModifier {
                 if phase == .active { Task { await SystemServices.shared.refresh() } }
                 if phase == .background, model.fixture == nil { ReminderRefresh.schedule() }
             }
-            .onChange(of: model.snapshot) { _, _ in SystemServices.shared.scheduleReminders() }
+            .onChange(of: model.snapshot) { old, new in
+                SystemServices.shared.scheduleReminders()
+                if old.settings.rhythm != new.settings.rhythm { SystemServices.shared.scheduleEntryTimer() }
+            }
     }
 }
 
@@ -31,8 +34,12 @@ extension AppModel {
     // MARK: I2 · Notifications off
 
     /// "07:00 and 21:00 can't reach you." sits in the notes row until dismissed.
+    /// Also after "Not now" on A6 (reminders off while iOS has never asked): H1 has no notifications
+    /// row, so this notice is the way to turn them back on.
     var showsNotificationsNotice: Bool {
-        conditions.notifications == .denied && !SystemServices.shared.notificationsNoticeDismissed
+        NotificationRules.showsOffNotice(enabled: settings.notificationsEnabled,
+                                         status: conditions.notifications,
+                                         dismissed: SystemServices.shared.notificationsNoticeDismissed)
     }
 
     func dismissNotificationsNotice() { SystemServices.shared.setNoticeDismissed(true) }
