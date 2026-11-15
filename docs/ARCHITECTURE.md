@@ -127,9 +127,19 @@ snapshot refers to are uploaded or downloaded.
   clock) and shows that screen; `-ax5` forces Dynamic Type AX5 (automatic for A8, B8, C11, C11b, D7, D8,
   E6); `-uitest` forces reduced motion. Without `-screen`, the app loads the JSON store and opens on
   `ScreenID.entry(for: model.phase, today:)`.
-- `DayEngine` rules: no goal → onboarding; ≥30 quiet days → F3; 3–29 → F2; 1–2 → smaller suggested step
-  (F1 frame); ≥ evening time (21:00) → D1 / D2 / D2b until reflected; before noon, morning not
-  handled → B1 (B7 on day 3, B4-style naming in the first week); noon–21:00 → B6; else Today.
+- `DayEngine` rules: no goal and no history → onboarding; an achieved/ended goal (or history without a
+  goal) → `goalEnded`, Today's frame with "Set the next goal" (never A1); ≥30 quiet days → F3; 3–29 →
+  F2; 1–2 → smaller suggested step (F1 frame); ≥ evening time (21:00) → D1 / D2 / D2b until reflected;
+  before noon, morning not handled → B1 (B7 on day 3, B4-style naming in the first week); noon–21:00 →
+  B6; else Today. The rhythm is clamped to A6's limits (morning 04:00–11:45, evening 17:00–23:45).
+  `phase` and `morningPlan` share one planning function.
+- The entry screen follows the clock (`AppModel+Clock.swift`): on becoming active, on clock/zone changes
+  and at each boundary (noon, the evening time, midnight; `SystemServices` arms the timer), a morning,
+  Today, evening or return root is replaced by the new entry screen when `DayEngine.clockMoved` says the
+  day or its part moved on. It waits while something is said or typed; an evening answer saves to the
+  day the evening opened on (`EveningSession.dayKey`).
+- Notes: a voice note takes its recording's id (`<note id>.m4a`, `NoteRules`); Today's notes row, the
+  notes list and E2 open `NoteDetailSheet` (plays, Edit note, Delete note).
 
 ## Design system (SwiftUI port of kit.css)
 

@@ -82,6 +82,7 @@ struct TodayView: View {
         .onAppear(perform: configure)
         .onDisappear {
             undoTask?.cancel()
+            if !isFixture { model.isComposing = false }
             if mode == .recording { Task { _ = await finishRecording(save: true) } }
         }
         .onChange(of: fieldFocused) { wasFocused, focused in
