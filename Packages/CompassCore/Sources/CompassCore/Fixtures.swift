@@ -380,12 +380,16 @@ public enum Fixtures {
         // F · Lapse and return
         case .f1:
             now = date(todayKey, 7, 40)
+            // Two quiet days (8–9 Nov). The work part had no moved day in the week before, so the
+            // smaller idea goes to it (F1 shows the wealth symbol with the Ridgeline step).
             let history = historyDays().filter { $0.key <= todayKey.adding(days: -3, calendar: cal) }
+                .filter { !($0.key >= todayKey.adding(days: -7, calendar: cal) && ($0.step?.partID ?? $0.reflection?.partID) == wealthPartID) }
             snap = snapshot(today: Day(key: todayKey, goalID: goalID, intention: Intention(text: "Just start.", createdAt: date(todayKey, 7, 36))), history: history)
         case .f2:
             now = date(todayKey, 8)
             let last = todayKey.adding(days: -9, calendar: cal)
-            var history = historyDays().filter { $0.key < last }
+            // return.html: 41 steps toward this goal, the last one 9 days ago.
+            var history = Array(historyDays().filter { $0.key < last && $0.moved }.suffix(40))
             var lastDay = Day(key: last, goalID: goalID)
             lastDay.step = Step(id: uuid(104), title: pitchStepTitle, partID: wealthPartID, createdAt: date(last, 7), completedAt: date(last, 16))
             lastDay.reflection = Reflection(outcome: .moved, transcript: "Pitched Ridgeline", summary: "Pitched Ridgeline", duration: 8, partID: wealthPartID, createdAt: date(last, 21))

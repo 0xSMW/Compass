@@ -97,6 +97,8 @@ struct Chip: View {
     var icon: CompassIcon? = nil
     var trailing: CompassIcon? = nil
     var accessibilityLabel: String? = nil
+    /// Label colour: #A1A1A6, or ink for a chip that is the screen's one action (F2 "Hear why you started").
+    var tint: Color = .ink2
     var action: () -> Void = {}
 
     var body: some View {
@@ -106,7 +108,7 @@ struct Chip: View {
                 Text(title).compassFont(.caption).lineLimit(2)
                 if let trailing { Icon(trailing, size: IconSize.xs) }
             }
-            .foregroundStyle(.ink2)
+            .foregroundStyle(tint)
             .padding(.leading, 12)
             .padding(.trailing, Space.s)
             .frame(minHeight: 44)

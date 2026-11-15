@@ -1,15 +1,22 @@
 import SwiftUI
 import CompassCore
 
-/// Lapse and return flow entry point. Owned by the Lapse and return flow: replace the stub with real views, one per
-/// ScreenID (keep this signature; ScreenRegistry calls it). Fixture data for each ID comes from
-/// `AppModel` (`model.snapshot`, `model.fixture`, `model.conditions`), seeded by `Fixtures.fixture(for:)`.
+/// Lapse and return flow entry point (F1–F3). ScreenRegistry calls `view(for:)`.
+///
+/// DayEngine decides when these show: 1–2 quiet days → the morning plan uses a smaller step (F1);
+/// 3–29 → F2; 30+ → F3 (`ScreenID.entry(for:)`). F2 "Plan one small step" and F3 "Keep it" lead into
+/// F1; F3 "Revise it" opens the goal (G1); "Set a new goal" runs onboarding again.
 enum ReturnScreens {
     /// F1 F2 F3
     static let ids: [ScreenID] = Flow.lapse.screens
 
     @MainActor @ViewBuilder
     static func view(for id: ScreenID) -> some View {
-        ScreenStub(id: id)
+        switch id {
+        case .f1: ReturnSmallerStepView()
+        case .f2: ReturnWelcomeView()
+        case .f3: ReturnGoalCheckView()
+        default: ScreenStub(id: id)
+        }
     }
 }
