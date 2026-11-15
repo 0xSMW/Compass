@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import CoreText
 
 /// The type scale from the system sheet. Inter Tight for everything, IBM Plex Mono for times and durations only.
 ///
@@ -131,7 +132,14 @@ enum CompassType: CaseIterable {
     }
 
     func uiFont(for dts: DynamicTypeSize, weight: Weight? = nil) -> UIFont {
-        UIFont(name: fontName(weight, dts: dts), size: size(for: dts)) ?? .systemFont(ofSize: size(for: dts))
+        let font = UIFont(name: fontName(weight, dts: dts), size: size(for: dts)) ?? .systemFont(ofSize: size(for: dts))
+        guard self == .clock else { return font }
+        // Inter's contextual alternates raise a colon between digits; the I5 board draws it on the baseline.
+        let descriptor = font.fontDescriptor.addingAttributes([.featureSettings: [[
+            UIFontDescriptor.FeatureKey.type: kContextualAlternatesType,
+            UIFontDescriptor.FeatureKey.selector: kContextualAlternatesOffSelector,
+        ]]])
+        return UIFont(descriptor: descriptor, size: font.pointSize)
     }
 
     /// True when Inter Tight is registered (UIAppFonts). Stubs show a warning if not.

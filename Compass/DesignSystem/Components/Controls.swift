@@ -93,8 +93,9 @@ struct Chip: View {
                 .fixedSize(horizontal: !ax, vertical: true)
             if let trailing, !ax { Icon(trailing, size: IconSize.xs).foregroundStyle(tint) }
         }
-        .padding(.leading, 12)
-        .padding(.trailing, Space.s)
+        // CSS padding 0 16 0 12 sits inside the 1pt border.
+        .padding(.leading, 13)
+        .padding(.trailing, Space.s + 1)
         // At AX the chip is `height: auto; padding: 8` inside its 1pt border (46 for one line, D8/E6).
         .padding(.vertical, ax ? Space.xs + 1 : 0)
         .frame(minHeight: ControlSize.minTarget)
