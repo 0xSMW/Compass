@@ -1,9 +1,10 @@
 import SwiftUI
 import CompassCore
 
-/// System flow entry point. I2 and I3 are Today with a notice in the notes row, so they render the
-/// Today view; I1 and I4 replace the voice dock with "Type instead" on the 712 line; I5 and I6 draw the
-/// lock screen and home screen as the reminders and widgets appear.
+/// System flow entry point. Every state is the live screen in that condition: I1 is Center (B1) with the
+/// microphone off and I4 is the evening reflection (D3) with storage full, so the notice and "Type
+/// instead" come from the same `TypeInsteadDock` the live rituals use. I2 and I3 are Today with a notice in
+/// the notes row. I5 and I6 draw the lock screen and home screen as the reminders and widgets appear.
 enum SystemScreens {
     /// I1 I2 I3 I4 I5 I6
     static let ids: [ScreenID] = Flow.system.screens
@@ -11,12 +12,11 @@ enum SystemScreens {
     @MainActor @ViewBuilder
     static func view(for id: ScreenID) -> some View {
         switch id {
-        case .i1: SystemMicrophoneOffView()
-        case .i2, .i3: TodayView(id: id)
-        case .i4: SystemStorageFullView()
+        case .i1: MorningCenterView()
+        case .i4: EveningReflectView(id: id)
         case .i5: SystemLockScreenView()
         case .i6: SystemWidgetsView()
-        default: ScreenStub(id: id)
+        default: TodayView(id: id)
         }
     }
 }
@@ -24,137 +24,6 @@ enum SystemScreens {
 /// Lock and home screen backdrop on I5/I6 (#0E0E10).
 extension Color {
     static let systemBackdrop = Color(hex: 0x0E0E10)
-}
-
-// MARK: - I1 · Microphone off
-
-/// Center keeps its text; the dock becomes Type instead. Typing answers "Who will you be today?" and
-/// continues to planning, like the spoken answer would.
-struct SystemMicrophoneOffView: View {
-    @Environment(AppModel.self) private var model
-    @State private var typing = false
-    @State private var text = ""
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        FlowScreen {
-            NavBar(leading: NavItem(content: .icon(.x), label: "Not now", quiet: false) { model.closeRitual() })
-                .region(.nav)
-
-            if typing {
-                if let goal = model.goal {
-                    SubjectLine(text: goal.text).region(.subject)
-                }
-                VStack(alignment: .leading, spacing: Space.m) {
-                    Text("Who will you be today?").compassFont(.title)
-                    UnderlineField(prompt: "Patient. Ship one thing.", text: $text, style: .live, focused: $focused)
-                        .submitLabel(.continue)
-                        .onSubmit { save() }
-                }
-                .region(.focal)
-                PrimaryButton("Continue") { save() }
-                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .region(.aboveKeyboard)
-            } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    TodayLineBoxText(text: model.goal?.text ?? "", style: .display)
-                        .accessibilityAddTraits(.isHeader)
-                    Text("Who will you be today?")
-                        .compassFont(.heading)
-                        .foregroundStyle(.ink2)
-                        .padding(.top, Space.m)
-                }
-                .region(.focalTop)
-
-                SystemRecordingNotice(block: .microphoneOff)
-                    .region(.growsUp(bottom: 660))
-
-                ButtonDock(primary: "Type instead", primaryIcon: .kb, link: "Turn on the microphone",
-                           onPrimary: { startTyping() }, onLink: { model.turnOnMicrophone() })
-            }
-        }
-        .onChange(of: model.conditions.microphone) { _, state in
-            // Microphone back on: return to Center with the mic.
-            if state == .granted, model.fixture == nil { model.replace(with: .b1) }
-        }
-    }
-
-    private func startTyping() {
-        typing = true
-        DispatchQueue.main.async { focused = true }
-    }
-
-    private func save() {
-        let answer = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !answer.isEmpty else { return }
-        var next: ScreenID = .b3
-        if case .morning(let plan) = model.phase, case .nameYourOwn = plan.planning { next = .b4 }
-        focused = false
-        model.setIntention(answer)
-        model.replace(with: next)
-    }
-}
-
-// MARK: - I4 · Storage full
-
-/// Recording can't start; typing takes the 712 line. Typing answers "What happened?" and saves the
-/// evening entry as text.
-struct SystemStorageFullView: View {
-    @Environment(AppModel.self) private var model
-    @State private var typing = false
-    @State private var text = ""
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        let step = model.today?.step
-        FlowScreen {
-            NavBar(leading: .close { model.closeRitual() }).region(.nav)
-
-            if let step {
-                SubjectLine(icon: model.part(step.partID).map { CompassIcon($0.symbol) }, text: step.title).region(.subject)
-            } else if let goal = model.goal {
-                SubjectLine(text: goal.text).region(.subject)
-            }
-
-            if typing {
-                VStack(alignment: .leading, spacing: Space.m) {
-                    Text("What happened?").compassFont(.title)
-                    UnderlineField(prompt: "", text: $text, style: .live, focused: $focused)
-                }
-                .region(.focal)
-                PrimaryButton("Save") { save() }
-                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .region(.aboveKeyboard)
-            } else {
-                Text("What happened?")
-                    .compassFont(.title)
-                    .accessibilityAddTraits(.isHeader)
-                    .region(.focal)
-
-                SystemRecordingNotice(block: .storageFull)
-                    .region(.growsUp(bottom: 660))
-
-                ButtonDock(primary: "Type instead", primaryIcon: .kb, link: "Manage storage",
-                           onPrimary: { startTyping() }, onLink: { model.openSystemSettings() })
-            }
-        }
-    }
-
-    private func startTyping() {
-        typing = true
-        DispatchQueue.main.async { focused = true }
-    }
-
-    private func save() {
-        let answer = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !answer.isEmpty else { return }
-        focused = false
-        let step = model.today?.step
-        if let step, !step.isDone { model.setStepDone(true) }
-        model.saveReflection(Reflection(outcome: .moved, transcript: answer, partID: step?.partID,
-                                        createdAt: model.now, device: "This iPhone"))
-        model.replace(with: .d5)
-    }
 }
 
 // MARK: - I5 · Notifications
@@ -169,12 +38,10 @@ struct SystemLockScreenView: View {
         let yesterday = model.snapshot.day(model.todayKey.adding(days: -1, calendar: model.calendar))
         FlowScreen(background: .systemBackdrop) {
             VStack(spacing: 0) {
-                Text(dateText).compassFont(.heading).foregroundStyle(.noticeInk)
-                Text("\(rhythm.morning.hour):" + String(format: "%02d", rhythm.morning.minute))
-                    .font(.custom(CompassType.Weight.semibold.interTight, fixedSize: 96))
-                    .tracking(-0.04 * 96)
-                    .frame(height: 96)
+                CompassText(dateText, style: .heading, color: .noticeInk)
+                CompassText("\(rhythm.morning.hour):" + String(format: "%02d", rhythm.morning.minute), style: .clock)
             }
+            .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity)
             .dynamicTypeSize(.large)
             .accessibilityElement(children: .combine)
@@ -212,14 +79,11 @@ struct SystemNotificationBanner: View {
             SystemAppIcon()
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("Compass").compassFont(.caption, weight: .semibold).foregroundStyle(.ink)
+                    CompassText("Compass", style: .caption, weight: .semibold).lineLimit(1)
                     Spacer(minLength: Space.xs)
-                    Text(time).compassFont(.caption).foregroundStyle(.ink2)
+                    CompassText(time, style: .caption, color: .ink2).lineLimit(1).fixedSize()
                 }
-                Text(message)
-                    .compassFont(.caption)
-                    .foregroundStyle(Color(hex: 0xE6E6E8))
-                    .fixedSize(horizontal: false, vertical: true)
+                CompassText(message, style: .caption, color: Color(hex: 0xE6E6E8))
             }
         }
         .padding(Space.s)
@@ -245,7 +109,8 @@ struct SystemAppIcon: View {
 // MARK: - I6 · Widgets
 
 /// The home screen with the medium and small widgets, drawn with the widget's own views
-/// (`TodayWidgetContent`). The circle completes today's step here too.
+/// (`TodayWidgetContent`). The circle completes today's step here too. In the app the widget's text is set
+/// with `CompassText` (the board's line breaks); the widget extension itself can only use `Text`.
 struct SystemWidgetsView: View {
     @Environment(AppModel.self) private var model
 
@@ -268,7 +133,9 @@ struct SystemWidgetsView: View {
     }
 
     private func widget(_ data: TodayWidgetData, _ layout: TodayWidgetLayout) -> some View {
-        TodayWidgetContent(data: data, layout: layout) { done in
+        TodayWidgetContent(data: data, layout: layout, text: { text, style, weight, color, lines in
+            CompassText(text, style: style, weight: weight, color: color).lineLimit(lines)
+        }) { done in
             Button {
                 model.setStepDone(!done)
                 if !done {

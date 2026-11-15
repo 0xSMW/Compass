@@ -13,7 +13,8 @@ enum GoalScreens {
         case .g1: YourGoalView()
         case .g2: GoalAchievedView()
         case .g3: PastGoalsView()
-        default: ScreenStub(id: id)
+        // ScreenRegistry routes only this flow's IDs here; every one has a case above.
+        default: EmptyView()
         }
     }
 }
@@ -25,6 +26,7 @@ struct YourGoalView: View {
     @State private var editingGoal = false
     @State private var goalDraft = ""
     @State private var partSheet: PartSheet?
+    @State private var partTitle = ""
     @State private var confirmAchieved = false
     @FocusState private var goalFocused: Bool
 
@@ -40,18 +42,14 @@ struct YourGoalView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     if editingGoal {
-                        UnderlineField(prompt: "Where are you going?", text: $goalDraft, style: .title, focused: $goalFocused)
-                            .onSubmit(commitGoal)
+                        UnderlineField(prompt: "Where are you going?", text: $goalDraft, style: .title, focused: $goalFocused,
+                                       label: "Your goal", onSubmit: commitGoal)
                     } else {
-                        Text(goal?.text ?? "No goal yet.")
-                            .compassFont(.title)
-                            .fixedSize(horizontal: false, vertical: true)
+                        CompassText(goal?.text ?? "No goal yet.", style: .title)
                             .accessibilityAddTraits(.isHeader)
                     }
                     if let goal {
-                        Text(sinceLine(goal))
-                            .compassFont(.caption)
-                            .foregroundStyle(.ink3)
+                        CompassText(sinceLine(goal), style: .caption, color: .ink3)
                             .padding(.top, Space.xs)
                     }
 
@@ -59,22 +57,22 @@ struct YourGoalView: View {
                         VStack(spacing: 0) {
                             ForEach(goal.activeParts) { part in
                                 ListRow(icon: CompassIcon(part.symbol), tile: true, title: part.title, action: {
-                                    partSheet = PartSheet(id: part.id, isNew: false, title: part.title)
+                                    openPart(PartSheet(id: part.id, isNew: false, title: part.title))
                                 }) {
-                                    Icon(.right, size: IconSize.s).foregroundStyle(.ink3)
+                                    RowChevron()
                                 }
                                 .accessibilityHint("Rename or remove this part")
                             }
                             Button {
-                                partSheet = PartSheet(id: UUID(), isNew: true, title: "")
+                                openPart(PartSheet(id: UUID(), isNew: true, title: ""))
                             } label: {
                                 HStack(spacing: Space.s) {
                                     Icon(.plus, size: IconSize.xs)
-                                        .foregroundStyle(.ink)
+                                        .foregroundStyle(.ink2)
                                         .frame(width: 40, height: 40)
                                         .overlay(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous)
                                             .strokeBorder(Color.line2, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])))
-                                    Text("Add a part").compassFont(.body).foregroundStyle(.ink)
+                                    CompassText("Add a part", color: .ink2)
                                     Spacer(minLength: 0)
                                 }
                                 .frame(minHeight: 56)
@@ -96,7 +94,7 @@ struct YourGoalView: View {
                             ListRow(icon: .swap, title: goal.status == .active ? "Replace with a new goal" : "Set the next goal",
                                     action: { model.startNewGoal() })
                             ListRow(icon: .arch, title: "Past goals", action: { model.go(.g3) }) {
-                                Icon(.right, size: IconSize.s).foregroundStyle(.ink3)
+                                RowChevron()
                             }
                             .overlay(alignment: .bottom) { Rectangle().fill(Color.line).frame(height: 1) }
                         }
@@ -105,7 +103,7 @@ struct YourGoalView: View {
                         VStack(spacing: 0) {
                             ListRow(icon: .plus, title: "Set a goal", action: { model.startNewGoal() })
                             ListRow(icon: .arch, title: "Past goals", action: { model.go(.g3) }) {
-                                Icon(.right, size: IconSize.s).foregroundStyle(.ink3)
+                                RowChevron()
                             }
                         }
                         .padding(.top, Space.m)
@@ -127,21 +125,31 @@ struct YourGoalView: View {
         .compassSheet(isPresented: Binding(get: { partSheet != nil }, set: { if !$0 { partSheet = nil } }), height: 392,
                       label: partSheet?.isNew == true ? "Add a part" : "Edit part") {
             if let sheet = partSheet {
-                PartEditor(sheet: sheet, onSave: { title in
-                    if sheet.isNew { model.addGoalPart(title: title) } else { model.renameGoalPart(sheet.id, to: title) }
-                    partSheet = nil
-                }, onRemove: removeAction(for: sheet), onCancel: { partSheet = nil })
+                PartEditor(sheet: sheet, title: $partTitle, onRemove: removeAction(for: sheet), onSubmit: savePart)
             }
+        } actions: {
+            PrimaryButton("Save", action: savePart)
         }
-        .confirmationDialog("Mark your goal as achieved?", isPresented: $confirmAchieved, titleVisibility: .visible) {
-            Button("Mark as achieved") {
-                model.markGoalAchieved()
-                model.go(.g2)
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Your line and memos stay. You can set the next goal after.")
+        .confirmSheet(isPresented: $confirmAchieved, title: "Mark your goal as achieved?",
+                      message: "Your line and memos stay. You can set the next goal after.", confirm: "Mark as achieved") {
+            model.markGoalAchieved()
+            model.go(.g2)
         }
+    }
+
+    private func openPart(_ sheet: PartSheet) {
+        partTitle = sheet.title
+        partSheet = sheet
+    }
+
+    /// Save on 712: rename, or add; an empty name just closes.
+    private func savePart() {
+        guard let sheet = partSheet else { return }
+        let title = partTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !title.isEmpty {
+            if sheet.isNew { model.addGoalPart(title: title) } else { model.renameGoalPart(sheet.id, to: title) }
+        }
+        partSheet = nil
     }
 
     private func removeAction(for sheet: PartSheet) -> (() -> Void)? {
@@ -179,46 +187,25 @@ struct YourGoalView: View {
     }
 }
 
-/// Rename / add / remove a part. Save on the 712 line, Cancel under it.
+/// Rename / add / remove a part: the sheet's content. Save sits on the 712 line, Cancel under it.
 private struct PartEditor: View {
     let sheet: YourGoalView.PartSheet
-    let onSave: (String) -> Void
+    @Binding var title: String
     let onRemove: (() -> Void)?
-    let onCancel: () -> Void
-    @State private var title = ""
+    let onSubmit: () -> Void
     @FocusState private var focused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: Space.m) {
-                Text(sheet.isNew ? "Add a part" : "Edit part").compassFont(.heading).accessibilityAddTraits(.isHeader)
-                UnderlineField(prompt: "Stay strong", text: $title, style: .body, axis: .horizontal, focused: $focused)
-                    .onSubmit(save)
-                if let onRemove {
-                    Button(action: onRemove) {
-                        Text("Remove part").compassFont(.body).foregroundStyle(.destructive).frame(minHeight: 48)
-                    }
-                    .buttonStyle(PressableStyle())
+        VStack(alignment: .leading, spacing: Space.m) {
+            CompassText(sheet.isNew ? "Add a part" : "Edit part", style: .heading).accessibilityAddTraits(.isHeader)
+            UnderlineField(prompt: "Stay strong", text: $title, style: .body, lines: 1...1, focused: $focused,
+                           label: "Part name", onSubmit: onSubmit)
+            if let onRemove {
+                LinkButton("Remove part", tone: .destructive, padding: 0, action: onRemove)
                     .accessibilityHint("Its past steps stay visible")
-                }
             }
-            .padding(.top, Space.xs)
-            Spacer(minLength: Space.s)
-            PrimaryButton("Save", action: save)
-            LinkButton("Cancel", action: onCancel)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 4)
-                .padding(.bottom, 52)
         }
-        .onAppear {
-            title = sheet.title
-            focused = sheet.isNew
-        }
-    }
-
-    private func save() {
-        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if t.isEmpty { onCancel() } else { onSave(t) }
+        .onAppear { focused = sheet.isNew }
     }
 }
 
@@ -234,19 +221,15 @@ struct GoalAchievedView: View {
 
         FlowScreen {
             // The end marker, filled (48pt ink disc with a ground centre).
-            Circle().fill(Color.ink).frame(width: 48, height: 48)
-                .overlay(Circle().fill(Color.ground).frame(width: 12, height: 12))
+            GoalEndMarker(achieved: true, size: 48)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .region(.custom(top: 128, bottom: 176))
-                .accessibilityLabel("Goal achieved")
 
             VStack(alignment: .leading, spacing: 0) {
-                Text("You arrived.").compassFont(.display).accessibilityAddTraits(.isHeader)
+                CompassText("You arrived.", style: .display).accessibilityAddTraits(.isHeader)
                 if let goal {
-                    Text("\(HistoryFormat.steps(moved.count)) over \(HistoryFormat.span(from: goal.createdAt, to: end)).")
-                        .compassFont(.heading)
-                        .foregroundStyle(.ink2)
-                        .fixedSize(horizontal: false, vertical: true)
+                    CompassText("\(HistoryFormat.steps(moved.count)) over \(HistoryFormat.span(from: goal.createdAt, to: end)).",
+                                style: .heading, color: .ink2)
                         .padding(.top, Space.s)
                 }
                 VStack(alignment: .leading, spacing: Space.m) {
@@ -255,7 +238,7 @@ struct GoalAchievedView: View {
                 }
                 .padding(.top, Space.l)
             }
-            .region(.focal)
+            .scrollingRegion(.custom(top: 224, bottom: 668))
 
             // "Later" keeps the Today frame (DayPhase.goalEnded): History, Settings and Export stay
             // reachable, and Today's card offers "Set the next goal".
@@ -267,12 +250,9 @@ struct GoalAchievedView: View {
 
     private func stepBlock(_ title: String, _ day: Day) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("\(title) · \(HistoryFormat.shortDate(day.key.date(in: model.calendar, hour: 12), calendar: model.calendar))")
-                .compassFont(.caption)
-                .foregroundStyle(.ink3)
-            Text(day.step.flatMap { $0.isDone ? $0.title : nil } ?? day.reflection?.displayText ?? "")
-                .compassFont(.heading)
-                .fixedSize(horizontal: false, vertical: true)
+            CompassText("\(title) · \(HistoryFormat.shortDate(day.key.date(in: model.calendar, hour: 12), calendar: model.calendar))",
+                        style: .caption, color: .ink3)
+            CompassText(day.step.flatMap { $0.isDone ? $0.title : nil } ?? day.reflection?.displayText ?? "", style: .heading)
         }
         .accessibilityElement(children: .combine)
     }
@@ -287,11 +267,9 @@ struct PastGoalsView: View {
         FlowScreen {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("Past goals").compassFont(.title).accessibilityAddTraits(.isHeader)
+                    CompassText("Past goals", style: .title).accessibilityAddTraits(.isHeader)
                     if model.snapshot.pastGoals.isEmpty {
-                        Text("Goals you finish or replace stay here, each with its full line and memos.")
-                            .compassFont(.body)
-                            .foregroundStyle(.ink2)
+                        CompassText("Goals you finish or replace stay here, each with its full line and memos.", color: .ink2)
                             .padding(.top, Space.s)
                     }
                     VStack(spacing: Space.s) {
@@ -322,7 +300,7 @@ struct PastGoalsView: View {
 }
 
 /// goal.html `.gcard`: goal sentence, "Jan–Apr 2026 · 64 steps · achieved", and its line as 6pt dots
-/// (one per day of the goal's life: ink = moved, #3A3A3E = not).
+/// (one per day: ink = moved, #3A3A3E = not), the goal's last two rows of days; the card opens the whole line.
 private struct PastGoalCard: View {
     @Environment(AppModel.self) private var model
     let goal: Goal
@@ -337,10 +315,10 @@ private struct PastGoalCard: View {
 
         Button(action: action) {
             VStack(alignment: .leading, spacing: Space.xs) {
-                Text(goal.text).compassFont(.heading).foregroundStyle(.ink).fixedSize(horizontal: false, vertical: true)
-                Text(caption).compassFont(.caption).foregroundStyle(.ink3)
+                CompassText(goal.text, style: .heading)
+                CompassText(caption, style: .caption, color: .ink3)
                 if !marks.isEmpty {
-                    DotWrap(marks: marks)
+                    DotLine(marks: marks)
                         .padding(.top, Space.xs)
                         .accessibilityHidden(true)
                 }
@@ -366,44 +344,29 @@ private struct PastGoalCard: View {
     }
 }
 
-/// goal.html `.mdots`: 6pt dots, 4pt gap, wrapping.
-private struct DotWrap: View {
+/// goal.html `.mdots`: 6pt dots, 4pt gap, at most two rows: the goal's most recent days that fit, oldest
+/// first (the board's ~57 dots on a 294pt card).
+private struct DotLine: View {
     let marks: [Bool]
+    var rows: Int = 2
+
+    private let dot: CGFloat = 6
+    private let gap: CGFloat = 4
 
     var body: some View {
-        WrapLayout(spacing: 4, lineSpacing: 4) {
-            ForEach(Array(marks.enumerated()), id: \.offset) { _, moved in
-                Circle().fill(moved ? Color.ink : Color.line2).frame(width: 6, height: 6)
+        GeometryReader { geo in
+            let perRow = max(1, Int((geo.size.width + gap) / (dot + gap)))
+            let shown = Array(marks.suffix(perRow * rows))
+            VStack(alignment: .leading, spacing: gap) {
+                ForEach(0..<Int((Double(shown.count) / Double(perRow)).rounded(.up)), id: \.self) { row in
+                    HStack(spacing: gap) {
+                        ForEach(Array(shown[(row * perRow)..<min(shown.count, (row + 1) * perRow)].enumerated()), id: \.offset) { _, moved in
+                            Circle().fill(moved ? Color.ink : Color.line2).frame(width: dot, height: dot)
+                        }
+                    }
+                }
             }
         }
-    }
-}
-
-/// Simple flow layout for equal-size marks.
-private struct WrapLayout: Layout {
-    var spacing: CGFloat
-    var lineSpacing: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? 300
-        var x: CGFloat = 0, y: CGFloat = 0, lineHeight: CGFloat = 0
-        for s in subviews {
-            let size = s.sizeThatFits(.unspecified)
-            if x > 0 && x + size.width > width { x = 0; y += lineHeight + lineSpacing; lineHeight = 0 }
-            x += size.width + spacing
-            lineHeight = max(lineHeight, size.height)
-        }
-        return CGSize(width: width, height: y + lineHeight)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX, y = bounds.minY, lineHeight: CGFloat = 0
-        for s in subviews {
-            let size = s.sizeThatFits(.unspecified)
-            if x > bounds.minX && x + size.width > bounds.maxX { x = bounds.minX; y += lineHeight + lineSpacing; lineHeight = 0 }
-            s.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-            x += size.width + spacing
-            lineHeight = max(lineHeight, size.height)
-        }
+        .frame(height: dot * CGFloat(rows) + gap * CGFloat(rows - 1))
     }
 }

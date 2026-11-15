@@ -8,7 +8,6 @@ import CompassCore
 struct TodayView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.motionReduced) private var reduced
-    @Environment(\.dynamicTypeSize) private var typeSize
     let id: ScreenID
 
     enum TypingTarget: Equatable { case note, step }
@@ -62,6 +61,8 @@ struct TodayView: View {
             TodayScaffold(
                 onHistory: { model.go(.e1) },
                 onSettings: { model.go(.h1) },
+                // Typing a note (C10): the escape is a visible control where Settings sits (no hidden gestures).
+                trailing: isTyping ? NavItem.text("Cancel", action: { cancelTyping() }) : nil,
                 forceScrolledToEnd: id == .c11b && isFixture
             ) {
                 header(today)
@@ -118,14 +119,11 @@ struct TodayView: View {
     private func header(_ today: Day?) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if let goal = model.goal {
-                TodayLineBoxText(text: goal.text, style: .title)
+                CompassText(goal.text, style: .title)
                     .accessibilityAddTraits(.isHeader)
             }
             if let intention = today?.intention {
-                Text("“\(intention.text)”")
-                    .compassFont(.body)
-                    .foregroundStyle(.ink2)
-                    .fixedSize(horizontal: false, vertical: true)
+                CompassText("“\(intention.text)”", color: .ink2)
                     .padding(.top, Space.s)
             }
         }
@@ -157,7 +155,7 @@ struct TodayView: View {
                                       onDismiss: { model.dismissNotificationsNotice() })
         } else if let notes = today?.notes, let latest = notes.last {
             // One note opens that note (it plays if it's a recording); several open the list.
-            TodayNoteRow(note: latest, count: notes.count) {
+            NoteRow(note: latest, count: notes.count) {
                 mode = notes.count > 1 ? .notes : .note(latest.id, editing: false)
             }
         }
@@ -220,23 +218,9 @@ struct TodayView: View {
     // MARK: Dock (keyboard + Note, 680–744)
 
     private var dock: some View {
-        HStack(spacing: Space.s) {
-            // kit.css `.c56`; the glyph is 28 at AX (C11), the circle keeps its size.
-            // "Start with: Typing" swaps the two: the pill types, the circle records.
-            Button { typingFirst && mode != .recording ? noteTapped() : keyboardTapped() } label: {
-                Icon(typingFirst && mode != .recording ? .mic : .kb, size: typeSize.isAccessibilitySize ? IconSize.m : IconSize.i)
-                    .foregroundStyle(.ink2)
-                    .frame(width: ControlSize.secondary, height: ControlSize.secondary)
-                    .overlay(Circle().strokeBorder(Color.line, lineWidth: 1))
-                    .contentShape(Circle())
-            }
-            .buttonStyle(PressableStyle())
-            .accessibilityLabel(mode == .recording ? "Switch to typing" : (typingFirst ? "Record a note" : "Type a note"))
-            NotePill(icon: typingFirst ? .kb : .mic, recording: mode == .recording, levels: pillLevels) {
-                typingFirst && mode != .recording ? keyboardTapped() : noteTapped()
-            }
-        }
-        .frame(height: ControlSize.notePill)
+        // "Start with: Typing" swaps the two: the pill types, the circle records.
+        TodayDock(recording: mode == .recording, typingFirst: typingFirst, levels: pillLevels,
+                  onKeyboard: keyboardTapped, onNote: noteTapped)
     }
 
     /// Settings › Start with: Typing.
@@ -337,6 +321,12 @@ struct TodayView: View {
         DispatchQueue.main.async { fieldFocused = true }
     }
 
+    /// C10 Cancel: leave typing, keep the draft for next time.
+    private func cancelTyping() {
+        fieldFocused = false
+        mode = .resting
+    }
+
     private func saveTyping() {
         guard case .typing(let target) = mode else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -383,7 +373,8 @@ struct TodayView: View {
         switch mode {
         case .options:
             if let step = today?.step {
-                CompassSheet(height: TodayStepOptions.sheetHeight(rows: 3), label: "Step options", onDismiss: { mode = .resting }) {
+                CompassSheet(height: TodayStepOptions.sheetHeight(rows: 3), label: "Step options", contentTop: Space.m,
+                             onDismiss: { mode = .resting }) {
                     TodayStepOptions(
                         part: model.part(step.partID),
                         onChange: { startTyping(.step, text: step.title) },
@@ -392,48 +383,48 @@ struct TodayView: View {
                             mode = .resting
                             model.deleteStep()
                             Feedback.announce("Step deleted")
-                        },
-                        onCancel: { mode = .resting }
+                        }
                     )
                 }
             }
         case .movePart:
             let parts = model.goal?.activeParts ?? []
-            CompassSheet(height: TodayStepOptions.sheetHeight(rows: max(1, parts.count)), label: "Counts toward", onDismiss: { mode = .resting }) {
-                TodayPartPicker(parts: parts, selected: today?.step?.partID,
-                                onPick: { model.todayMoveStep(to: $0); mode = .resting },
-                                onCancel: { mode = .options })
+            // One level in: Cancel goes back to the options.
+            CompassSheet(height: TodayStepOptions.sheetHeight(rows: max(1, parts.count)), label: "Counts toward", contentTop: Space.m,
+                         onDismiss: { mode = .options }) {
+                PartPickerRows(parts: parts, selected: today?.step?.partID) { id in
+                    if let id { model.todayMoveStep(to: id) }
+                    mode = .resting
+                }
             }
         case .notes:
             let notes = today?.notes ?? []
-            CompassSheet(height: min(620, TodayStepOptions.sheetHeight(rows: max(1, notes.count))), label: "Today’s notes", onDismiss: { mode = .resting }) {
-                TodayNotesList(notes: notes, onSelect: { mode = .note($0.id, editing: false) }) { mode = .resting }
+            CompassSheet(height: TodayStepOptions.sheetHeight(rows: max(1, notes.count)), label: "Today’s notes", dismissTitle: "Close",
+                         contentTop: Space.m, onDismiss: { mode = .resting }) {
+                TodayNotesList(notes: notes) { mode = .note($0.id, editing: false) }
             }
         case .note(let noteID, let editing):
             if let note = today?.notes.first(where: { $0.id == noteID }) {
-                CompassSheet(height: NoteDetailSheet.height(for: note), label: "Note", onDismiss: { mode = .resting }) {
-                    NoteDetailSheet(
-                        note: note,
-                        startsEditing: editing,
-                        onSave: { text in
-                            model.editNote(noteID, on: model.todayKey, text: text)
-                            Feedback.announce("Note saved")
-                            mode = .resting
-                        },
-                        onDelete: {
-                            model.deleteNote(noteID, on: model.todayKey)
-                            Feedback.announce("Note deleted")
-                            mode = .resting
-                        },
-                        onClose: { mode = .resting }
-                    )
-                    .id(noteID)
-                }
+                NoteDetailSheet(
+                    note: note,
+                    startsEditing: editing,
+                    onSave: { text in
+                        model.editNote(noteID, on: model.todayKey, text: text)
+                        Feedback.announce("Note saved")
+                        mode = .resting
+                    },
+                    onDelete: {
+                        model.deleteNote(noteID, on: model.todayKey)
+                        Feedback.announce("Note deleted")
+                        mode = .resting
+                    },
+                    onClose: { mode = .resting }
+                )
+                .id(noteID)
             }
         case .typing where isFixture:
             ZStack(alignment: .top) {
-                TodayKeyboardPlaceholder()
-                    .region(.keyboard)
+                KeyboardPlaceholder().region(.keyboard)
                 noteField
                     .region(.aboveKeyboard)
             }

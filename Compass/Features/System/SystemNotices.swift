@@ -2,6 +2,7 @@ import SwiftUI
 import CompassCore
 
 // Notices about the day take the notes row above the Today card, so the card never moves (system.html).
+// All of them are the design system's `Notice`.
 
 /// I2 · "07:00 and 21:00 can’t reach you." · Turn on · ×. One notice until dismissed.
 struct SystemNotificationsNotice: View {
@@ -10,37 +11,9 @@ struct SystemNotificationsNotice: View {
     var onDismiss: () -> Void
 
     var body: some View {
-        HStack(spacing: Space.xs) {
-            Icon(.bell, size: IconSize.s).foregroundStyle(.ink2)
-            Text("\(rhythm.morning.description) and \(rhythm.evening.description) can’t reach you.")
-                .compassFont(.caption)
-                .foregroundStyle(.noticeInk)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-            Button(action: onTurnOn) {
-                Text("Turn on")
-                    .compassFont(.body, weight: .medium)
-                    .foregroundStyle(.ink)
-                    .padding(.horizontal, Space.xs)
-                    .frame(minHeight: 44)
-            }
-            .buttonStyle(PressableStyle())
-            .accessibilityLabel("Turn on notifications")
-            Button(action: onDismiss) {
-                Icon(.x, size: IconSize.xs)
-                    .foregroundStyle(.ink2)
-                    .frame(width: ControlSize.minTarget, height: ControlSize.minTarget)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(PressableStyle())
-            .accessibilityLabel("Dismiss")
-        }
-        .padding(.vertical, Space.xs)
-        .padding(.leading, Space.s)
-        .padding(.trailing, Space.xs)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-        .accessibilityElement(children: .contain)
+        Notice(icon: .bell, text: "\(rhythm.morning.description) and \(rhythm.evening.description) can’t reach you.",
+               actions: [NoticeAction(title: "Turn on", label: "Turn on notifications", action: onTurnOn)],
+               layout: .inline, onDismiss: onDismiss)
     }
 }
 
@@ -52,43 +25,17 @@ struct SystemTimeZoneNotice: View {
     var onKeep: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.xs) {
-            HStack(alignment: .top, spacing: Space.xs) {
-                Icon(.globe, size: IconSize.s).foregroundStyle(.ink2)
-                Text("You’re in \(change.currentCity). Today and your \(rhythm.morning.description) and \(rhythm.evening.description) now follow \(change.currentCity) time.")
-                    .compassFont(.caption)
-                    .foregroundStyle(.noticeInk)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            HStack(spacing: Space.s) {
-                link("OK", action: onOK)
-                    .accessibilityLabel("OK, follow \(change.currentCity) time")
-                link("Keep \(change.previousCity) time", action: onKeep)
-            }
-            .padding(.leading, 28)
-        }
-        .padding(Space.s)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-        .accessibilityElement(children: .contain)
-    }
-
-    private func link(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .compassFont(.body, weight: .medium)
-                .foregroundStyle(.ink)
-                .frame(minHeight: 44)
-        }
-        .buttonStyle(PressableStyle())
+        Notice(icon: .globe,
+               text: "You’re in \(change.currentCity). Today and your \(rhythm.morning.description) and \(rhythm.evening.description) now follow \(change.currentCity) time.",
+               actions: [NoticeAction(title: "OK", label: "OK, follow \(change.currentCity) time", action: onOK),
+                         NoticeAction(title: "Keep \(change.previousCity) time", action: onKeep)])
     }
 }
 
-/// I1 / I4 notices for the place the user is looking (focal slot, or Today's notes row).
+/// Recording can't start (microphone off, storage full), in Today's notes row after tapping Note, with
+/// the fix as a link inside the notice. The rituals put the fix under "Type instead" (`TypeInsteadDock`).
 struct SystemRecordingNotice: View {
     var block: RecordingBlock
-    /// Today shows the fix as a link inside the notice; I1/I4 put it under the Type instead button.
     var showsAction: Bool = false
     var onAction: () -> Void = {}
 

@@ -44,21 +44,12 @@ struct ReturnSmallerStepView: View {
         let intention = model.today?.intention
         let part = model.part(idea?.partID)
         FlowScreen {
-            NavBar(leading: NavItem(content: .icon(.x), label: "Not now", quiet: false, action: { model.returnLeaveForToday() }))
+            NavBar(leading: .close("Not now") { model.returnLeaveForToday() }, scalesText: true)
                 .region(.nav)
 
             if let intention {
-                HStack(alignment: .top, spacing: Space.xs) {
-                    Text("“\(intention.text)”")
-                        .compassFont(.body)
-                        .foregroundStyle(.ink2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                    IconButton(.redo, label: "Say your intention again", bare: true) { model.replace(with: .b1) }
-                        .padding(.top, -10)
-                        .padding(.trailing, -10)
-                }
-                .region(.subject)
+                SubjectLine(text: "“\(intention.text)”", redoLabel: "Say your intention again") { model.replace(with: .b1) }
+                    .region(.subject)
             }
 
             if idea == nil, model.fixture == nil {
@@ -66,14 +57,10 @@ struct ReturnSmallerStepView: View {
                     .region(.focal)
             } else if let idea {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(idea.title)
-                        .compassFont(.title)
-                        .fixedSize(horizontal: false, vertical: true)
+                    CompassText(idea.title, style: .title)
                     HStack(spacing: Space.xs) {
                         if let part { Icon(CompassIcon(part.symbol), size: IconSize.s) }
-                        Text("Smaller than usual. It still counts.")
-                            .compassFont(.caption)
-                            .fixedSize(horizontal: false, vertical: true)
+                        CompassText("Smaller than usual. It still counts.", style: .caption, color: .ink3)
                     }
                     .foregroundStyle(.ink3)
                     .padding(.top, Space.s)
@@ -125,24 +112,15 @@ struct ReturnWelcomeView: View {
         FlowScreen {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("\(summary.steps)")
-                        .font(.custom(CompassType.display.fontName(.semibold), fixedSize: 96))
-                        .tracking(-0.05 * 96)
-                        .frame(height: 96)
-                    Text(summary.stepsCaption)
-                        .compassFont(.heading)
-                        .foregroundStyle(.ink2)
-                        .fixedSize(horizontal: false, vertical: true)
+                    CompassText("\(summary.steps)", style: .numeral).lineLimit(1)
+                    CompassText(summary.stepsCaption, style: .heading, color: .ink2)
                         .padding(.top, Space.xs)
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("\(summary.steps) \(summary.stepsCaption)")
 
                 if let last = summary.lastLine {
-                    Text(last)
-                        .compassFont(.body)
-                        .foregroundStyle(.ink3)
-                        .fixedSize(horizontal: false, vertical: true)
+                    CompassText(last, color: .ink3)
                         .padding(.top, Space.m)
                 }
 
@@ -166,14 +144,12 @@ struct ReturnWelcomeView: View {
                     }
                     .padding(.top, Space.m)
                     if showsWhy {
-                        HStack(alignment: .firstTextBaseline, spacing: Space.xs) {
-                            Text("“\(why.text)”")
-                                .compassFont(.body)
-                                .foregroundStyle(.ink2)
-                                .fixedSize(horizontal: false, vertical: true)
+                        HStack(alignment: .top, spacing: Space.xs) {
+                            CompassText("“\(why.text)”", color: .ink2)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             if let d = why.duration {
-                                Text(Player.format(d)).compassFont(.micro).foregroundStyle(.ink3)
+                                CompassText(Player.format(d), style: .micro, color: .ink3).lineLimit(1).fixedSize()
+                                    .padding(.top, 4)
                             }
                         }
                         .padding(.top, Space.s)
@@ -181,7 +157,7 @@ struct ReturnWelcomeView: View {
                     }
                 }
             }
-            .region(.focalTop)
+            .scrollingRegion(.custom(top: 128, bottom: 668))
 
             ButtonDock(primary: "Plan one small step", link: "Not today", onPrimary: {
                 model.replace(with: .f1)
@@ -203,24 +179,16 @@ struct ReturnGoalCheckView: View {
         let summary = ReturnSummary(snapshot: model.snapshot, today: model.todayKey, calendar: model.calendar)
         FlowScreen {
             VStack(alignment: .leading, spacing: 0) {
-                Text("Still where you’re going?")
-                    .compassFont(.title)
-                    .fixedSize(horizontal: false, vertical: true)
+                CompassText("Still where you’re going?", style: .title)
                     .accessibilityAddTraits(.isHeader)
                 if let goal = model.goal {
-                    Text(goal.text)
-                        .compassFont(.heading)
-                        .foregroundStyle(.ink2)
-                        .fixedSize(horizontal: false, vertical: true)
+                    CompassText(goal.text, style: .heading, color: .ink2)
                         .padding(.top, Space.s)
                 }
-                Text(summary.checkLine)
-                    .compassFont(.body)
-                    .foregroundStyle(.ink3)
-                    .fixedSize(horizontal: false, vertical: true)
+                CompassText(summary.checkLine, color: .ink3)
                     .padding(.top, Space.s)
             }
-            .region(.focalTop)
+            .scrollingRegion(.custom(top: 128, bottom: 596))
 
             SecondaryButton("Revise it") { model.go(.g1) }
                 .region(.buttonDockHigh)

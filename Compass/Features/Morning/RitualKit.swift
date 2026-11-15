@@ -2,105 +2,7 @@ import SwiftUI
 import UIKit
 import CompassCore
 
-// Pieces shared by the Morning (B) and Evening (D) rituals. Built only from design-system
-// components; they add the board's labels and the AX sizes the boards draw (B8, D7, D8).
-
-/// Close (×) top-left with the board's label ("Not now" on Morning, "Close and keep what was said"
-/// while reflecting).
-extension NavItem {
-    static func ritualClose(_ label: String, action: @escaping () -> Void) -> NavItem {
-        NavItem(content: .icon(.x), label: label, quiet: false, action: action)
-    }
-}
-
-/// kit.css `.ctx` for rituals: 20pt symbol (28 at AX) + body text in #A1A1A6, up to three lines,
-/// with an optional bare redo button on the right ("Say your intention again", B3/B4).
-struct RitualSubject: View {
-    var icon: CompassIcon? = nil
-    let text: String
-    var redoLabel: String? = nil
-    var onRedo: (() -> Void)? = nil
-
-    @Environment(\.dynamicTypeSize) private var dts
-
-    var body: some View {
-        HStack(alignment: .top, spacing: Space.xs) {
-            if let icon {
-                Icon(icon, size: dts.isAccessibilitySize ? IconSize.m : IconSize.s).padding(.top, 2)
-            }
-            RitualText(text, style: .body, color: .ink2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if let onRedo {
-                IconButton(.redo, label: redoLabel ?? "Say it again", bare: true, action: onRedo)
-                    .padding(.top, -10)
-                    .padding(.trailing, -10)
-            }
-        }
-        .foregroundStyle(.ink2)
-        .accessibilityElement(children: .contain)
-    }
-}
-
-/// kit.css `.dock` with the board's labels: keyboard (56, left) · mic (96, on 712) · side (56, right).
-/// Place with `.region(.dock)`.
-struct RitualVoiceDock<Side: View>: View {
-    var micMode: MicButton.Mode
-    var micLabel: String
-    var keyboardLabel: String = "Type instead"
-    let onKeyboard: () -> Void
-    let onMic: () -> Void
-    @ViewBuilder var side: Side
-
-    @Environment(\.dynamicTypeSize) private var dts
-
-    var body: some View {
-        HStack(spacing: 0) {
-            // kit.css `.c56`; the keyboard glyph is 28 at AX (B8), the circle keeps its size.
-            Button(action: onKeyboard) {
-                Icon(.kb, size: dts.isAccessibilitySize ? IconSize.m : IconSize.i)
-                    .foregroundStyle(.ink2)
-                    .frame(width: ControlSize.secondary, height: ControlSize.secondary)
-                    .overlay(Circle().strokeBorder(Color.line, lineWidth: 1))
-                    .contentShape(Circle())
-            }
-            .buttonStyle(PressableStyle())
-            .accessibilityLabel(keyboardLabel)
-            Spacer(minLength: 0)
-            MicButton(mode: micMode, label: micLabel, action: onMic)
-            Spacer(minLength: 0)
-            ZStack { Color.clear; side }.frame(width: 56, height: 56)
-        }
-        .frame(height: ControlSize.voice)
-    }
-}
-
-extension RitualVoiceDock where Side == EmptyView {
-    init(micMode: MicButton.Mode, micLabel: String, keyboardLabel: String = "Type instead",
-         onKeyboard: @escaping () -> Void, onMic: @escaping () -> Void) {
-        self.init(micMode: micMode, micLabel: micLabel, keyboardLabel: keyboardLabel,
-                  onKeyboard: onKeyboard, onMic: onMic, side: { EmptyView() })
-    }
-}
-
-/// "Skip" bottom-right in a voice dock. 17pt; 22pt at AX (B8), inside the fixed 56 slot.
-struct DockSkip: View {
-    var accessibilityLabel: String = "Skip"
-    let action: () -> Void
-
-    @Environment(\.dynamicTypeSize) private var dts
-
-    var body: some View {
-        Button(action: action) {
-            Text("Skip")
-                .compassFont(dts.isAccessibilitySize ? .caption : .body)
-                .foregroundStyle(.ink2)
-                .fixedSize()
-                .frame(width: 56, height: 56)
-        }
-        .buttonStyle(PressableStyle())
-        .accessibilityLabel(accessibilityLabel)
-    }
-}
+// Pieces shared by the Morning (B) and Evening (D) rituals, built only from design-system components.
 
 /// The question greys and the words land under it (B2, D3, D3L, D4). Place with `.region(.focal)`:
 /// the transcript fills to 592, then older lines scroll up under a 72pt fade.
@@ -111,7 +13,7 @@ struct ListeningFocal: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s) {
-            RitualText(question, style: .title, color: .ink2)
+            CompassText(question, style: .title, color: .ink2)
             TranscriptScroll(settled: settled, pending: pending)
         }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -153,91 +55,17 @@ struct TranscriptScroll: View {
     }
 }
 
-/// The listening waveform on 616–656. Live levels follow the voice (level bar with Reduce Motion).
-/// Fixture levels are static, so screenshots draw the board's bars even with motion reduced.
-struct ListeningWave: View {
-    var levels: [Float]
-    var isStatic: Bool
-
-    var body: some View {
-        Waveform(levels: levels, lit: isStatic ? 32 : nil, count: VoiceCapture.barCount)
-            .transformEnvironment(\.motionReduced) { reduced in
-                if isStatic { reduced = false }
-            }
-    }
-}
-
-/// Keyboard stand-in for screenshots of typing states (the CI simulator has no software keyboard):
-/// #1C1C1F from 508 to the bottom with three rows of keys. Place with `.region(.keyboard)`.
-struct KeyboardPlaceholder: View {
-    var body: some View {
-        VStack(spacing: 12) {
-            ForEach(0..<3, id: \.self) { _ in
-                HStack(spacing: 6) {
-                    ForEach(0..<10, id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: 6).fill(Color.line2).frame(height: 44)
-                    }
-                }
-            }
-        }
-        .padding(.top, Space.xs)
-        .padding(.horizontal, 4)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color.raised)
-        .accessibilityHidden(true)
-    }
-}
-
-/// kit.css `.chip` as a part picker: part symbol in ink, title, chevron. At AX the chip grows to fit,
-/// the symbol is 28 and the chevron goes (D8). Tapping lists the goal's parts.
-struct PartPickerChip: View {
-    let parts: [GoalPart]
-    let selected: GoalPart?
-    let onSelect: (GoalPart) -> Void
-
-    @Environment(\.dynamicTypeSize) private var dts
-
-    var body: some View {
-        let ax = dts.isAccessibilitySize
-        Menu {
-            ForEach(parts) { part in
-                Button(part.title) { onSelect(part) }
-            }
-        } label: {
-            HStack(spacing: Space.xs) {
-                if let selected {
-                    Icon(CompassIcon(selected.symbol), size: ax ? IconSize.m : IconSize.s).foregroundStyle(.ink)
-                }
-                Text(selected?.title ?? "Choose a part")
-                    .compassFont(.caption)
-                    .foregroundStyle(.ink2)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                if !ax { Icon(.down, size: IconSize.xs).foregroundStyle(.ink2) }
-            }
-            .padding(.leading, 12)
-            .padding(.trailing, Space.s)
-            .padding(.vertical, ax ? Space.xs : 0)
-            .frame(minHeight: 44)
-            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Color.line, lineWidth: 1))
-            .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .accessibilityLabel(selected.map { "Counts toward \($0.title). Change" } ?? "Choose a part")
-    }
-}
-
-/// I1 / I4 in a ritual: the notice sits just above the dock, "Type instead" takes the 712 line and a
-/// link sits under it. Used when the microphone is off or storage is full.
+/// I1 / I4: recording can't start, so the notice sits just above the dock (grows up from 660), "Type
+/// instead" takes the 712 line and the fix is a link under it. The one implementation for the live
+/// rituals (B1, B4, B7, D3) and the I1/I4 screens, which are those rituals with the microphone off or
+/// storage full.
 struct TypeInsteadDock: View {
     let reason: VoiceCapture.StartError
     let onType: () -> Void
 
     var body: some View {
         Group {
-            Notice(icon: reason == .storageFull ? .disk : .micoff, text: noticeText)
+            Notice(icon: reason == .storageFull ? .disk : .micoff, text: noticeText, centred: reason != .storageFull)
                 .region(.growsUp(bottom: 660))
             PrimaryButton("Type instead", icon: .kb, action: onType)
                 .region(.buttonDock)
@@ -285,74 +113,12 @@ struct AboveKeyboardAction: View {
     }
 }
 
-/// Text on the board's exact line boxes, wrapped like the boards.
-///
-/// SwiftUI ignores negative `lineSpacing`, and display (44/48, 56/60 at AX5) and title (34/40, 48/52)
-/// are tighter than Inter Tight's natural line, so ritual text would grow a few points per line. SwiftUI
-/// also moves a word down to avoid a one-word last line, which the boards don't do. A UILabel with a
-/// fixed paragraph line height and no line-break strategy keeps CSS's line boxes and breaks; glyphs sit
-/// centred in each box.
-struct RitualText: UIViewRepresentable {
-    let text: String
-    var style: CompassType
-    var color: Color = .ink
-
-    init(_ text: String, style: CompassType, color: Color = .ink) {
-        self.text = text
-        self.style = style
-        self.color = color
-    }
-
-    func makeUIView(context: Context) -> UILabel {
-        let label = UILabel()
-        label.numberOfLines = 0
-        label.lineBreakMode = .byWordWrapping
-        label.backgroundColor = .clear
-        label.adjustsFontForContentSizeCategory = false
-        label.isAccessibilityElement = true
-        label.accessibilityTraits = .staticText
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        label.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        return label
-    }
-
-    func updateUIView(_ label: UILabel, context: Context) {
-        label.attributedText = attributed(context.environment.dynamicTypeSize)
-        label.accessibilityLabel = text
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView label: UILabel, context: Context) -> CGSize? {
-        let width = proposal.width ?? ScreenMetrics.designWidth - 2 * Space.inset
-        label.attributedText = attributed(context.environment.dynamicTypeSize)
-        label.preferredMaxLayoutWidth = width
-        let fitted = label.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
-        return CGSize(width: width, height: ceil(fitted.height))
-    }
-
-    private func attributed(_ dts: DynamicTypeSize) -> NSAttributedString {
-        let font = style.uiFont(for: dts)
-        let lineHeight = style.lineHeight(for: dts)
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = lineHeight
-        paragraph.maximumLineHeight = lineHeight
-        paragraph.lineBreakMode = .byWordWrapping
-        paragraph.lineBreakStrategy = []
-        // UIKit puts a line box's slack above the glyphs; CSS splits it evenly.
-        let baselineOffset = (lineHeight - font.lineHeight) / 2
-        return NSAttributedString(string: text, attributes: [
-            .font: font,
-            .foregroundColor: UIColor(color),
-            .kern: style.spec.tracking * style.size(for: dts),
-            .paragraphStyle: paragraph,
-            .baselineOffset: baselineOffset,
-        ])
-    }
-}
-
-/// The current microphone situation for a ritual dock: nil when recording can start.
+/// The current recording situation for a ritual dock: nil when recording can start. The last failed
+/// start, else the microphone permission, else full storage (I1, I4).
 @MainActor
 func ritualMicProblem(_ model: AppModel, _ last: VoiceCapture.StartError?) -> VoiceCapture.StartError? {
     if let last { return last }
-    if model.recorder.permission == .denied { return .microphoneOff }
+    if model.recorder.permission == .denied || model.conditions.microphone == .denied { return .microphoneOff }
+    if model.conditions.storageFull { return .storageFull }
     return nil
 }

@@ -6,7 +6,7 @@ import SwiftUI
 ///     FlowScreen {
 ///         NavBar(leading: .close { model.closeRitual() }).region(.nav)
 ///         SubjectLine(icon: .fr, text: step.title).region(.subject)
-///         Text("Did you do it?").compassFont(.title).region(.focal)
+///         CompassText("Did you do it?", style: .title).region(.focal)
 ///         ChoiceCircles(yes: "Done", no: "Not today", onYes: …, onNo: …).region(.dock)
 ///     }
 ///
@@ -49,6 +49,8 @@ struct FlowScreen<Content: View>: View {
 struct TodayScaffold<Header: View, Notes: View, Card: View, Dock: View, Overlay: View>: View {
     var onHistory: () -> Void
     var onSettings: () -> Void
+    /// Replaces Settings top-right while a transient state needs a visible escape (C10 "Cancel").
+    var trailing: NavItem? = nil
     /// Forces the solid nav (screenshots of C11b).
     var forceScrolledToEnd: Bool = false
     @ViewBuilder var header: Header
@@ -64,6 +66,7 @@ struct TodayScaffold<Header: View, Notes: View, Card: View, Dock: View, Overlay:
     init(
         onHistory: @escaping () -> Void,
         onSettings: @escaping () -> Void,
+        trailing: NavItem? = nil,
         forceScrolledToEnd: Bool = false,
         @ViewBuilder header: () -> Header,
         @ViewBuilder notes: () -> Notes,
@@ -73,6 +76,7 @@ struct TodayScaffold<Header: View, Notes: View, Card: View, Dock: View, Overlay:
     ) {
         self.onHistory = onHistory
         self.onSettings = onSettings
+        self.trailing = trailing
         self.forceScrolledToEnd = forceScrolledToEnd
         self.header = header()
         self.notes = notes()
@@ -135,7 +139,7 @@ struct TodayScaffold<Header: View, Notes: View, Card: View, Dock: View, Overlay:
 
             NavBar(
                 leading: .text("History", action: onHistory),
-                trailing: .icon(.set, label: "Settings", action: onSettings),
+                trailing: trailing ?? .icon(.set, label: "Settings", action: onSettings),
                 solid: scrolled || forceScrolledToEnd,
                 scalesText: true
             )
@@ -152,13 +156,14 @@ extension TodayScaffold where Overlay == EmptyView {
     init(
         onHistory: @escaping () -> Void,
         onSettings: @escaping () -> Void,
+        trailing: NavItem? = nil,
         forceScrolledToEnd: Bool = false,
         @ViewBuilder header: () -> Header,
         @ViewBuilder notes: () -> Notes,
         @ViewBuilder card: () -> Card,
         @ViewBuilder dock: () -> Dock
     ) {
-        self.init(onHistory: onHistory, onSettings: onSettings, forceScrolledToEnd: forceScrolledToEnd,
+        self.init(onHistory: onHistory, onSettings: onSettings, trailing: trailing, forceScrolledToEnd: forceScrolledToEnd,
                   header: header, notes: notes, card: card, dock: dock, overlay: { EmptyView() })
     }
 }

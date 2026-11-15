@@ -26,13 +26,13 @@ struct HistoryDayView: View {
                     .frame(minHeight: ax ? 0 : 72, alignment: .top)
 
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(summaryText(day))
-                        .compassFont(.title)
-                        .fixedSize(horizontal: false, vertical: true)
+                    CompassText(summaryText(day), style: .title)
                         .accessibilityAddTraits(.isHeader)
                     if let part = model.snapshot.goal?.part(reflection?.partID ?? day?.step?.partID)
                         ?? model.snapshot.pastGoals.lazy.compactMap({ $0.part(reflection?.partID ?? day?.step?.partID) }).first {
-                        PartChip(part: part)
+                        // history.html E2 chip: the part this day counted toward (not a button here).
+                        Chip(title: part.title, icon: CompassIcon(part.symbol), iconTint: .ink,
+                             accessibilityLabel: "Counts toward \(part.title)")
                             .padding(.top, Space.s)
                     }
                     // The transcript takes whatever is left above 648 and fades out; it never pushes
@@ -65,8 +65,7 @@ struct HistoryDayView: View {
             )
             .region(.nav)
         }
-        .compassSheet(isPresented: Binding(get: { openNote(day) != nil }, set: { if !$0 { openNoteID = nil } }),
-                      height: openNote(day).map(NoteDetailSheet.height(for:)) ?? 392, label: "Note") {
+        .overlay {
             if let note = openNote(day) {
                 NoteDetailSheet(
                     note: note,
@@ -82,6 +81,7 @@ struct HistoryDayView: View {
                     onClose: { openNoteID = nil }
                 )
                 .id(note.id)
+                .transition(.opacity)
             }
         }
         .onDisappear { playback.stop() }
@@ -106,16 +106,13 @@ struct HistoryDayView: View {
     private func transcriptAndNotes(_ day: Day?) -> some View {
         VStack(alignment: .leading, spacing: Space.s) {
             if let r = day?.reflection, !r.transcript.isEmpty, r.transcript != r.displayText {
-                Text(r.transcript)
-                    .compassFont(.body)
-                    .foregroundStyle(.ink2)
-                    .fixedSize(horizontal: false, vertical: true)
+                CompassText(r.transcript, color: .ink2)
             }
             if let notes = day?.notes, !notes.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(notes) { note in
                         // Opens the note: a recording plays (`<note id>.m4a`), and it can be edited or deleted.
-                        NoteRow(text: note.text.isEmpty ? "Voice note" : note.text, duration: note.duration) {
+                        NoteRow(note: note) {
                             openNoteID = note.id
                         }
                     }
@@ -140,16 +137,16 @@ private struct DaySubject: View {
                 if mark == .moved {
                     Icon(.ok, size: dts.isAccessibilitySize ? IconSize.m : IconSize.s)
                 } else if mark == .missed {
-                    Circle().fill(Color.dim).frame(width: 8, height: 8).frame(width: IconSize.s)
+                    DayMarkView(mark: .missed, size: .week).frame(width: IconSize.s)
                 }
-                Text(HistoryFormat.dayTitle(key, calendar: model.calendar)).compassFont(.body)
+                CompassText(HistoryFormat.dayTitle(key, calendar: model.calendar)).lineLimit(1)
             }
             .foregroundStyle(.ink)
             if let step = day?.step {
-                Text(step.title).compassFont(.body).foregroundStyle(.ink2).fixedSize(horizontal: false, vertical: true)
+                CompassText(step.title, color: .ink2)
             }
             if showsIntention, let intention = day?.intention {
-                Text("“\(intention.text)”").compassFont(.body).foregroundStyle(.ink2).fixedSize(horizontal: false, vertical: true)
+                CompassText("“\(intention.text)”", color: .ink2)
             }
         }
         .accessibilityElement(children: .combine)
@@ -166,25 +163,6 @@ private struct DaySubject: View {
     }
 }
 
-/// history.html E2 chip: the part this day counted toward (not a button here).
-private struct PartChip: View {
-    let part: GoalPart
-
-    var body: some View {
-        HStack(spacing: Space.xs) {
-            Icon(CompassIcon(part.symbol), size: IconSize.s).foregroundStyle(.ink)
-            Text(part.title).compassFont(.caption).foregroundStyle(.ink2)
-        }
-        .padding(.leading, 12)
-        .padding(.trailing, Space.s)
-        .padding(.vertical, Space.xs)
-        .frame(minHeight: 44)
-        .overlay(Capsule().strokeBorder(Color.line, lineWidth: 1))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Counts toward \(part.title)")
-    }
-}
-
 // MARK: - E4 · Edit a past day
 
 struct HistoryEditDayView: View {
@@ -193,11 +171,15 @@ struct HistoryEditDayView: View {
     @State private var movedIndex = 0
     @State private var partID: UUID?
     @State private var loaded = false
-    @State private var confirmDelete = false
+    /// The sheet's levels: the form, "Counts toward" one level in, and the delete question.
+    @State private var level: Level = .form
+
+    enum Level { case form, part, delete }
 
     var body: some View {
         let key = model.historySelectedDay
         let weekday = HistoryFormat.weekday(key, calendar: model.calendar)
+        let parts = model.goal?.activeParts ?? []
 
         FlowScreen {
             SubjectLine(text: HistoryFormat.dayTitle(key, calendar: model.calendar))
@@ -207,79 +189,68 @@ struct HistoryEditDayView: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
-        .compassSheet(isPresented: Binding(get: { true }, set: { if !$0 { model.back() } }), height: 596, label: "Edit \(weekday)") {
-            VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: Space.m) {
-                    Text("Edit \(weekday)").compassFont(.heading).accessibilityAddTraits(.isHeader)
-
-                    TextField("", text: $summary, prompt: Text("What happened").foregroundStyle(Color.dim), axis: .vertical)
-                        .lineLimit(2...4)
-                        .compassFont(.body)
-                        .foregroundStyle(.ink)
-                        .tint(.ink)
-                        .padding(.horizontal, Space.s)
-                        .padding(.vertical, 12)
-                        .background(Color.ground, in: RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous).strokeBorder(Color.line2, lineWidth: 1))
-                        .accessibilityLabel("Summary")
-
-                    SegmentedPill(options: ["Moved", "Not that day"], selection: $movedIndex)
-                        .accessibilityElement(children: .contain)
-                        .accessibilityLabel("Did you move?")
-
-                    partRow
-
-                    Button { confirmDelete = true } label: {
-                        Text("Delete this day’s entry").compassFont(.body).foregroundStyle(.destructive)
-                            .frame(minHeight: 48)
-                    }
-                    .buttonStyle(PressableStyle())
-                    .padding(.top, -12)
+        .compassSheet(isPresented: Binding(get: { true }, set: { if !$0 { model.back() } }), height: sheetHeight(parts.count),
+                      label: level == .delete ? "Delete \(weekday)’s entry?" : "Edit \(weekday)",
+                      contentTop: level == .part ? Space.m : Space.l, onDismiss: dismiss) {
+            switch level {
+            case .form: form(weekday: weekday)
+            case .part:
+                PartPickerRows(parts: parts, selected: partID, allowsNone: true) { id in
+                    partID = id
+                    level = .form
                 }
-                .padding(.top, Space.xs)
-
-                Spacer(minLength: Space.s)
-
+            case .delete:
+                ConfirmSheetContent(title: "Delete \(weekday)’s entry?",
+                                    message: "The summary, step, notes and recordings from this day go. This can’t be undone.")
+            }
+        } actions: {
+            switch level {
+            case .form:
                 PrimaryButton("Save") {
                     model.saveHistoryEdit(key, summary: summary, moved: movedIndex == 0, partID: partID)
                     model.back()
                 }
-                LinkButton("Cancel") { model.back() }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 4)
-                    .padding(.bottom, 52)
+            case .part:
+                EmptyView()
+            case .delete:
+                PrimaryButton("Delete entry", role: .destructive) {
+                    model.deleteHistoryDay(key)
+                    HistorySelection.shared.day = nil
+                    model.back()
+                    if model.current == .e2 || model.current == .e6 { model.back() }
+                }
             }
-        }
-        .confirmationDialog("Delete \(weekday)’s entry?", isPresented: $confirmDelete, titleVisibility: .visible) {
-            Button("Delete entry", role: .destructive) {
-                model.deleteHistoryDay(key)
-                HistorySelection.shared.day = nil
-                model.back()
-                if model.current == .e2 || model.current == .e6 { model.back() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The summary, step, notes and recordings from this day go. This can’t be undone.")
         }
         .onAppear(perform: load)
     }
 
+    /// history.html E4: heading, summary box, Moved / Not that day, Counts toward, Delete; Save on 712.
     @ViewBuilder
+    private func form(weekday: String) -> some View {
+        VStack(alignment: .leading, spacing: Space.m) {
+            CompassText("Edit \(weekday)", style: .heading).accessibilityAddTraits(.isHeader)
+
+            BoxedField(prompt: "What happened", text: $summary, lines: 2...4, label: "Summary")
+
+            SegmentedPill(options: ["Moved", "Not that day"], selection: $movedIndex)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Did you move?")
+
+            partRow
+
+            LinkButton("Delete this day’s entry", tone: .destructive, padding: 0) { level = .delete }
+        }
+    }
+
     private var partRow: some View {
-        let parts = model.goal?.activeParts ?? []
         let part = model.goal?.part(partID)
-        Menu {
-            ForEach(parts) { p in
-                Button { partID = p.id } label: { Label(p.title, systemImage: CompassIcon(p.symbol).sfSymbol) }
-            }
-            Button("None") { partID = nil }
-        } label: {
+        return Button { level = .part } label: {
             HStack(spacing: Space.s) {
-                Text("Counts toward").compassFont(.body).foregroundStyle(.ink)
+                CompassText("Counts toward").lineLimit(1)
                 Spacer(minLength: 0)
                 HStack(spacing: Space.xs) {
                     if let part { Icon(CompassIcon(part.symbol), size: IconSize.s) }
-                    Text(part?.title ?? "No part").compassFont(.body).lineLimit(1)
+                    CompassText(part?.title ?? "No part", color: .ink2).lineLimit(1)
                 }
                 .foregroundStyle(.ink2)
             }
@@ -287,7 +258,22 @@ struct HistoryEditDayView: View {
             .overlay(alignment: .top) { Rectangle().fill(Color.line2).frame(height: 1) }
             .contentShape(Rectangle())
         }
+        .buttonStyle(PressableStyle())
         .accessibilityLabel("Counts toward \(part?.title ?? "no part")")
+        .accessibilityHint("Choose the part this day counted toward")
+    }
+
+    private func sheetHeight(_ parts: Int) -> CGFloat {
+        switch level {
+        case .form: 596
+        case .part: 24 + 56 * CGFloat(parts + 1) + 16 + 104
+        case .delete: 312
+        }
+    }
+
+    /// Cancel: one level back inside the sheet, or close it.
+    private func dismiss() {
+        if level == .form { model.back() } else { level = .form }
     }
 
     private func load() {
@@ -316,14 +302,9 @@ struct HistoryConflictView: View {
         FlowScreen {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("\(HistoryFormat.weekday(key, calendar: model.calendar)) changed on two devices.")
-                        .compassFont(.title)
-                        .fixedSize(horizontal: false, vertical: true)
+                    CompassText("\(HistoryFormat.weekday(key, calendar: model.calendar)) changed on two devices.", style: .title)
                         .accessibilityAddTraits(.isHeader)
-                    Text("Both recordings are kept. Pick the summary to show.")
-                        .compassFont(.body)
-                        .foregroundStyle(.ink2)
-                        .fixedSize(horizontal: false, vertical: true)
+                    CompassText("Both recordings are kept. Pick the summary to show.", color: .ink2)
                         .padding(.top, Space.s)
 
                     VStack(spacing: Space.s) {
@@ -331,12 +312,11 @@ struct HistoryConflictView: View {
                             OptionCard(selected: r.createdAt == selected, action: { chosen = r.createdAt }) {
                                 HStack(spacing: Space.xs) {
                                     Icon(deviceIcon(r), size: IconSize.s)
-                                    Text("\(deviceLabel(r)) · \(HistoryFormat.time(r.createdAt, calendar: model.calendar))")
-                                        .compassFont(.caption)
+                                    CompassText("\(deviceLabel(r)) · \(HistoryFormat.time(r.createdAt, calendar: model.calendar))",
+                                                style: .caption, color: .ink3)
                                 }
                                 .foregroundStyle(.ink3)
-                                Text(r.displayText).compassFont(.body).foregroundStyle(.ink)
-                                    .fixedSize(horizontal: false, vertical: true)
+                                CompassText(r.displayText)
                             }
                             .accessibilityLabel("\(deviceLabel(r)), \(HistoryFormat.time(r.createdAt, calendar: model.calendar)): \(r.displayText)")
                         }

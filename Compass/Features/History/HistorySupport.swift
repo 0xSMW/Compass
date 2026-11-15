@@ -152,17 +152,3 @@ enum HistoryFormat {
 
     static func steps(_ n: Int) -> String { "\(n) \(n == 1 ? "step" : "steps")" }
 }
-
-/// history.html `.micro` labels ("Today", "Monday"): Inter Tight 13/16 medium (not the mono micro).
-struct HistoryLabelFont: ViewModifier {
-    @Environment(\.dynamicTypeSize) private var dts
-
-    func body(content: Content) -> some View {
-        let size = 13 + (17 - 13) * CompassType.progress(dts)
-        content.font(.custom("InterTight-Medium", fixedSize: size))
-    }
-}
-
-extension View {
-    func historyLabelFont() -> some View { modifier(HistoryLabelFont()) }
-}

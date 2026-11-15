@@ -1,10 +1,11 @@
 import SwiftUI
 import CompassCore
 
-/// A note, opened from Today's notes row, Today's notes list or a past day (E2). Built like C6's step
-/// options: the words, the recording in the design-system `Player` (a voice note starts playing as
-/// the sheet opens), then Edit note · Delete note · Close. Editing happens in the sheet, so Today and
-/// History share one path. A voice note with no words yet opens straight into "Add words".
+/// A note, opened from Today's notes row, Today's notes list or a past day (E2): a Compass sheet built
+/// like C6's step options. The words, the recording in the design-system `Player` (a voice note starts
+/// playing as the sheet opens), then Edit note · Delete note, and Close. Editing happens in the same
+/// sheet (Save on 712, Cancel under it), so Today and History share one path. A voice note with no words
+/// yet opens straight into "Add words". Present it as an overlay; it draws its own scrim.
 struct NoteDetailSheet: View {
     let note: Note
     var startsEditing: Bool = false
@@ -27,18 +28,22 @@ struct NoteDetailSheet: View {
     /// 24 above, the words (up to 120), the player (80 + 16) when there is audio, two rows, Close.
     static func height(for note: Note) -> CGFloat {
         let hasAudio = MemoAudio.fileName(for: note).map { VoiceStorage.shared.exists($0) } ?? false
-        return 24 + 120 + Space.s + (hasAudio ? ControlSize.player + Space.s : 0) + 2 * 56 + 20 + 48 + 52
+        return 24 + 120 + Space.s + (hasAudio ? ControlSize.player + Space.s : 0) + 2 * 56 + Space.s + 104
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        CompassSheet(height: editing ? 392 : Self.height(for: note), label: "Note", dismissTitle: editing ? "Cancel" : "Close",
+                     contentTop: Space.m, onDismiss: dismiss) {
+            if editing { editor } else { reading }
+        } actions: {
             if editing {
-                editor
-            } else {
-                reading
+                PrimaryButton("Save") {
+                    focused = false
+                    onSave(draft)
+                }
+                .disabled(!note.isSpoken && draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
         .onAppear {
             if startsEditing || (needsWords && audioFile == nil) {
                 startEditing()
@@ -52,11 +57,8 @@ struct NoteDetailSheet: View {
     @ViewBuilder
     private var reading: some View {
         ScrollView {
-            Text(needsWords ? "Voice note. No words yet." : note.text)
-                .compassFont(.body)
-                .foregroundStyle(needsWords ? Color.ink3 : Color.ink)
+            CompassText(needsWords ? "Voice note. No words yet." : note.text, color: needsWords ? .ink3 : .ink)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .scrollIndicators(.hidden)
         .scrollBounceBehavior(.basedOnSize)
@@ -80,41 +82,20 @@ struct NoteDetailSheet: View {
             .accessibilityHint(note.isSpoken ? "Deletes the note and its recording" : "Deletes the note")
         }
         .padding(.top, Space.s)
-
-        Spacer().frame(height: 20)
-        LinkButton("Close") { onClose() }
-            .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
     private var editor: some View {
-        TextField("", text: $draft, prompt: Text(needsWords ? "Add words to this voice note" : "Note").foregroundStyle(Color.dim),
-                  axis: .vertical)
-            .focused($focused)
-            .lineLimit(3...5)
-            .compassFont(.body)
-            .foregroundStyle(.ink)
-            .tint(.ink)
-            .padding(.horizontal, Space.s)
-            .padding(.vertical, 12)
-            .background(Color.ground, in: RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous).strokeBorder(Color.line2, lineWidth: 1))
-            .accessibilityLabel(needsWords ? "Words for this voice note" : "Note")
+        CompassText(needsWords ? "Add words" : "Edit note", style: .heading).accessibilityAddTraits(.isHeader)
+        BoxedField(prompt: needsWords ? "Add words to this voice note" : "Note", text: $draft, lines: 3...5,
+                   label: needsWords ? "Words for this voice note" : "Note", focused: $focused)
+            .padding(.top, Space.m)
+    }
 
-        Spacer(minLength: Space.s)
-
-        PrimaryButton("Save") {
-            focused = false
-            onSave(draft)
-        }
-        .disabled(!note.isSpoken && draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        LinkButton("Cancel") {
-            focused = false
-            if startsEditing { onClose() } else { editing = false }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 4)
-        .padding(.bottom, Space.m)
+    /// Close, or Cancel out of editing (back to the note; a note opened to add words closes).
+    private func dismiss() {
+        focused = false
+        if editing && !startsEditing { editing = false } else { onClose() }
     }
 
     private func startEditing() {

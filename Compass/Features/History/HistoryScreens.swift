@@ -16,15 +16,9 @@ enum HistoryScreens {
         case .e3: HistoryWeeksView()
         case .e4: HistoryEditDayView()
         case .e5: HistoryConflictView()
-        default: ScreenStub(id: id)
+        // ScreenRegistry routes only this flow's IDs here; every one has a case above.
+        default: EmptyView()
         }
-    }
-}
-
-/// Quiet "‹ Title" back item (history.html `.navb.quiet` with the xs chevron).
-extension NavItem {
-    static func quietBack(_ title: String, action: @escaping () -> Void) -> NavItem {
-        NavItem(content: .iconText(.back, title), label: title, quiet: true, action: action)
     }
 }
 
@@ -46,8 +40,7 @@ struct HistoryWeekView: View {
         FlowScreen {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(isThisWeek ? "This week" : builder.label(for: week))
-                        .compassFont(.title)
+                    CompassText(isThisWeek ? "This week" : builder.label(for: week), style: .title)
                         .accessibilityAddTraits(.isHeader)
 
                     if let goal, !goal.activeParts.isEmpty {
@@ -60,7 +53,9 @@ struct HistoryWeekView: View {
                             GoalTermRow(goal: goal) { model.go(.g1) }
                         }
                         ForEach(entries) { entry in
-                            DayRow(entry: entry, label: HistoryFormat.rowLabel(entry.key, today: model.todayKey, calendar: model.calendar)) {
+                            let step = ctx.snapshot.day(entry.key)?.step
+                            DayRow(entry: entry, label: HistoryFormat.rowLabel(entry.key, today: model.todayKey, calendar: model.calendar),
+                                   stepTitle: step?.isDone == true ? step?.title : nil) {
                                 model.openHistoryDay(entry.key)
                             }
                         }
@@ -109,7 +104,7 @@ private struct PartTotals: View {
                 let n = week.entries.filter { $0.mark == .moved && $0.partID == part.id }.count
                 HStack(spacing: Space.xs) {
                     Icon(CompassIcon(part.symbol), size: IconSize.s)
-                    Text("\(n)").compassFont(.heading)
+                    CompassText("\(n)", style: .heading).lineLimit(1).fixedSize()
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(part.title): \(n)")
@@ -127,12 +122,9 @@ struct GoalTermRow: View {
         Button(action: action) {
             HStack(spacing: Space.s) {
                 GoalEndMarker(achieved: goal.status == .achieved)
-                Text(goal.text)
-                    .compassFont(.body, weight: .medium)
-                    .foregroundStyle(.ink)
+                CompassText(goal.text, weight: .medium)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                Icon(.right, size: IconSize.s).foregroundStyle(.ink3)
+                RowChevron()
             }
             .frame(minHeight: 56)
             .contentShape(Rectangle())
@@ -142,35 +134,31 @@ struct GoalTermRow: View {
     }
 }
 
-/// history.html `.dr`: a day on the line. Moved = 16pt ink dot with a ground ring; missed = 8pt grey.
+/// history.html `.dr`: a day on the line (`DayMarkView`, `.line`): label (`.label`, #8A8A90) over what
+/// you did. A row is a one-line glance: the evening summary when it fits on one line, else the step
+/// you completed (E1: "Dinner with Sam and Priya" for Saturday, whose summary wraps).
 private struct DayRow: View {
     let entry: HistoryEntry
     let label: String
+    var stepTitle: String? = nil
     let action: () -> Void
 
     var body: some View {
+        let words = entry.text ?? (entry.mark == .missed ? "Missed" : "Not yet")
+        let color: Color = entry.mark == .missed ? .ink3 : .ink
         Button(action: action) {
             HStack(spacing: Space.s) {
-                ZStack {
-                    switch entry.mark {
-                    case .moved:
-                        Circle().fill(Color.ink).frame(width: 16, height: 16)
-                            .background(Circle().fill(Color.ground).frame(width: 24, height: 24))
-                    case .missed:
-                        Circle().fill(Color.dim).frame(width: 8, height: 8)
-                    case .empty:
-                        Circle().strokeBorder(Color.line2, lineWidth: 2).frame(width: 12, height: 12)
-                            .background(Circle().fill(Color.ground).frame(width: 16, height: 16))
-                    }
-                }
-                .frame(width: 32)
+                DayMarkView(mark: entry.mark, size: .line)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(label).historyLabelFont().foregroundStyle(.ink3)
-                    Text(entry.text ?? (entry.mark == .missed ? "Missed" : "Not yet"))
-                        .compassFont(.body)
-                        .foregroundStyle(entry.mark == .missed ? Color.ink3 : Color.ink)
-                        .lineLimit(3)
-                        .multilineTextAlignment(.leading)
+                    CompassText(label, style: .label, color: .ink3).lineLimit(1)
+                    if let stepTitle, stepTitle != words {
+                        ViewThatFits(in: .horizontal) {
+                            CompassText(words, color: color).lineLimit(1)
+                            CompassText(stepTitle, color: color).lineLimit(3)
+                        }
+                    } else {
+                        CompassText(words, color: color).lineLimit(3)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -199,9 +187,7 @@ struct HistoryWeeksView: View {
         FlowScreen {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(selection.goalID == nil ? "Weeks" : (ctx.snapshot.goal?.text ?? "Weeks"))
-                        .compassFont(.title)
-                        .fixedSize(horizontal: false, vertical: true)
+                    CompassText(selection.goalID == nil ? "Weeks" : (ctx.snapshot.goal?.text ?? "Weeks"), style: .title)
                         .padding(.bottom, Space.m)
                         .accessibilityAddTraits(.isHeader)
                     ForEach(weeks) { week in
@@ -234,18 +220,17 @@ private struct WeekRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: Space.s) {
-                Text(label).compassFont(.caption).foregroundStyle(.ink2)
-                    .frame(width: 112, alignment: .leading)
+                CompassText(label, style: .caption, color: .ink2)
                     .lineLimit(2)
-                    .minimumScaleFactor(0.8)
+                    .frame(width: 112, alignment: .leading)
                 HStack(spacing: Space.xs) {
                     ForEach(Array(week.marks.enumerated()), id: \.offset) { _, mark in
-                        WeekDot(mark: mark)
+                        DayMarkView(mark: mark, size: .week)
                     }
                 }
                 .accessibilityHidden(true)
                 Spacer(minLength: 0)
-                Text("\(week.movedCount)").compassFont(.heading).foregroundStyle(.ink)
+                CompassText("\(week.movedCount)", style: .heading).lineLimit(1).fixedSize()
             }
             .frame(minHeight: 56)
             .overlay(alignment: .top) { Rectangle().fill(Color.line).frame(height: 1) }
@@ -255,21 +240,5 @@ private struct WeekRow: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(label): moved on \(week.movedCount) of 7 days")
         .accessibilityHint("Opens the week")
-    }
-}
-
-/// history.html `.dot`: 12pt ink when moved; 6pt grey otherwise (days before the goal stay blank).
-private struct WeekDot: View {
-    let mark: DayMark
-
-    var body: some View {
-        ZStack {
-            switch mark {
-            case .moved: Circle().fill(Color.ink).frame(width: 12, height: 12)
-            case .missed: Circle().fill(Color.dim).frame(width: 6, height: 6)
-            case .empty: Circle().fill(Color.dim).frame(width: 6, height: 6)
-            }
-        }
-        .frame(width: 12, height: 12)
     }
 }

@@ -57,11 +57,26 @@ struct TodayWidgetCircle: View {
     }
 }
 
+/// Widget text in the extension: SwiftUI `Text` with the type token (WidgetKit can't host UIKit labels).
+struct WidgetText: View {
+    let text: String
+    let style: CompassType
+    var weight: CompassType.Weight?
+    var color: Color
+    var lines: Int
+
+    var body: some View {
+        Text(text).compassFont(style, weight: weight).foregroundStyle(color).lineLimit(lines)
+    }
+}
+
 /// Widget content per I6: raised card (#1C1C1F, radius 24, padding 16). The circle is supplied by the
-/// host so the widget can wrap it in an App Intent button and the app in a plain button.
-struct TodayWidgetContent<Toggle: View>: View {
+/// host so the widget can wrap it in an App Intent button and the app in a plain button; so is the text,
+/// so the app's I6 board sets it with `CompassText` (the boards' line breaks) and the widget with `Text`.
+struct TodayWidgetContent<Toggle: View, Words: View>: View {
     var data: TodayWidgetData
     var layout: TodayWidgetLayout
+    var text: (String, CompassType, CompassType.Weight?, Color, Int) -> Words
     @ViewBuilder var toggle: (Bool) -> Toggle
 
     var body: some View {
@@ -87,7 +102,7 @@ struct TodayWidgetContent<Toggle: View>: View {
     private var medium: some View {
         VStack(alignment: .leading, spacing: Space.xs) {
             if let goal = data.goal {
-                Text(goal).compassFont(.caption).foregroundStyle(.ink2).lineLimit(2)
+                text(goal, .caption, nil, .ink2, 2)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             Spacer(minLength: 0)
@@ -113,9 +128,13 @@ struct TodayWidgetContent<Toggle: View>: View {
     }
 
     private func stepTitle(lines: Int) -> some View {
-        Text(data.step ?? data.emptyText)
-            .compassFont(.body, weight: .medium)
-            .foregroundStyle(data.step == nil ? Color.ink2 : Color.ink)
-            .lineLimit(lines)
+        text(data.step ?? data.emptyText, .body, .medium, data.step == nil ? Color.ink2 : Color.ink, lines)
+    }
+}
+
+extension TodayWidgetContent where Words == WidgetText {
+    init(data: TodayWidgetData, layout: TodayWidgetLayout, @ViewBuilder toggle: @escaping (Bool) -> Toggle) {
+        self.init(data: data, layout: layout, text: { WidgetText(text: $0, style: $1, weight: $2, color: $3, lines: $4) },
+                  toggle: toggle)
     }
 }

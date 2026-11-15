@@ -11,11 +11,25 @@ import UIKit
 /// | heading | 22/28     | 500    | 30/36 |
 /// | body    | 17/24     | 400    | 26/32 |
 /// | caption | 15/20     | 400    | 22/28 |
-/// | micro   | 13/16     | 500 mono | 17/20 |
+/// | micro   | 13/16     | 500 mono | 22/28 (400) |
+///
+/// Board-only styles, drawn on one screen each but still tokens (no one-off fonts in features):
+///
+/// | Style    | Size/Line | Weight     | AX5   | Where |
+/// |----------|-----------|------------|-------|-------|
+/// | label    | 13/16     | 500        | 17/20 | History day labels ("Today", "Monday") |
+/// | nav      | 17/24     | 400        | 22/28 | Nav row text ("History", "‹ This week") |
+/// | bodyMono | 17/24     | 400 mono   | 26/32 | Settings times (`.lr .v.mono`) |
+/// | time     | 28/32     | 500 mono   | 34/40 | A6 rhythm times |
+/// | numeral  | 96/96     | 600, −0.05em | 96/96 | F2 step total |
+/// | clock    | 96/96     | 600, −0.04em | 96/96 | I5 lock-screen clock |
 ///
 /// Sizes scale with Dynamic Type along the spec's own curve (not Apple's), reaching the AX column at AX5.
+/// Set text with `CompassText` (exact line boxes, board line breaks); `compassFont` is only for
+/// fields and widget text (see CompassText.swift).
 enum CompassType: CaseIterable {
     case display, title, live, heading, body, caption, micro
+    case label, nav, bodyMono, time, numeral, clock
 
     enum Weight {
         case regular, medium, semibold
@@ -45,6 +59,8 @@ enum CompassType: CaseIterable {
         var axSize: CGFloat
         var axLineHeight: CGFloat
         var mono: Bool = false
+        /// Weight at accessibility sizes, when the boards change it (durations: `mono axC` is 400).
+        var axWeight: Weight? = nil
     }
 
     var spec: Spec {
@@ -55,7 +71,15 @@ enum CompassType: CaseIterable {
         case .heading: Spec(size: 22, lineHeight: 28, weight: .medium, tracking: -0.005, axSize: 30, axLineHeight: 36)
         case .body: Spec(size: 17, lineHeight: 24, weight: .regular, tracking: 0, axSize: 26, axLineHeight: 32)
         case .caption: Spec(size: 15, lineHeight: 20, weight: .regular, tracking: 0, axSize: 22, axLineHeight: 28)
-        case .micro: Spec(size: 13, lineHeight: 16, weight: .medium, tracking: 0, axSize: 17, axLineHeight: 20, mono: true)
+        // Boards draw durations at AX as `mono axC` (22/28, 400): D8, E6.
+        case .micro: Spec(size: 13, lineHeight: 16, weight: .medium, tracking: 0, axSize: 22, axLineHeight: 28, mono: true, axWeight: .regular)
+        // kit.css `.navb` 17/24; Today and the AX boards scale it to `axC` 22/28 (C11, E6).
+        case .nav: Spec(size: 17, lineHeight: 24, weight: .regular, tracking: 0, axSize: 22, axLineHeight: 28)
+        case .label: Spec(size: 13, lineHeight: 16, weight: .medium, tracking: 0, axSize: 17, axLineHeight: 20)
+        case .bodyMono: Spec(size: 17, lineHeight: 24, weight: .regular, tracking: 0, axSize: 26, axLineHeight: 32, mono: true)
+        case .time: Spec(size: 28, lineHeight: 32, weight: .medium, tracking: 0, axSize: 34, axLineHeight: 40, mono: true)
+        case .numeral: Spec(size: 96, lineHeight: 96, weight: .semibold, tracking: -0.05, axSize: 96, axLineHeight: 96)
+        case .clock: Spec(size: 96, lineHeight: 96, weight: .semibold, tracking: -0.04, axSize: 96, axLineHeight: 96)
         }
     }
 
@@ -94,17 +118,20 @@ enum CompassType: CaseIterable {
         return (s.lineHeight + (s.axLineHeight - s.lineHeight) * Self.progress(dts)) * Self.shrink(dts)
     }
 
-    func fontName(_ weight: Weight?) -> String {
-        let w = weight ?? spec.weight
+    func fontName(_ weight: Weight?, dts: DynamicTypeSize = .large) -> String {
+        let w = weight ?? (dts.isAccessibilitySize ? spec.axWeight : nil) ?? spec.weight
         return spec.mono ? w.plexMono : w.interTight
     }
 
+    /// Letter spacing in points at this size.
+    func kern(for dts: DynamicTypeSize) -> CGFloat { spec.tracking * size(for: dts) }
+
     func font(for dts: DynamicTypeSize, weight: Weight? = nil) -> Font {
-        .custom(fontName(weight), fixedSize: size(for: dts))
+        .custom(fontName(weight, dts: dts), fixedSize: size(for: dts))
     }
 
     func uiFont(for dts: DynamicTypeSize, weight: Weight? = nil) -> UIFont {
-        UIFont(name: fontName(weight), size: size(for: dts)) ?? .systemFont(ofSize: size(for: dts))
+        UIFont(name: fontName(weight, dts: dts), size: size(for: dts)) ?? .systemFont(ofSize: size(for: dts))
     }
 
     /// True when Inter Tight is registered (UIAppFonts). Stubs show a warning if not.
@@ -131,8 +158,10 @@ private struct CompassFontModifier: ViewModifier {
 }
 
 extension View {
-    /// Apply a Compass type style: `Text("Did you do it?").compassFont(.title)`.
-    /// Pass `weight` for controls (btn = .semibold, btn2/pill/choice = .medium).
+    /// A Compass type style on a SwiftUI `Text`/`TextField`. SwiftUI can only add leading, so this is
+    /// exact for one-line text in styles whose line is taller than the font's (everything but display and
+    /// title, and live/heading at AX). Use it for the widget (no UIKit there) and system-drawn fields;
+    /// everything else uses `CompassText` / `CompassTextEditor`.
     func compassFont(_ style: CompassType, weight: CompassType.Weight? = nil) -> some View {
         modifier(CompassFontModifier(style: style, weight: weight))
     }

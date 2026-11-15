@@ -22,19 +22,14 @@ struct RestoreProgressView: View {
             NavBar(leading: .back { cancel() }).region(.nav)
 
             VStack(alignment: .leading, spacing: 0) {
-                Text("Restoring from iCloud")
-                    .compassFont(.title)
-                    .onboardingWraps()
+                CompassText("Restoring from iCloud", style: .title)
                     .accessibilityAddTraits(.isHeader)
                 RestoreProgressBar(value: draft.restoreProgress)
                     .padding(.top, Space.l)
-                Text(draft.restoreSummary?.line ?? " ")
-                    .compassFont(.body)
-                    .foregroundStyle(.ink2)
-                    .onboardingWraps()
+                CompassText(draft.restoreSummary?.line ?? " ", color: .ink2)
                     .padding(.top, Space.s)
             }
-            .region(.focalTop)
+            .scrollingRegion(.custom(top: 128, bottom: 728))
 
             LinkButton("Cancel") { cancel() }
                 .frame(maxWidth: .infinity)
@@ -166,24 +161,16 @@ struct RestoreDoneView: View {
         let steps = draft.restoreSummary?.steps ?? model.snapshot.movedCount
         FlowScreen {
             VStack(alignment: .leading, spacing: 0) {
-                Text("Welcome back.")
-                    .compassFont(.title)
-                    .onboardingWraps()
+                CompassText("Welcome back.", style: .title)
                     .accessibilityAddTraits(.isHeader)
                 if !goalText.isEmpty {
-                    Text(goalText)
-                        .compassFont(.heading)
-                        .foregroundStyle(.ink2)
-                        .onboardingWraps()
+                    CompassText(goalText, style: .heading, color: .ink2)
                         .padding(.top, Space.s)
                 }
-                Text("\(steps) \(steps == 1 ? "step" : "steps") restored.")
-                    .compassFont(.body)
-                    .foregroundStyle(.ink3)
-                    .onboardingWraps()
+                CompassText("\(steps) \(steps == 1 ? "step" : "steps") restored.", color: .ink3)
                     .padding(.top, Space.s)
             }
-            .region(.focalTop)
+            .scrollingRegion(.custom(top: 128, bottom: 668))
 
             ButtonDock(primary: "Continue", onPrimary: {
                 draft.reset()
@@ -206,17 +193,12 @@ struct RestoreNothingView: View {
             NavBar(leading: .back { model.onboardingBack(from: .r3) }).region(.nav)
 
             VStack(alignment: .leading, spacing: 0) {
-                Text(reason.title)
-                    .compassFont(.title)
-                    .onboardingWraps()
+                CompassText(reason.title, style: .title)
                     .accessibilityAddTraits(.isHeader)
-                Text(reason.message)
-                    .compassFont(.body)
-                    .foregroundStyle(.ink2)
-                    .onboardingWraps()
+                CompassText(reason.message, color: .ink2)
                     .padding(.top, Space.s)
             }
-            .region(.focalTop)
+            .scrollingRegion(.custom(top: 128, bottom: 668))
 
             ButtonDock(primary: "Start fresh", link: "Try again", onPrimary: {
                 OnboardingDraft.shared.reset()

@@ -15,9 +15,10 @@ struct EveningQuestionView: View {
         FlowScreen {
             NavBar(leading: .close { model.closeEvening() }, scalesText: true).region(.nav)
 
-            RitualSubject(icon: subject.icon, text: subject.text).region(.subject)
+            SubjectLine(icon: subject.icon, text: subject.text).region(.subject)
 
-            RitualText(hasStep ? "Did you do it?" : "Did you move toward it today?", style: .title)
+            CompassText(hasStep ? "Did you do it?" : "Did you move toward it today?", style: .title)
+                .accessibilityAddTraits(.isHeader)
                 .region(.focal)
 
             ChoiceCircles(
@@ -43,12 +44,13 @@ struct EveningDoneEarlierView: View {
         FlowScreen {
             NavBar(leading: .close { model.closeEvening() }, scalesText: true).region(.nav)
 
-            RitualSubject(icon: subject.icon, text: subject.text).region(.subject)
+            SubjectLine(icon: subject.icon, text: subject.text).region(.subject)
 
-            RitualText(ReflectionRules.question(outcome: .moved, kind: .doneEarlier), style: .title)
+            CompassText(ReflectionRules.question(outcome: .moved, kind: .doneEarlier), style: .title)
+                .accessibilityAddTraits(.isHeader)
                 .region(.focal)
 
-            RitualVoiceDock(
+            VoiceDock(
                 micMode: .rings,
                 micLabel: "Speak",
                 onKeyboard: { model.addToDoneEarlier(typing: true) },
@@ -76,19 +78,25 @@ struct EveningReflectView: View {
     private var outcome: ReflectionOutcome { session.outcome ?? (id == .d4 ? .notToday : .moved) }
     private var kind: EveningKind { session.kind ?? (model.eveningDay?.step == nil ? .noStep : .stepOpen) }
     private var question: String { ReflectionRules.question(outcome: outcome, kind: kind) }
-    private var showsFixture: Bool { model.fixture != nil && !capture.isBusy && !session.typing && session.micProblem == nil }
+    private var showsFixture: Bool { model.fixture != nil && !capture.isBusy && !session.typing && micProblem == nil }
+    /// Recording can't start (I4 storage full, microphone off): the notice and "Type instead" take the dock.
+    private var micProblem: VoiceCapture.StartError? {
+        if let problem = session.micProblem { return problem }
+        return model.fixture != nil && !session.typing ? ritualMicProblem(model, nil) : nil
+    }
 
     var body: some View {
         let subject = model.eveningSubject(kind: kind)
         FlowScreen {
-            NavBar(leading: .ritualClose("Close and keep what was said") { model.closeEveningKeeping() }, scalesText: true).region(.nav)
+            NavBar(leading: .close("Close and keep what was said") { model.closeEveningKeeping() }, scalesText: true).region(.nav)
 
-            RitualSubject(icon: subject.icon, text: subject.text).region(.subject)
+            SubjectLine(icon: subject.icon, text: subject.text).region(.subject)
 
             if session.typing {
                 typing
-            } else if let problem = session.micProblem {
-                RitualText(question, style: .title)
+            } else if let problem = micProblem {
+                CompassText(question, style: .title)
+                    .accessibilityAddTraits(.isHeader)
                     .region(.focal)
                 TypeInsteadDock(reason: problem) {
                     session.micProblem = nil
@@ -112,10 +120,11 @@ struct EveningReflectView: View {
         )
         .region(.focal)
 
-        ListeningWave(levels: showsFixture ? FakeAudioRecorder.designLevels : capture.levels, isStatic: showsFixture)
+        Waveform(levels: showsFixture ? FakeAudioRecorder.designLevels : capture.levels,
+                 lit: showsFixture ? 32 : nil, count: VoiceCapture.barCount, isStatic: showsFixture)
             .region(.wave)
 
-        RitualVoiceDock(
+        VoiceDock(
             micMode: .listening,
             micLabel: "Stop and save",
             onKeyboard: { model.switchEveningToTyping() },
@@ -127,9 +136,8 @@ struct EveningReflectView: View {
     @ViewBuilder
     private var typing: some View {
         VStack(alignment: .leading, spacing: Space.s) {
-            RitualText(question, style: .title, color: .ink2)
-            UnderlineField(prompt: "Type it here", text: $session.draft, style: .live, focused: $focused)
-                .accessibilityLabel(question)
+            CompassText(question, style: .title, color: .ink2)
+            UnderlineField(prompt: "Type it here", text: $session.draft, style: .live, focused: $focused, label: question)
         }
         .region(.focal)
         .onAppear { if model.fixture == nil { DispatchQueue.main.async { focused = true } } }
@@ -157,6 +165,7 @@ struct EveningSavedView: View {
     @Bindable private var session = EveningSession.shared
     @State private var expanded: Bool
     @State private var summaryDraft = ""
+    @State private var pickingPart = false
     @FocusState private var focused: Bool
     private var playback: VoicePlayback { .shared }
 
@@ -175,7 +184,7 @@ struct EveningSavedView: View {
             )
             .region(.nav)
 
-            RitualSubject(icon: subject.icon, text: subject.text).region(.subject)
+            SubjectLine(icon: subject.icon, text: subject.text).region(.subject)
 
             if let r = model.eveningDay?.reflection {
                 if session.editingSummary {
@@ -185,6 +194,8 @@ struct EveningSavedView: View {
                 }
             }
         }
+        .partPickerSheet(isPresented: $pickingPart, parts: model.goal?.activeParts ?? [],
+                         selected: model.today?.reflection?.partID) { model.setReflectionPart($0) }
         .task {
             guard model.fixture == nil, !session.working, let r = model.eveningDay?.reflection,
                   ReflectionRules.needsSummary(r) else { return }
@@ -198,13 +209,18 @@ struct EveningSavedView: View {
         let showsTranscript = ReflectionRules.showsTranscript(r)
         let open = expanded && showsTranscript
         VStack(alignment: .leading, spacing: 0) {
-            RitualText(title, style: .title)
-                .contentTransition(.opacity)
+            CompassText(title, style: .title)
+                .id(title)
+                .transition(.opacity)
                 .animation(Motion.animation(Motion.turnTaking, reduced: reduced), value: title)
 
             HStack(alignment: .top, spacing: Space.s) {
-                if let goal = model.goal {
-                    PartPickerChip(parts: goal.activeParts, selected: model.part(r.partID)) { model.setReflectionPart($0.id) }
+                if model.goal != nil {
+                    let part = model.part(r.partID)
+                    Chip(title: part?.title ?? "Choose a part", icon: part.map { CompassIcon($0.symbol) }, iconTint: .ink,
+                         trailing: .down, accessibilityLabel: part.map { "Counts toward \($0.title). Change" } ?? "Choose a part") {
+                        pickingPart = true
+                    }
                 }
                 Spacer(minLength: 0)
                 if ReflectionRules.canEdit(r) {
@@ -228,11 +244,8 @@ struct EveningSavedView: View {
                         .padding(.top, dts.isAccessibilitySize ? Space.s : Space.m)
                     if open {
                         ScrollView {
-                            Text(r.transcript)
-                                .compassFont(.body)
-                                .foregroundStyle(.ink2)
+                            CompassText(r.transcript, color: .ink2)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .fixedSize(horizontal: false, vertical: true)
                                 .padding(.top, Space.xs)
                         }
                         .scrollIndicators(.hidden)
@@ -262,8 +275,7 @@ struct EveningSavedView: View {
 
     @ViewBuilder
     private var editor: some View {
-        UnderlineField(prompt: "Summary", text: $summaryDraft, style: .title, focused: $focused)
-            .accessibilityLabel("Summary")
+        UnderlineField(prompt: "Summary", text: $summaryDraft, style: .title, focused: $focused, label: "Summary")
             .region(.focal)
         AboveKeyboardAction(title: "Save", enabled: !summaryDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
             focused = false
@@ -288,9 +300,7 @@ struct TranscriptRow: View {
     var body: some View {
         Button { expanded.toggle() } label: {
             HStack(spacing: Space.s) {
-                Text("Transcript")
-                    .compassFont(.body)
-                    .foregroundStyle(.ink)
+                CompassText("Transcript").lineLimit(1)
                 Spacer(minLength: 0)
                 Icon(expanded ? .up : .down, size: dts.isAccessibilitySize ? IconSize.m : IconSize.s)
                     .foregroundStyle(expanded ? Color.ink2 : Color.ink)
@@ -311,15 +321,7 @@ struct PenButton: View {
     @Environment(\.dynamicTypeSize) private var dts
 
     var body: some View {
-        Button(action: action) {
-            Icon(.pen, size: dts.isAccessibilitySize ? IconSize.s : IconSize.xs)
-                .foregroundStyle(.ink2)
-                .frame(width: ControlSize.minTarget, height: ControlSize.minTarget)
-                .overlay(Circle().strokeBorder(Color.line, lineWidth: 1))
-                .contentShape(Circle())
-        }
-        .buttonStyle(PressableStyle())
-        .accessibilityLabel("Edit summary")
+        IconButton(.pen, label: "Edit summary", iconSize: dts.isAccessibilitySize ? IconSize.s : IconSize.xs, action: action)
     }
 }
 
@@ -329,26 +331,8 @@ struct OfflineNotice: View {
     let onTry: () -> Void
 
     var body: some View {
-        HStack(alignment: .center, spacing: Space.xs) {
-            Icon(.cloud, size: IconSize.s).foregroundStyle(.ink2)
-            Text("Offline. Text and summary appear here when you reconnect.")
-                .compassFont(.caption)
-                .foregroundStyle(.noticeInk)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-            Button(action: onTry) {
-                Text("Try now")
-                    .compassFont(.body, weight: .medium)
-                    .foregroundStyle(.ink)
-                    .padding(.horizontal, 4)
-                    .frame(minHeight: 48)
-            }
-            .buttonStyle(PressableStyle())
-            .disabled(working)
-        }
-        .padding(Space.s)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        Notice(icon: .cloud, text: "Offline. Text and summary appear here when you reconnect.",
+               actions: [NoticeAction(title: "Try now", action: { if !working { onTry() } })], layout: .inline)
     }
 }
 
@@ -359,27 +343,9 @@ struct TextFailedNotice: View {
     let onType: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.xs) {
-            Text("Couldn’t turn this recording into text.")
-                .compassFont(.caption)
-                .foregroundStyle(.noticeInk)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 0) {
-                Button(action: onRetry) {
-                    Text("Try again").compassFont(.body, weight: .medium).foregroundStyle(.ink)
-                        .padding(.trailing, 12).frame(minHeight: 48)
-                }
-                .buttonStyle(PressableStyle())
-                .disabled(working)
-                Button(action: onType) {
-                    Text("Type a summary").compassFont(.body, weight: .medium).foregroundStyle(.ink)
-                        .padding(.horizontal, 12).frame(minHeight: 48)
-                }
-                .buttonStyle(PressableStyle())
-            }
-        }
-        .padding(Space.s)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        Notice(text: "Couldn’t turn this recording into text.",
+               actions: [NoticeAction(title: "Try again", action: { if !working { onRetry() } }),
+                         NoticeAction(title: "Type a summary", action: onType)],
+               actionSpacing: Space.m, actionHeight: 48)
     }
 }

@@ -1,6 +1,88 @@
 import SwiftUI
 import CompassCore
 
+/// kit.css `.pill` — the Note button: 64 tall, surface, mic + "Note". In the Today dock next to the keyboard.
+/// `recording: true` turns it into the recorder (C5): mini waveform + 48pt stop button.
+struct NotePill: View {
+    var title: String = "Note"
+    /// `.kb` when Settings › Start with is Typing: the pill opens the typed note.
+    var icon: CompassIcon = .mic
+    var recording: Bool = false
+    var levels: [Float] = FakeAudioRecorder.designLevels
+    let action: () -> Void
+
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        if recording {
+            HStack(spacing: Space.s) {
+                HStack(spacing: 3) {
+                    ForEach(Array(levels.prefix(30).enumerated()), id: \.offset) { _, level in
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.ink)
+                            .frame(width: 3, height: max(4, CGFloat(level) * 40))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: 40)
+                .clipped()
+                .accessibilityHidden(true)
+                Button(action: action) {
+                    RoundedRectangle(cornerRadius: 3).fill(Color.ground).frame(width: 16, height: 16)
+                        .frame(width: 48, height: 48)
+                        .background(Color.ink, in: Circle())
+                }
+                .buttonStyle(PressableStyle())
+                .accessibilityLabel("Stop and save note")
+            }
+            .padding(.leading, Space.m)
+            .padding(.trailing, Space.xs)
+            .frame(maxWidth: .infinity, minHeight: ControlSize.notePill, maxHeight: ControlSize.notePill)
+            .background(Color.surface, in: Capsule())
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Recording note")
+        } else {
+            Button(action: action) {
+                HStack(spacing: Space.xs) {
+                    Icon(icon, size: typeSize.isAccessibilitySize ? IconSize.m : IconSize.i)
+                    // The pill keeps its 64pt height; its label scales (`pill axB` on C11).
+                    CompassText(title, weight: .medium).lineLimit(1)
+                }
+                .foregroundStyle(.ink)
+                .frame(maxWidth: .infinity, minHeight: ControlSize.notePill, maxHeight: ControlSize.notePill)
+                .background(Color.surface, in: Capsule())
+            }
+            .buttonStyle(PressableStyle())
+            .accessibilityLabel(icon == .kb ? "Type a note" : "Record a note")
+        }
+    }
+}
+
+/// kit.css `.tdock` — Today dock: keyboard circle (56; glyph 28 at AX) + Note pill (64).
+/// `typingFirst` (Settings › Start with: Typing) swaps their jobs: the pill types, the circle records.
+/// Place with `.region(.todayDock)`.
+struct TodayDock: View {
+    var recording: Bool = false
+    var typingFirst: Bool = false
+    var levels: [Float] = FakeAudioRecorder.designLevels
+    let onKeyboard: () -> Void
+    let onNote: () -> Void
+
+    @Environment(\.dynamicTypeSize) private var dts
+
+    var body: some View {
+        let swapped = typingFirst && !recording
+        HStack(spacing: Space.s) {
+            CircleButton(swapped ? .mic : .kb,
+                         label: recording ? "Switch to typing" : (swapped ? "Record a note" : "Type a note"),
+                         iconSize: dts.isAccessibilitySize ? IconSize.m : IconSize.i,
+                         action: swapped ? onNote : onKeyboard)
+            NotePill(icon: swapped ? .kb : .mic, recording: recording, levels: levels, action: swapped ? onKeyboard : onNote)
+        }
+        .frame(height: ControlSize.notePill)
+    }
+}
+
 /// kit.css `.mic` (96 ink circle) with `.ringw` (Center rings), `.glow` (listening) and `.stop` (recording).
 struct MicButton: View {
     enum Mode: Equatable {
@@ -77,19 +159,21 @@ struct MicButton: View {
 }
 
 /// kit.css `.wavebar` — 4pt bars, 4pt gap, radius 2, up to 40 tall. Lit bars ink, the rest #2A2A2D.
-/// With Reduce Motion it becomes a `LevelBar` ("live · reduced: level bar").
+/// With Reduce Motion a live wave becomes a `LevelBar` ("live · reduced: level bar"); a still wave
+/// (`isStatic`: the board's bars in screenshots, nothing moving) keeps its bars.
 struct Waveform: View {
     /// 0...1 levels, oldest first.
     var levels: [Float] = FakeAudioRecorder.designLevels
-    /// Bars drawn in ink (words already said); the rest in line colour.
+    /// Bars drawn in ink (words already said); the rest in line colour. nil = all ink.
     var lit: Int? = 32
     var count: Int = 38
+    var isStatic: Bool = false
 
     @Environment(\.motionReduced) private var reduced
 
     var body: some View {
         Group {
-            if reduced {
+            if reduced && !isStatic {
                 LevelBar(level: levels.last.map { CGFloat($0) } ?? 0)
             } else {
                 HStack(spacing: 4) {
@@ -145,9 +229,11 @@ struct MiniWaveform: View {
     }
 }
 
-/// kit.css `.dockc` + `.choice` — two 96pt answers on the 712 line, labels 768–792.
-/// At accessibility sizes they become 72pt labelled full-width buttons: the yes button keeps the
-/// 712 line and the no button sits 16 above it (D7). Place with `.region(.dock)`.
+/// kit.css `.dockc` + `.choice` — two 96pt answers on the 712 line, labels 768–792. The Done/Yes check
+/// is `svg.l` (36). Tapping one turns it into the mic on the same line in 240 ms (spec "Answer → record";
+/// cut with Reduce Motion), then answers. At accessibility sizes they become 72pt labelled full-width
+/// buttons: the yes button keeps the 712 line and the no button sits 16 above it (D7).
+/// Place with `.region(.dock)`.
 struct ChoiceCircles: View {
     let yes: String
     let no: String
@@ -156,6 +242,9 @@ struct ChoiceCircles: View {
     let onNo: () -> Void
 
     @Environment(\.dynamicTypeSize) private var dts
+    @Environment(\.motionReduced) private var reduced
+    /// The answer being turned into the mic (true = yes).
+    @State private var answering: Bool?
 
     var body: some View {
         if dts.isAccessibilitySize {
@@ -165,67 +254,111 @@ struct ChoiceCircles: View {
                         .offset(y: -(ControlSize.accessibleChoice + Space.s))
                 }
         } else {
-            HStack(alignment: .top, spacing: Space.m) {
-                choice(yes, filled: true, action: onYes)
-                choice(no, filled: false, action: onNo)
+            GeometryReader { geo in
+                // Each circle's centre to the dock's centre: a quarter of the width plus half the gap.
+                let shift = (geo.size.width - Space.m) / 4 + Space.m / 2
+                HStack(alignment: .top, spacing: Space.m) {
+                    choice(yes, filled: true, shift: shift) { answer(true, then: onYes) }
+                    choice(no, filled: false, shift: -shift) { answer(false, then: onNo) }
+                }
             }
+            .frame(height: ControlSize.voice + Space.xs + 24, alignment: .top)
             .frame(height: ControlSize.voice, alignment: .top)
         }
     }
 
-    private func choice(_ title: String, filled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+    private func answer(_ isYes: Bool, then action: @escaping () -> Void) {
+        guard answering == nil else { return }
+        guard let animation = Motion.animation(Motion.answerToRecord, reduced: reduced) else { action(); return }
+        withAnimation(animation) { answering = isYes }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Motion.answerToRecord) {
+            action()
+            answering = nil
+        }
+    }
+
+    private func choice(_ title: String, filled: Bool, shift: CGFloat, action: @escaping () -> Void) -> some View {
+        let isTapped = answering == filled
+        let isOther = answering != nil && !isTapped
+        return Button(action: action) {
             VStack(spacing: Space.xs) {
                 ZStack {
-                    if filled {
-                        Circle().fill(Color.ink)
-                        if let yesIcon { Icon(yesIcon, size: IconSize.m).foregroundStyle(.ground) }
-                    } else {
-                        Circle().strokeBorder(Color.dim, lineWidth: 2)
+                    Circle().fill(Color.ink).opacity(filled || isTapped ? 1 : 0)
+                    if !filled { Circle().strokeBorder(Color.dim, lineWidth: 2).opacity(isTapped ? 0 : 1) }
+                    if filled, let yesIcon {
+                        Icon(yesIcon, size: IconSize.l).foregroundStyle(.ground).opacity(isTapped ? 0 : 1)
                     }
+                    RoundedRectangle(cornerRadius: 4).fill(Color.ground).frame(width: 28, height: 28)
+                        .opacity(isTapped ? 1 : 0)
                 }
                 .frame(width: ControlSize.voice, height: ControlSize.voice)
-                Text(title)
-                    .compassFont(.body, weight: .medium)
-                    .foregroundStyle(filled ? Color.ink : Color.ink2)
+                .offset(x: isTapped ? shift : 0)
+                CompassText(title, weight: .medium, color: filled ? .ink : .ink2)
+                    .lineLimit(1)
                     .fixedSize()
+                    .opacity(answering == nil ? 1 : 0)
             }
             .frame(maxWidth: .infinity)
+            .opacity(isOther ? 0 : 1)
         }
         .buttonStyle(PressableStyle())
         .accessibilityLabel(title)
     }
 }
 
-/// kit.css `.dock` + `.side` — voice dock: keyboard (56, left) · mic (96, centre on 712) · side (56, right; Skip).
-/// Place with `.region(.dock)`.
+/// kit.css `.dock` + `.side` — voice dock: keyboard (56, left; glyph 28 at AX) · mic (96, centre on 712)
+/// · side (56, right: Skip, or empty). Place with `.region(.dock)`.
 struct VoiceDock<Side: View>: View {
     var micMode: MicButton.Mode = .rings
+    var micLabel: String? = nil
     var keyboardLabel: String = "Type instead"
     let onKeyboard: () -> Void
     let onMic: () -> Void
     @ViewBuilder var side: Side
 
+    @Environment(\.dynamicTypeSize) private var dts
+
     var body: some View {
         HStack(spacing: 0) {
-            CircleButton(.kb, label: keyboardLabel, action: onKeyboard)
+            CircleButton(.kb, label: keyboardLabel, iconSize: dts.isAccessibilitySize ? IconSize.m : IconSize.i, action: onKeyboard)
             Spacer(minLength: 0)
-            MicButton(mode: micMode, action: onMic)
+            MicButton(mode: micMode, label: micLabel, action: onMic)
             Spacer(minLength: 0)
-            side.frame(width: 56, height: 56)
+            ZStack { Color.clear; side }.frame(width: 56, height: 56)
         }
         .frame(height: ControlSize.voice)
     }
 }
 
 extension VoiceDock where Side == EmptyView {
-    init(micMode: MicButton.Mode = .rings, keyboardLabel: String = "Type instead", onKeyboard: @escaping () -> Void, onMic: @escaping () -> Void) {
-        self.init(micMode: micMode, keyboardLabel: keyboardLabel, onKeyboard: onKeyboard, onMic: onMic, side: { EmptyView() })
+    init(micMode: MicButton.Mode = .rings, micLabel: String? = nil, keyboardLabel: String = "Type instead",
+         onKeyboard: @escaping () -> Void, onMic: @escaping () -> Void) {
+        self.init(micMode: micMode, micLabel: micLabel, keyboardLabel: keyboardLabel, onKeyboard: onKeyboard, onMic: onMic,
+                  side: { EmptyView() })
     }
 }
 
-/// kit.css `.player` — 80 tall surface card centred on 712: play (56 mic style) · mini wave · duration · redo.
-/// Place with `.region(.player)`.
+/// "Skip" in the voice dock's side slot: 17pt quiet, 22pt at AX (B8), inside the fixed 56 slot.
+struct DockSkip: View {
+    var accessibilityLabel: String = "Skip"
+    let action: () -> Void
+
+    @Environment(\.dynamicTypeSize) private var dts
+
+    var body: some View {
+        Button(action: action) {
+            CompassText("Skip", style: .nav, color: .ink2)
+                .lineLimit(1)
+                .fixedSize()
+                .frame(width: 56, height: 56)
+        }
+        .buttonStyle(PressableStyle())
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+/// kit.css `.player` — 80 tall surface card centred on 712: play (56 mic style) · mini wave · duration
+/// (`micro mono`; `mono axC` 22/28 at AX) · redo (`svg.s` 20; 28 at AX, D8). Place with `.region(.player)`.
 struct Player: View {
     var duration: TimeInterval
     var isPlaying: Bool = false
@@ -234,17 +367,20 @@ struct Player: View {
     let onPlay: () -> Void
     var onRedo: () -> Void = {}
 
+    @Environment(\.dynamicTypeSize) private var dts
+
     var body: some View {
         HStack(spacing: Space.s) {
             MicButton(mode: isPlaying ? .recording : .idle, size: ControlSize.secondary, icon: .play,
                       label: isPlaying ? "Pause memo" : "Play memo", action: onPlay)
             MiniWaveform(levels: levels)
-            Text(Self.format(duration))
-                .compassFont(.micro)
-                .foregroundStyle(.ink2)
+            CompassText(Self.format(duration), style: .micro, color: .ink2)
+                .lineLimit(1)
+                .fixedSize()
                 .accessibilityLabel("\(Int(duration.rounded())) seconds")
             if showsRedo {
-                IconButton(.redo, label: "Record again", bare: true, action: onRedo)
+                IconButton(.redo, label: "Record again", bare: true,
+                           iconSize: dts.isAccessibilitySize ? IconSize.m : IconSize.s, action: onRedo)
             }
         }
         .padding(.horizontal, 12)

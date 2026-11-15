@@ -24,7 +24,8 @@ enum OnboardingScreens {
         case .r1: RestoreProgressView(id: id)
         case .r2: RestoreDoneView()
         case .r3: RestoreNothingView()
-        default: ScreenStub(id: id)
+        // ScreenRegistry routes only this flow's IDs here; every one has a case above.
+        default: EmptyView()
         }
     }
 }

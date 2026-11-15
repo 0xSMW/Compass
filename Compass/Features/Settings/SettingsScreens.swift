@@ -12,7 +12,8 @@ enum SettingsScreens {
         switch id {
         case .h1: SettingsListView()
         case .h2: DeleteEverythingView()
-        default: ScreenStub(id: id)
+        // ScreenRegistry routes only this flow's IDs here; every one has a case above.
+        default: EmptyView()
         }
     }
 }
@@ -24,6 +25,7 @@ struct SettingsListView: View {
     @State private var timeSheet: TimeSheet?
     @State private var export: ExportItems?
     @State private var soundOn = SoundSetting.isOn
+    @State private var rhythmDraft = Rhythm()
 
     enum TimeSheet: String, Identifiable {
         case morning, evening
@@ -35,18 +37,14 @@ struct SettingsListView: View {
         FlowScreen {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("Settings").compassFont(.title).accessibilityAddTraits(.isHeader)
+                    CompassText("Settings", style: .title).accessibilityAddTraits(.isHeader)
 
                     VStack(spacing: 0) {
                         ListRow(title: "Your goal", action: { model.go(.g1) }) { chevron }
-                        ListRow(title: "Morning", action: { timeSheet = .morning }) {
-                            MonoValue(text: s.rhythm.morning.description)
-                        }
-                        .accessibilityValue(s.rhythm.morning.description)
-                        ListRow(title: "Evening", action: { timeSheet = .evening }) {
-                            MonoValue(text: s.rhythm.evening.description)
-                        }
-                        .accessibilityValue(s.rhythm.evening.description)
+                        ListRow(title: "Morning", value: s.rhythm.morning.description, valueStyle: .bodyMono,
+                                action: { timeSheet = .morning })
+                        ListRow(title: "Evening", value: s.rhythm.evening.description, valueStyle: .bodyMono,
+                                action: { timeSheet = .evening })
                         ListRow(title: "Sound and haptics", value: soundOn ? "On" : "Off", action: {
                             soundOn.toggle()
                             SoundSetting.set(soundOn)
@@ -73,11 +71,8 @@ struct SettingsListView: View {
                     .padding(.top, Space.m)
 
                     if !model.cloudHelpConfigured {
-                        Text(CloudHelpCopy.notSetUpFootnote)
-                            .compassFont(.caption)
-                            .foregroundStyle(.ink3)
+                        CompassText(CloudHelpCopy.notSetUpFootnote, style: .caption, color: .ink3)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, Space.s)
                             .accessibilityHidden(true) // read as the Cloud help row's hint
                     }
@@ -92,28 +87,26 @@ struct SettingsListView: View {
             NavBar(leading: .quietBack("Today") { leave() })
                 .region(.nav)
         }
-        .compassSheet(isPresented: Binding(get: { timeSheet != nil }, set: { if !$0 { timeSheet = nil } }), height: 456,
+        .compassSheet(isPresented: Binding(get: { timeSheet != nil }, set: { if !$0 { timeSheet = nil } }), height: 392,
                       label: timeSheet == .morning ? "Morning time" : "Evening time") {
             if let sheet = timeSheet {
-                TimeEditor(title: sheet == .morning ? "Morning" : "Evening",
-                           caption: sheet == .morning ? "When Compass asks who you’ll be today." : "When Compass asks what you did today.",
-                           time: sheet == .morning ? s.rhythm.morning : s.rhythm.evening,
-                           range: sheet == .morning ? Rhythm.morningRange : Rhythm.eveningRange,
-                           calendar: model.calendar,
-                           onSave: { t in
-                               // A6's limits (CompassCore): morning 04:00–11:45, evening 17:00–23:45.
-                               model.updateSettings {
-                                   $0.rhythm = sheet == .morning ? $0.rhythm.settingMorning(t) : $0.rhythm.settingEvening(t)
-                               }
-                               timeSheet = nil
-                           },
-                           onCancel: { timeSheet = nil })
+                TimeEditor(morning: sheet == .morning, rhythm: $rhythmDraft)
             }
+        } actions: {
+            PrimaryButton("Save") {
+                // A6's limits (CompassCore): morning 04:00–11:45, evening 17:00–23:45.
+                let r = rhythmDraft
+                model.updateSettings { $0.rhythm = $0.rhythm.settingMorning(r.morning).settingEvening(r.evening) }
+                timeSheet = nil
+            }
+        }
+        .onChange(of: timeSheet) { _, sheet in
+            if sheet != nil { rhythmDraft = model.settings.rhythm }
         }
         .exportSheet($export)
     }
 
-    private var chevron: some View { Icon(.right, size: IconSize.s).foregroundStyle(.ink3) }
+    private var chevron: some View { RowChevron() }
 
     private func startExport() {
         let snapshot = model.snapshot
@@ -125,59 +118,22 @@ struct SettingsListView: View {
     }
 }
 
-/// Morning / Evening time: a wheel in a Compass sheet, Save on the 712 line.
+/// Morning / Evening time in a Compass sheet: the A6 row (− 07:00 +, 15-minute steps, the same ranges
+/// as onboarding), Save on the 712 line.
 private struct TimeEditor: View {
-    let title: String
-    let caption: String
-    let time: TimeOfDay
-    /// The wheel only offers times inside this range (Rhythm.morningRange / eveningRange).
-    let range: ClosedRange<TimeOfDay>
-    let calendar: Calendar
-    let onSave: (TimeOfDay) -> Void
-    let onCancel: () -> Void
-    @State private var date = Date()
+    let morning: Bool
+    @Binding var rhythm: Rhythm
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(title).compassFont(.heading).accessibilityAddTraits(.isHeader).padding(.top, Space.xs)
-            Text(caption).compassFont(.body).foregroundStyle(.ink2).padding(.top, Space.xs)
-            DatePicker(title, selection: $date, in: dateRange, displayedComponents: .hourAndMinute)
-                .datePickerStyle(.wheel)
-                .labelsHidden()
-                .environment(\.locale, Locale(identifier: "en_GB"))
-                .environment(\.timeZone, calendar.timeZone)
-                .frame(maxWidth: .infinity)
-                .frame(height: 150)
-                .clipped()
-            Spacer(minLength: 0)
-            PrimaryButton("Save") { onSave(TimeOfDay(date, calendar: calendar)) }
-            LinkButton("Cancel", action: onCancel)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 4)
-                .padding(.bottom, 52)
-        }
-        .onAppear {
-            let t = time.clamped(to: range)
-            date = DayKey(Date(), calendar: calendar).date(in: calendar, hour: t.hour, minute: t.minute)
-        }
-    }
-
-    private var dateRange: ClosedRange<Date> {
-        let day = DayKey(Date(), calendar: calendar)
-        return day.date(in: calendar, hour: range.lowerBound.hour, minute: range.lowerBound.minute)
-            ... day.date(in: calendar, hour: range.upperBound.hour, minute: range.upperBound.minute)
-    }
-}
-
-/// settings.html `.v.mono`: times in IBM Plex Mono at body size, #A1A1A6.
-private struct MonoValue: View {
-    @Environment(\.dynamicTypeSize) private var dts
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .font(.custom("IBMPlexMono-Regular", fixedSize: CompassType.body.size(for: dts)))
-            .foregroundStyle(.ink2)
+        CompassText(morning ? "Morning" : "Evening", style: .heading).accessibilityAddTraits(.isHeader)
+        CompassText(morning ? "When Compass asks who you’ll be today." : "When Compass asks what you did today.", color: .ink2)
+            .padding(.top, Space.xs)
+        TimeStepperRow(icon: morning ? .sun : .moon, title: morning ? "Center" : "Look back",
+                       time: morning ? rhythm.morning : rhythm.evening,
+                       earlier: { rhythm = morning ? rhythm.movingMorning(by: -1) : rhythm.movingEvening(by: -1) },
+                       later: { rhythm = morning ? rhythm.movingMorning(by: 1) : rhythm.movingEvening(by: 1) })
+            .overlay(alignment: .bottom) { Rectangle().fill(Color.line).frame(height: 1) }
+            .padding(.top, Space.m)
     }
 }
 
@@ -191,7 +147,7 @@ struct DeleteEverythingView: View {
     var body: some View {
         let s = model.snapshot
         FlowScreen {
-            Text("Settings").compassFont(.title)
+            CompassText("Settings", style: .title)
                 .region(.focalTop)
                 .accessibilityHidden(true)
             NavBar(leading: .quietBack("Today") {})
@@ -200,27 +156,13 @@ struct DeleteEverythingView: View {
                 .accessibilityHidden(true)
         }
         .compassSheet(isPresented: Binding(get: { true }, set: { if !$0 { model.replace(with: .h1) } }), height: 392, label: "Delete everything") {
-            VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: Space.xs) {
-                    Text("Delete everything?").compassFont(.heading).accessibilityAddTraits(.isHeader)
-                    Text(message(s))
-                        .compassFont(.body)
-                        .foregroundStyle(.ink2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.top, Space.xs)
-                Spacer(minLength: Space.s)
-                SecondaryButton("Export first") { startExport() }
-                PrimaryButton("Delete everything", role: .destructive) {
-                    guard !deleting else { return }
-                    deleting = true
-                    model.eraseEverything()
-                }
-                .padding(.top, Space.s)
-                LinkButton("Cancel") { model.replace(with: .h1) }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 4)
-                    .padding(.bottom, 52)
+            ConfirmSheetContent(title: "Delete everything?", message: message(s))
+        } actions: {
+            SecondaryButton("Export first") { startExport() }
+            PrimaryButton("Delete everything", role: .destructive) {
+                guard !deleting else { return }
+                deleting = true
+                model.eraseEverything()
             }
         }
         .exportSheet($export)

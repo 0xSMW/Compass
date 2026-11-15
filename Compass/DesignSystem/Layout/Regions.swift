@@ -203,3 +203,18 @@ extension View {
         modifier(RegionModifier(region: region))
     }
 }
+
+extension View {
+    /// Place text that may outgrow its region at large sizes (spec, planned reflow: text reflows, controls
+    /// keep their size and line). It sits on the region's lines as usual; when it no longer fits, it
+    /// scrolls inside the region instead of running into the dock, starting fully visible at the top.
+    func scrollingRegion(_ region: Region) -> some View {
+        ViewThatFits(in: .vertical) {
+            self
+            ScrollView { self.frame(maxWidth: .infinity, alignment: .leading) }
+                .scrollIndicators(.hidden)
+                .scrollBounceBehavior(.basedOnSize)
+        }
+        .region(region)
+    }
+}

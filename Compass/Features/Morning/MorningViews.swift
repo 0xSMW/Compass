@@ -2,7 +2,7 @@ import SwiftUI
 import CompassCore
 
 private extension AppModel {
-    var morningClose: NavItem { .ritualClose("Not now") { self.closeMorning() } }
+    var morningClose: NavItem { .close("Not now") { self.closeMorning() } }
 }
 
 // MARK: - B1 · Center, B8 · Largest text
@@ -17,18 +17,16 @@ struct MorningCenterView: View {
             NavBar(leading: model.morningClose, scalesText: true).region(.nav)
 
             VStack(alignment: .leading, spacing: Space.m) {
-                RitualText(model.goal?.text ?? "", style: .display)
-                Text(MorningSession.Purpose.intention.question)
-                    .compassFont(.heading)
-                    .foregroundStyle(.ink2)
-                    .fixedSize(horizontal: false, vertical: true)
+                CompassText(model.goal?.text ?? "", style: .display)
+                    .accessibilityAddTraits(.isHeader)
+                CompassText(MorningSession.Purpose.intention.question, style: .heading, color: .ink2)
             }
             .region(.focalTop)
 
             if let problem = ritualMicProblem(model, session.micProblem) {
                 TypeInsteadDock(reason: problem) { model.openMorningTyping(.intention) }
             } else {
-                RitualVoiceDock(
+                VoiceDock(
                     micMode: .breathing,
                     micLabel: "Speak your intention",
                     onKeyboard: { model.openMorningTyping(.intention) },
@@ -63,7 +61,7 @@ struct MorningListeningView: View {
         FlowScreen {
             NavBar(leading: model.morningClose, scalesText: true).region(.nav)
 
-            RitualSubject(text: subject).region(.subject)
+            SubjectLine(text: subject).region(.subject)
 
             ListeningFocal(
                 question: purpose.question,
@@ -72,10 +70,11 @@ struct MorningListeningView: View {
             )
             .region(.focal)
 
-            ListeningWave(levels: showsFixture ? FakeAudioRecorder.designLevels : capture.levels, isStatic: showsFixture)
+            Waveform(levels: showsFixture ? FakeAudioRecorder.designLevels : capture.levels,
+                     lit: showsFixture ? 32 : nil, count: VoiceCapture.barCount, isStatic: showsFixture)
                 .region(.wave)
 
-            RitualVoiceDock(
+            VoiceDock(
                 micMode: .listening,
                 micLabel: "Stop and save",
                 onKeyboard: { model.openMorningTyping(purpose) },
@@ -119,13 +118,12 @@ struct MorningPlanView: View {
                 if idea == nil, model.fixture == nil {
                     StepIdeaLoading(title: "Finding a step…")
                 } else if let idea {
-                    RitualText(idea.title, style: .title)
+                    CompassText(idea.title, style: .title)
                     let part = model.part(idea.partID)
                     HStack(alignment: .top, spacing: Space.xs) {
                         if let part { Icon(CompassIcon(part.symbol), size: IconSize.s) }
-                        Text(MorningRules.planMeta(partTitle: part?.title, hint: idea.hint, stepsThisWeek: model.ritualStepsThisWeek(idea.partID)))
-                            .compassFont(.caption)
-                            .fixedSize(horizontal: false, vertical: true)
+                        CompassText(MorningRules.planMeta(partTitle: part?.title, hint: idea.hint, stepsThisWeek: model.ritualStepsThisWeek(idea.partID)),
+                                    style: .caption, color: .ink3)
                     }
                     .foregroundStyle(.ink3)
                     .accessibilityElement(children: .combine)
@@ -164,11 +162,11 @@ struct MorningPlanView: View {
     @ViewBuilder
     private var subject: some View {
         if model.today?.intention != nil {
-            RitualSubject(text: model.morningPlanningSubject, redoLabel: "Say your intention again") {
+            SubjectLine(text: model.morningPlanningSubject, redoLabel: "Say your intention again") {
                 model.startMorningListening(.intention)
             }
         } else {
-            RitualSubject(text: model.goal?.text ?? "")
+            SubjectLine(text: model.goal?.text ?? "")
         }
     }
 }
@@ -185,21 +183,21 @@ struct MorningNameStepView: View {
             NavBar(leading: model.morningClose, scalesText: true).region(.nav)
 
             if model.today?.intention != nil {
-                RitualSubject(text: model.morningPlanningSubject, redoLabel: "Say your intention again") {
+                SubjectLine(text: model.morningPlanningSubject, redoLabel: "Say your intention again") {
                     model.startMorningListening(.intention)
                 }
                 .region(.subject)
             } else {
-                RitualSubject(text: model.goal?.text ?? "").region(.subject)
+                SubjectLine(text: model.goal?.text ?? "").region(.subject)
             }
 
-            RitualText(MorningSession.Purpose.step.question, style: .title)
+            CompassText(MorningSession.Purpose.step.question, style: .title)
                 .region(.focal)
 
             if let problem = ritualMicProblem(model, session.micProblem) {
                 TypeInsteadDock(reason: problem) { model.openMorningTyping(.step) }
             } else {
-                RitualVoiceDock(
+                VoiceDock(
                     micMode: .rings,
                     micLabel: "Say a step",
                     onKeyboard: { model.openMorningTyping(.step) },
@@ -223,6 +221,7 @@ struct MorningTypingView: View {
 
     @State private var text = ""
     @State private var partID: UUID?
+    @State private var pickingPart = false
     @FocusState private var focused: Bool
 
     private var purpose: MorningSession.Purpose { session.purpose ?? .step }
@@ -232,16 +231,18 @@ struct MorningTypingView: View {
         FlowScreen {
             NavBar(leading: model.morningClose, trailing: skip, scalesText: true).region(.nav)
 
-            RitualSubject(text: purpose == .step ? model.morningPlanningSubject : (model.goal?.text ?? ""))
+            SubjectLine(text: purpose == .step ? model.morningPlanningSubject : (model.goal?.text ?? ""))
                 .region(.subject)
 
             VStack(alignment: .leading, spacing: Space.s) {
-                UnderlineField(prompt: purpose.question, text: $text, style: .title, focused: $focused, showsFocus: isFixture)
-                    .accessibilityLabel(purpose == .step ? "Today’s step" : purpose.question)
-                if purpose == .step, let goal = model.goal {
-                    PartPickerChip(parts: goal.activeParts, selected: model.part(partID)) { part in
-                        partID = part.id
-                        session.draftPartID = part.id
+                UnderlineField(prompt: purpose.question, text: $text, style: .title, focused: $focused, showsFocus: isFixture,
+                               label: purpose == .step ? "Today’s step" : purpose.question, onSubmit: save)
+                if purpose == .step, model.goal != nil {
+                    let part = model.part(partID)
+                    Chip(title: part?.title ?? "Choose a part", icon: part.map { CompassIcon($0.symbol) }, iconTint: .ink,
+                         trailing: .down, accessibilityLabel: part.map { "Counts toward \($0.title). Change" } ?? "Choose a part") {
+                        focused = false
+                        pickingPart = true
                     }
                 }
             }
@@ -253,6 +254,10 @@ struct MorningTypingView: View {
                 drawsKeyboard: isFixture,
                 action: save
             )
+        }
+        .partPickerSheet(isPresented: $pickingPart, parts: model.goal?.activeParts ?? [], selected: partID) { id in
+            partID = id
+            session.draftPartID = id
         }
         .onAppear {
             if isFixture && session.purpose == nil {
@@ -298,8 +303,7 @@ struct StepIdeaLoading: View {
     let title: String
 
     var body: some View {
-        RitualText(title, style: .title, color: .ink2)
-            .accessibilityLabel(title)
+        CompassText(title, style: .title, color: .ink2)
             .accessibilityAddTraits(.updatesFrequently)
     }
 }
@@ -314,21 +318,18 @@ struct MorningWhyView: View {
         FlowScreen {
             NavBar(leading: model.morningClose, scalesText: true).region(.nav)
 
-            RitualSubject(text: model.goal?.text ?? "").region(.subject)
+            SubjectLine(text: model.goal?.text ?? "").region(.subject)
 
             VStack(alignment: .leading, spacing: Space.s) {
-                RitualText(MorningSession.Purpose.why.question, style: .title)
-                Text("You’ll hear your answer on hard days.")
-                    .compassFont(.body)
-                    .foregroundStyle(.ink2)
-                    .fixedSize(horizontal: false, vertical: true)
+                CompassText(MorningSession.Purpose.why.question, style: .title)
+                CompassText("You’ll hear your answer on hard days.", color: .ink2)
             }
             .region(.focal)
 
             if let problem = ritualMicProblem(model, session.micProblem) {
                 TypeInsteadDock(reason: problem) { model.openMorningTyping(.why) }
             } else {
-                RitualVoiceDock(
+                VoiceDock(
                     micMode: .rings,
                     micLabel: "Say why",
                     onKeyboard: { model.openMorningTyping(.why) },

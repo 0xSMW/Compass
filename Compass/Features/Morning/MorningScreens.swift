@@ -16,7 +16,8 @@ enum MorningScreens {
         case .b4: MorningNameStepView()
         case .b5: MorningTypingView()
         case .b7: MorningWhyView()
-        default: ScreenStub(id: id)
+        // ScreenRegistry routes only this flow's IDs here; every one has a case above.
+        default: EmptyView()
         }
     }
 }

@@ -15,7 +15,8 @@ enum EveningScreens {
         case .d2b: EveningDoneEarlierView()
         case .d3, .d3L, .d4: EveningReflectView(id: id)
         case .d5, .d5L, .d6, .d6b, .d8: EveningSavedView(id: id)
-        default: ScreenStub(id: id)
+        // ScreenRegistry routes only this flow's IDs here; every one has a case above.
+        default: EmptyView()
         }
     }
 }

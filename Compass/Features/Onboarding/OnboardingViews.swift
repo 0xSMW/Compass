@@ -11,46 +11,8 @@ struct OnboardingNav: View {
     var progress: Int?
 
     var body: some View {
-        NavBar(leading: .back { model.onboardingBack(from: id) }, progress: progress)
+        NavBar(leading: .back { model.onboardingBack(from: id) }, progress: progress, scalesText: true)
             .region(.nav)
-    }
-}
-
-/// Keyboard · mic · empty side on the 712 line (kit.css `.dock`), with the mic labelled for its job.
-struct OnboardingVoiceDock: View {
-    var micMode: MicButton.Mode
-    var micLabel: String
-    let onKeyboard: () -> Void
-    let onMic: () -> Void
-
-    var body: some View {
-        HStack(spacing: 0) {
-            CircleButton(.kb, label: "Type instead", action: onKeyboard)
-            Spacer(minLength: 0)
-            MicButton(mode: micMode, label: micLabel, action: onMic)
-            Spacer(minLength: 0)
-            Color.clear.frame(width: 56, height: 56).accessibilityHidden(true)
-        }
-        .frame(height: ControlSize.voice)
-        .region(.dock)
-    }
-}
-
-/// Stand-in for the system keyboard in screenshots (kit.css `.keys`, 508–844). The CI simulator has
-/// no software keyboard; on a phone the real one sits here.
-struct OnboardingKeyboardPlaceholder: View {
-    var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 10), spacing: 12) {
-            ForEach(0..<30, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: 6).fill(Color.line2).frame(height: 44)
-            }
-        }
-        .padding(.top, Space.xs)
-        .padding(.horizontal, 4)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color.raised)
-        .region(.keyboard)
-        .accessibilityHidden(true)
     }
 }
 
@@ -64,11 +26,6 @@ struct OnboardingMark: View {
         .frame(width: 48, height: 48)
         .accessibilityHidden(true)
     }
-}
-
-extension View {
-    /// Text that wraps down instead of truncating (titles and hints grow away from controls).
-    func onboardingWraps() -> some View { fixedSize(horizontal: false, vertical: true) }
 }
 
 /// Asks for mic + speech the first time, then turns to A3; falls back to typing when refused.
@@ -88,17 +45,12 @@ struct OnboardingWelcomeView: View {
                 .region(.custom(top: 128, bottom: nil))
 
             VStack(alignment: .leading, spacing: 0) {
-                Text("One goal.\nOne step a day.")
-                    .compassFont(.display)
-                    .onboardingWraps()
+                CompassText("One goal.\nOne step a day.", style: .display)
                     .accessibilityAddTraits(.isHeader)
-                Text("Say it in the morning. Say what happened at night.")
-                    .compassFont(.heading)
-                    .foregroundStyle(.ink2)
-                    .onboardingWraps()
+                CompassText("Say it in the morning. Say what happened at night.", style: .heading, color: .ink2)
                     .padding(.top, Space.m)
             }
-            .region(.focal)
+            .scrollingRegion(.custom(top: 224, bottom: 668))
 
             ButtonDock(primary: "Begin", link: "Restore from iCloud", onPrimary: {
                 // A backup in iCloud (a second device): restore it rather than onboard over it (M5).
@@ -125,19 +77,14 @@ struct OnboardingGoalQuestionView: View {
             OnboardingNav(id: id, progress: 1)
 
             VStack(alignment: .leading, spacing: 0) {
-                Text("Where are you going?")
-                    .compassFont(.title)
-                    .onboardingWraps()
+                CompassText("Where are you going?", style: .title)
                     .accessibilityAddTraits(.isHeader)
-                Text("One sentence. It can have parts.")
-                    .compassFont(.body)
-                    .foregroundStyle(.ink2)
-                    .onboardingWraps()
+                CompassText("One sentence. It can have parts.", color: .ink2)
                     .padding(.top, Space.s)
             }
-            .region(.focalTop)
+            .scrollingRegion(.focalTop)
 
-            OnboardingVoiceDock(micMode: .rings, micLabel: "Say your goal", onKeyboard: {
+            VoiceDock(micMode: .rings, micLabel: "Say your goal", onKeyboard: {
                 draft.answering = false
                 model.replace(with: .a4k)
             }, onMic: {
@@ -145,6 +92,7 @@ struct OnboardingGoalQuestionView: View {
                     model.replace(with: .a4k)
                 }
             })
+            .region(.dock)
         }
     }
 }
@@ -171,30 +119,28 @@ struct OnboardingListeningView: View {
         let pending = board?.pending ?? capture.pending
 
         FlowScreen {
-            NavBar(leading: .back { leave(to: draft.answering ? .a4b : .a2, keepWords: false) }, progress: 1)
+            NavBar(leading: .back { leave(to: draft.answering ? .a4b : .a2, keepWords: false) }, progress: 1, scalesText: true)
                 .region(.nav)
 
             VStack(alignment: .leading, spacing: Space.s) {
-                Text(question)
-                    .compassFont(draft.answering ? .heading : .title)
-                    .foregroundStyle(.ink2)
-                    .onboardingWraps()
+                CompassText(question, style: draft.answering ? .heading : .title, color: .ink2)
                 // Words land right under the question.
                 LiveTranscript(settled: settled, pending: pending)
-                    .onboardingWraps()
                     .frame(maxHeight: .infinity, alignment: .top)
                     .clipped()
                     .accessibilityLabel(settled.isEmpty && pending.isEmpty ? "Listening" : settled + " " + pending)
             }
             .region(.focalTop)
 
-            Waveform(levels: capture.levels.isEmpty ? FakeAudioRecorder.designLevels : capture.levels,
-                     lit: capture.levels.isEmpty ? 32 : nil)
+            // The board's bars on a still screenshot; the live wave (a level bar with Reduce Motion) otherwise.
+            Waveform(levels: staticBoard || capture.levels.isEmpty ? FakeAudioRecorder.designLevels : capture.levels,
+                     lit: staticBoard || capture.levels.isEmpty ? 32 : nil, isStatic: staticBoard)
                 .region(.wave)
 
-            OnboardingVoiceDock(micMode: .listening, micLabel: "Stop", onKeyboard: {
+            VoiceDock(micMode: .listening, micLabel: "Stop", onKeyboard: {
                 leave(to: .a4k, keepWords: true)
             }, onMic: finish)
+            .region(.dock)
         }
         .onAppear {
             capture.onSilence = { finish() }
@@ -262,13 +208,10 @@ struct OnboardingReviewView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 UnderlineField(prompt: "Where are you going?", text: $draft.text, style: .title,
-                               focused: $focused, showsFocus: boardKeyboard)
-                    .lineLimit(id == .a4b ? 1...4 : 3...6)
-                    .accessibilityLabel("Your goal")
+                               lines: id == .a4b ? 1...4 : 3...6, focused: $focused, showsFocus: boardKeyboard,
+                               label: "Your goal", onSubmit: continueTapped)
                 if id == .a4b, let question = draft.clarifyingQuestion {
-                    Text(question)
-                        .compassFont(.heading)
-                        .onboardingWraps()
+                    CompassText(question, style: .heading)
                         .padding(.top, Space.l)
                 }
             }
@@ -279,7 +222,7 @@ struct OnboardingReviewView: View {
                     .opacity(canContinue ? 1 : 0.4)
                     .disabled(!canContinue)
                     .region(.aboveKeyboard)
-                if boardKeyboard { OnboardingKeyboardPlaceholder() }
+                if boardKeyboard { KeyboardPlaceholder().region(.keyboard) }
             } else if id == .a4b {
                 ButtonDock(primary: "Answer", primaryIcon: .mic, link: "Keep it as is", onPrimary: {
                     onboardingStartListening(model: model, draft: draft, answering: true) { focused = true }
@@ -329,14 +272,12 @@ struct OnboardingPartsView: View {
             OnboardingNav(id: .a5, progress: 2)
 
             VStack(alignment: .leading, spacing: 0) {
-                Text(GoalShaper.partsTitle(count: draft.parts.count))
-                    .compassFont(.title)
-                    .onboardingWraps()
+                CompassText(GoalShaper.partsTitle(count: draft.parts.count), style: .title)
                     .accessibilityAddTraits(.isHeader)
                 VStack(spacing: 0) {
                     ForEach(draft.parts) { part in
                         ListRow(icon: CompassIcon(part.symbol), tile: true, title: part.title, action: { open(part) }) {
-                            Icon(.down, size: IconSize.s).foregroundStyle(.ink3)
+                            RowChevron(icon: .down)
                         }
                         .accessibilityHint("Change this part")
                     }
@@ -344,7 +285,7 @@ struct OnboardingPartsView: View {
                 .overlay(alignment: .bottom) { Rectangle().fill(Color.line).frame(height: 1) }
                 .padding(.top, Space.l)
             }
-            .region(.focalTop)
+            .scrollingRegion(.custom(top: 128, bottom: 668))
 
             ButtonDock(primary: draft.replacing ? "Start" : "Continue", link: draft.parts.count > 1 ? "Keep it as one part" : nil, onPrimary: {
                 model.onboardingContinueFromParts(draft)
@@ -353,14 +294,24 @@ struct OnboardingPartsView: View {
                 model.onboardingContinueFromParts(draft)
             })
         }
-        .compassSheet(isPresented: sheetShown, height: 716, label: "Change this part") {
+        .compassSheet(isPresented: sheetShown, height: 476, label: "Change this part", onDismiss: closeSheet) {
             partSheet(draft: draft)
+        } actions: {
+            PrimaryButton("Save") {
+                if let id = editingPartID { draft.updatePart(id, title: partTitle, symbol: partSymbol) }
+                closeSheet()
+            }
         }
         .animation(Motion.animation(Motion.turnTaking, reduced: reduced), value: editingPartID)
     }
 
     private var sheetShown: Binding<Bool> {
         Binding(get: { editingPartID != nil }, set: { if !$0 { editingPartID = nil } })
+    }
+
+    private func closeSheet() {
+        titleFocused = false
+        editingPartID = nil
     }
 
     private func open(_ part: GoalPart) {
@@ -371,60 +322,36 @@ struct OnboardingPartsView: View {
 
     @ViewBuilder
     private func partSheet(draft: OnboardingDraft) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Change this part")
-                .compassFont(.body)
-                .foregroundStyle(.ink2)
-                .padding(.top, Space.s)
-            UnderlineField(prompt: "Part of your goal", text: $partTitle, style: .heading, axis: .horizontal, focused: $titleFocused)
-                .submitLabel(.done)
-                .onSubmit { titleFocused = false }
-                .accessibilityLabel("Part name")
-                .padding(.top, Space.m)
-            Text("Symbol")
-                .compassFont(.caption)
-                .foregroundStyle(.ink3)
-                .padding(.top, Space.l)
-            HStack(spacing: Space.xs) {
-                ForEach(PartSymbol.allCases, id: \.self) { symbol in
-                    Button { partSymbol = symbol } label: {
-                        Tile(icon: CompassIcon(symbol))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: Radius.tile, style: .continuous)
-                                    .strokeBorder(symbol == partSymbol ? Color.ink : Color.clear, lineWidth: 2)
-                            )
-                            .frame(width: 48, height: 48)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(PressableStyle())
-                    .accessibilityLabel(Self.symbolName(symbol))
-                    .accessibilityAddTraits(symbol == partSymbol ? .isSelected : [])
+        CompassText("Change this part", color: .ink2)
+        UnderlineField(prompt: "Part of your goal", text: $partTitle, style: .heading, lines: 1...1, focused: $titleFocused,
+                       label: "Part name", onSubmit: { titleFocused = false })
+            .padding(.top, Space.m)
+        CompassText("Symbol", style: .caption, color: .ink3)
+            .padding(.top, Space.l)
+        HStack(spacing: Space.xs) {
+            ForEach(PartSymbol.allCases, id: \.self) { symbol in
+                Button { partSymbol = symbol } label: {
+                    Tile(icon: CompassIcon(symbol))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.tile, style: .continuous)
+                                .strokeBorder(symbol == partSymbol ? Color.ink : Color.clear, lineWidth: 2)
+                        )
+                        .frame(width: 48, height: 48)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(PressableStyle())
+                .accessibilityLabel(Self.symbolName(symbol))
+                .accessibilityAddTraits(symbol == partSymbol ? .isSelected : [])
             }
-            .padding(.top, Space.xs)
-            Spacer(minLength: Space.m)
-            PrimaryButton("Save") {
-                if let id = editingPartID { draft.updatePart(id, title: partTitle, symbol: partSymbol) }
-                titleFocused = false
-                editingPartID = nil
+        }
+        .padding(.top, Space.xs)
+        if draft.parts.count > 1 {
+            LinkButton("Remove this part", tone: .destructive, padding: 0) {
+                if let id = editingPartID { draft.removePart(id) }
+                closeSheet()
             }
-            Group {
-                if draft.parts.count > 1 {
-                    LinkButton("Remove this part") {
-                        if let id = editingPartID { draft.removePart(id) }
-                        titleFocused = false
-                        editingPartID = nil
-                    }
-                } else {
-                    LinkButton("Cancel") {
-                        titleFocused = false
-                        editingPartID = nil
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 4)
-            .padding(.bottom, 52)
+            .accessibilityHint("Its words join the goal as a whole")
+            .padding(.top, Space.m)
         }
     }
 
@@ -452,14 +379,9 @@ struct OnboardingRhythmView: View {
             OnboardingNav(id: .a6, progress: 3)
 
             VStack(alignment: .leading, spacing: 0) {
-                Text("Two moments a day.")
-                    .compassFont(.title)
-                    .onboardingWraps()
+                CompassText("Two moments a day.", style: .title)
                     .accessibilityAddTraits(.isHeader)
-                Text("One notification at each. Nothing else.")
-                    .compassFont(.body)
-                    .foregroundStyle(.ink2)
-                    .onboardingWraps()
+                CompassText("One notification at each. Nothing else.", color: .ink2)
                     .padding(.top, Space.s)
                 VStack(spacing: 0) {
                     row(icon: .sun, title: "Center", time: draft.rhythm.morning,
@@ -472,7 +394,7 @@ struct OnboardingRhythmView: View {
                 .overlay(alignment: .bottom) { Rectangle().fill(Color.line).frame(height: 1) }
                 .padding(.top, Space.l)
             }
-            .region(.focalTop)
+            .scrollingRegion(.custom(top: 128, bottom: 668))
 
             ButtonDock(primary: "Allow notifications", link: "Not now", onPrimary: {
                 Task { @MainActor in
@@ -487,23 +409,7 @@ struct OnboardingRhythmView: View {
     }
 
     private func row(icon: CompassIcon, title: String, time: TimeOfDay, earlier: @escaping () -> Void, later: @escaping () -> Void) -> some View {
-        HStack(spacing: Space.s) {
-            Icon(icon).foregroundStyle(.ink)
-            Text(title)
-                .compassFont(.body)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text(time.description)
-                .font(.custom(CompassType.micro.fontName(.medium), fixedSize: 28))
-                .monospacedDigit()
-                .lineLimit(1)
-                .fixedSize()
-                .layoutPriority(1)
-                .accessibilityLabel("\(title) at \(time.description)")
-            IconButton(.minus, label: "\(title) earlier", action: earlier)
-            IconButton(.plus, label: "\(title) later", action: later)
-        }
-        .frame(minHeight: 72)
-        .overlay(alignment: .top) { Rectangle().fill(Color.line).frame(height: 1) }
+        TimeStepperRow(icon: icon, title: title, time: time, earlier: earlier, later: later)
     }
 }
 
@@ -519,22 +425,18 @@ struct OnboardingPrivacyView: View {
             OnboardingNav(id: .a7, progress: 4)
 
             VStack(alignment: .leading, spacing: 0) {
-                Text("Your words stay yours.")
-                    .compassFont(.title)
-                    .onboardingWraps()
+                CompassText("Your words stay yours.", style: .title)
                     .accessibilityAddTraits(.isHeader)
                 VStack(alignment: .leading, spacing: Space.m) {
-                    line(.lock) { Text("Speech becomes text on this phone.").compassFont(.body).onboardingWraps() }
+                    line(.lock) { CompassText("Speech becomes text on this phone.") }
                     HStack(alignment: .top, spacing: Space.s) {
                         Icon(.cloud).foregroundStyle(.ink)
                         VStack(alignment: .leading, spacing: Space.xs) {
-                            Text("Summaries and step ideas").compassFont(.body).onboardingWraps()
-                            Text(model.cloudHelpConfigured
-                                 ? "A private cloud model reads your notes, never trains on them. Off means plain transcripts, no ideas."
-                                 : CloudHelpCopy.notSetUpCaption)
-                                .compassFont(.caption)
-                                .foregroundStyle(.ink3)
-                                .onboardingWraps()
+                            CompassText("Summaries and step ideas")
+                            CompassText(model.cloudHelpConfigured
+                                        ? "A private cloud model reads your notes, never trains on them. Off means plain transcripts, no ideas."
+                                        : CloudHelpCopy.notSetUpCaption,
+                                        style: .caption, color: .ink3)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .accessibilityElement(children: .combine)
@@ -543,11 +445,11 @@ struct OnboardingPrivacyView: View {
                                 .padding(.top, -6)
                         }
                     }
-                    line(.sync) { Text("History syncs through your iCloud.").compassFont(.body).onboardingWraps() }
+                    line(.sync) { CompassText("History syncs through your iCloud.") }
                 }
                 .padding(.top, Space.l)
             }
-            .region(.focalTop)
+            .scrollingRegion(.custom(top: 128, bottom: 668))
 
             ButtonDock(primary: "Start", onPrimary: { model.onboardingFinish(draft) })
         }

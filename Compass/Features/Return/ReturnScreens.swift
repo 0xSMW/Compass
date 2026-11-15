@@ -16,7 +16,8 @@ enum ReturnScreens {
         case .f1: ReturnSmallerStepView()
         case .f2: ReturnWelcomeView()
         case .f3: ReturnGoalCheckView()
-        default: ScreenStub(id: id)
+        // ScreenRegistry routes only this flow's IDs here; every one has a case above.
+        default: EmptyView()
         }
     }
 }
