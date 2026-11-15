@@ -415,7 +415,8 @@ public enum Fixtures {
             snap = snapshot(today: nil, goal: g, history: history)
 
         // G · Goal
-        case .g1, .g3: break
+        case .g1: break
+        case .g3: snap.days += pastGoalDays(calendar: cal)
         case .g2:
             var g = goal
             g.status = .achieved

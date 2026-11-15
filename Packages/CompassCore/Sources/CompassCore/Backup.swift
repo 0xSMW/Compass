@@ -126,6 +126,38 @@ public final class FakeBackupRestoring: BackupRestoring, @unchecked Sendable {
 }
 
 extension Fixtures {
+    /// G3: the past goals' own lines ("64 steps · achieved", "38 steps · replaced"), patterned like goal.html.
+    public static func pastGoalDays(calendar: Calendar = Fixtures.calendar) -> [Day] {
+        let lines: [(Goal, String, Int, Int)] = [
+            (pastGoals[0], "110111101110111111011110110111111101111011101111110111101", 64, 31),
+            (pastGoals[1], "1100110100111001000110011000101100100011010001100010011", 38, 41),
+        ]
+        var days: [Day] = []
+        for (goal, pattern, steps, part) in lines {
+            let marks = Array(pattern)
+            var key = DayKey(goal.createdAt, calendar: calendar)
+            var moved = 0, i = 0
+            while moved < steps {
+                var day = Day(key: key, goalID: goal.id)
+                let at = { (h: Int) in key.date(in: calendar, hour: h) }
+                let partID = UUID(uuidString: String(format: "00000000-0000-4000-8000-%012d", part))
+                if marks[i % marks.count] == "1" {
+                    moved += 1
+                    let title = goal.parts.first?.symbol == .strength ? "Ran \(3 + i % 8) km" : "Wrote a page"
+                    day.step = Step(id: UUID(uuidString: String(format: "00000000-0000-4000-9000-%012d", part * 1000 + i))!,
+                                    title: title, partID: partID, createdAt: at(7), completedAt: at(18))
+                    day.reflection = Reflection(outcome: .moved, transcript: title, summary: title, duration: 8, partID: partID, createdAt: at(21))
+                } else {
+                    day.reflection = Reflection(outcome: .notToday, transcript: "Busy.", summary: "Busy.", duration: 4, createdAt: at(21))
+                }
+                days.append(day)
+                key = key.adding(days: 1, calendar: calendar)
+                i += 1
+            }
+        }
+        return days
+    }
+
     /// What R1/R2 bring back: the standard goal and history, without past goals ("1 goal").
     public static var restorableSnapshot: CompassSnapshot {
         var s = snapshot(today: nil)

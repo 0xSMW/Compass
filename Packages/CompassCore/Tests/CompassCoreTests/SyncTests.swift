@@ -169,6 +169,15 @@ final class BackupTests: XCTestCase {
         XCTAssertGreaterThan(s.memoCount, 150)
     }
 
+    func testPastGoalLines() {
+        let s = Fixtures.fixture(for: .g3).snapshot
+        XCTAssertEqual(s.pastGoals.map { s.steps(for: $0) }, [64, 38])
+        XCTAssertEqual(s.steps(for: s.goal!), Fixtures.fixture(for: .g1).snapshot.movedCount)
+        for g in s.pastGoals {
+            XCTAssertTrue(s.days(for: g).allSatisfy { $0.key.date(in: Fixtures.calendar) <= g.endedAt! })
+        }
+    }
+
     func testFakeRestorer() async throws {
         let yes = FakeBackupRestoring(conditions: Fixtures.fixture(for: .r1).conditions)
         guard case .available(let summary) = await yes.availability() else { return XCTFail() }

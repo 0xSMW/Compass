@@ -60,9 +60,10 @@ final class AppModel {
             // Real AVAudioRecorder / SFSpeechRecognizer / cloud clients replace these fakes later.
             recorder = FakeAudioRecorder()
             transcriber = FakeSpeechTranscriber()
-            cloud = FakeCloudAssist(isEnabled: loaded.settings.cloudAssist)
+            cloud = LiveSync.makeCloudAssist(settings: loaded.settings)
             path = []
             path = [entryScreen]
+            LiveSync.start(with: self)
         }
     }
 
