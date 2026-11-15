@@ -302,7 +302,8 @@ public enum Fixtures {
         // C · Today
         case .c1: now = date(todayKey, 10); snap = snapshot(today: today(intention: false, step: nil, notes: [], morningSkipped: true))
         case .c2: now = date(todayKey, 13); snap = snapshot(today: today(step: nil, notes: []))
-        case .c3, .c5, .c6, .c10, .c11, .c11b: break
+        case .c3, .c6, .c10, .c11, .c11b: break
+        case .c5: transcript = TranscriptUpdate(settled: "Sam is free Friday after", pending: "seven")
         case .c4: snap = snapshot(today: today(done: true))
         case .c7:
             var g = goal
@@ -319,12 +320,18 @@ public enum Fixtures {
                 GoalPart(id: strengthPartID, title: "Stay strong for my kids", symbol: .strength),
                 GoalPart(id: friendsPartID, title: "Keep close friends", symbol: .friends),
             ]
-            var d = today()
+            // Three notes today; the row shows the latest and "3 notes".
+            var d = today(step: Step(id: uuid(106), title: "Send Lena the pilot price", partID: wealthPartID, createdAt: date(todayKey, 7, 10)),
+                          notes: [
+                            Note(id: uuid(202), text: "Lena wants numbers by Thursday", duration: 7, createdAt: date(todayKey, 9, 10), device: "This iPhone"),
+                            Note(id: uuid(203), text: "Pilot is 40 seats", createdAt: date(todayKey, 10, 30), device: "This iPhone"),
+                            Note(id: uuid(204), text: "Lena: price the pilot per seat", duration: 9, createdAt: date(todayKey, 11), device: "This iPhone"),
+                          ])
             d.intention = Intention(text: "Finish one thing properly.", createdAt: date(todayKey, 7, 5))
             snap = snapshot(today: d, goal: g)
         case .c9:
             let s = Step(id: uuid(102), title: "Draft the pricing section of the Ridgeline proposal and send it to Lena", partID: wealthPartID, createdAt: date(todayKey, 7, 10))
-            snap = snapshot(today: today(step: s, notes: [Note(id: uuid(201), text: "Lena: price the pilot per seat", duration: 9, createdAt: date(todayKey, 11))]))
+            snap = snapshot(today: today(step: s, notes: [Note(id: uuid(201), text: "Needed before Thursday’s board meeting", duration: 21, createdAt: date(todayKey, 11))]))
 
         // D · Evening
         case .d1, .d3, .d3L, .d4, .d7:

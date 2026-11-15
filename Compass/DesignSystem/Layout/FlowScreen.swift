@@ -55,6 +55,8 @@ struct TodayScaffold<Header: View, Notes: View, Card: View, Dock: View, Overlay:
     @ViewBuilder var overlay: Overlay
 
     @State private var scrolled = false
+    /// The header overflows its region and isn't scrolled to the end: fade the last 48pt (C11).
+    @State private var clipped = false
 
     init(
         onHistory: @escaping () -> Void,
@@ -96,6 +98,19 @@ struct TodayScaffold<Header: View, Notes: View, Card: View, Dock: View, Overlay:
                     } action: { _, isScrolled in
                         scrolled = isScrolled
                     }
+                    .onScrollGeometryChange(for: Bool.self) { geo in
+                        geo.contentOffset.y + geo.containerSize.height < geo.contentSize.height - 1
+                    } action: { _, isClipped in
+                        clipped = isClipped
+                    }
+                    .mask {
+                        VStack(spacing: 0) {
+                            Color.black
+                            LinearGradient(colors: [.black, clipped && !forceScrolledToEnd ? .clear : .black],
+                                           startPoint: .top, endPoint: .bottom)
+                                .frame(height: 48)
+                        }
+                    }
                     .onAppear {
                         if forceScrolledToEnd {
                             DispatchQueue.main.async { reader.scrollTo("todayHeaderEnd", anchor: .bottom) }
@@ -114,7 +129,8 @@ struct TodayScaffold<Header: View, Notes: View, Card: View, Dock: View, Overlay:
             NavBar(
                 leading: .text("History", action: onHistory),
                 trailing: .icon(.set, label: "Settings", action: onSettings),
-                solid: scrolled || forceScrolledToEnd
+                solid: scrolled || forceScrolledToEnd,
+                scalesText: true
             )
             .region(.nav)
 

@@ -84,6 +84,7 @@ struct StepCard: View {
     var showsOptions: Bool = true
 
     @SwiftUI.State private var done = false
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -137,7 +138,7 @@ struct StepCard: View {
             .accessibilityElement(children: .contain)
         case .open, .done:
             HStack(spacing: Space.xs) {
-                if let partIcon { Icon(partIcon, size: IconSize.s) }
+                if let partIcon { Icon(partIcon, size: typeSize.isAccessibilitySize ? IconSize.m : IconSize.s) }
                 if let partTitle { Text(partTitle).compassFont(.caption).lineLimit(2) }
             }
             .foregroundStyle(.ink3)

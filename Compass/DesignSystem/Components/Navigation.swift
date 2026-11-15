@@ -42,6 +42,14 @@ struct NavBar: View {
     /// Onboarding progress: 1...4 segments lit.
     var progress: Int? = nil
     var solid: Bool = false
+    /// Today boards scale the nav with Dynamic Type (C11: "History" 17 → 22, Settings icon 24 → 28 at AX5).
+    /// Other flows keep it pinned at Large.
+    var scalesText: Bool = false
+
+    @Environment(\.dynamicTypeSize) private var outerTypeSize
+
+    private var textSize: CGFloat { scalesText ? 17 + 5 * CompassType.progress(outerTypeSize) : 17 }
+    private var iconSize: CGFloat { scalesText ? IconSize.i + (IconSize.m - IconSize.i) * CompassType.progress(outerTypeSize) : IconSize.i }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -77,7 +85,11 @@ struct NavBar: View {
                 Group {
                     switch item.content {
                     case .icon(let icon):
-                        Icon(icon).frame(width: 44, height: 44)
+                        Icon(icon, size: iconSize).frame(width: 44, height: 44)
+                    case .text(let t) where scalesText:
+                        Text(t).font(.custom(CompassType.Weight.regular.interTight, fixedSize: textSize))
+                            .lineLimit(1)
+                            .padding(.horizontal, 10).frame(minWidth: 44, minHeight: 44)
                     case .text(let t):
                         Text(t).compassFont(.body).padding(.horizontal, 10).frame(minWidth: 44, minHeight: 44)
                     case .iconText(let icon, let t):

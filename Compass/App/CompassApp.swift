@@ -9,6 +9,7 @@ struct CompassApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .systemServices()
                 .environment(model)
                 .preferredColorScheme(.dark)
         }

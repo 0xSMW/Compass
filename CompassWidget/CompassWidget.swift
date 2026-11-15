@@ -13,10 +13,12 @@ struct CompassWidgetBundle: WidgetBundle {
 // MARK: - Intent
 
 /// "Complete today's step without opening the app" (I6). Runs in the widget process, writes the
-/// shared JSON store, and WidgetKit reloads the timeline afterwards.
+/// shared JSON store, and WidgetKit reloads the timeline afterwards. The app picks the change up from
+/// the store when it becomes active. Tap for completion, never voice: the intent is not offered to Siri.
 struct CompleteStepIntent: AppIntent {
     static var title: LocalizedStringResource = "Complete today’s step"
     static var description = IntentDescription("Marks today’s Compass step done. Tap again to reopen it.")
+    static var isDiscoverable: Bool = false
 
     @Parameter(title: "Done")
     var done: Bool
@@ -39,12 +41,9 @@ struct CompleteStepIntent: AppIntent {
 
 struct TodayStepEntry: TimelineEntry {
     var date: Date
-    var goal: String?
-    var step: String?
-    var partSymbol: PartSymbol?
-    var done: Bool
+    var data: TodayWidgetData
 
-    static let placeholder = TodayStepEntry(date: .now, goal: Fixtures.goalText, step: Fixtures.stepTitle, partSymbol: .friends, done: false)
+    static let placeholder = TodayStepEntry(date: .now, data: .placeholder)
 }
 
 struct TodayStepProvider: TimelineProvider {
@@ -56,25 +55,24 @@ struct TodayStepProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TodayStepEntry>) -> Void) {
         let now = Date()
-        let entry = entry(at: now)
-        // Refresh at the next midnight so a new day starts empty.
-        let cal = Calendar.current
-        let tomorrow = cal.startOfDay(for: cal.date(byAdding: .day, value: 1, to: now) ?? now)
-        completion(Timeline(entries: [entry], policy: .after(tomorrow)))
+        let snapshot = (try? SharedStorage.makeStore().load()) ?? .empty
+        let calendar = SharedStorage.calendar(for: snapshot.settings)
+        // The app reloads the timeline whenever it changes today's step; otherwise refresh at the
+        // rhythm's next midnight so a new day starts empty.
+        let today = DayKey(now, calendar: calendar)
+        let midnight = today.adding(days: 1, calendar: calendar).date(in: calendar)
+        let entries = [entry(at: now, snapshot: snapshot, calendar: calendar),
+                       entry(at: midnight, snapshot: snapshot, calendar: calendar)]
+        completion(Timeline(entries: entries, policy: .after(midnight)))
     }
 
     private func entry(at date: Date) -> TodayStepEntry {
         let snapshot = (try? SharedStorage.makeStore().load()) ?? .empty
-        let calendar = SharedStorage.calendar(for: snapshot.settings)
-        let day = snapshot.day(DayKey(date, calendar: calendar))
-        let step = day?.step
-        return TodayStepEntry(
-            date: date,
-            goal: snapshot.goal?.text,
-            step: step?.title,
-            partSymbol: snapshot.goal?.part(step?.partID)?.symbol,
-            done: step?.isDone ?? false
-        )
+        return entry(at: date, snapshot: snapshot, calendar: SharedStorage.calendar(for: snapshot.settings))
+    }
+
+    private func entry(at date: Date, snapshot: CompassSnapshot, calendar: Calendar) -> TodayStepEntry {
+        TodayStepEntry(date: date, data: TodayWidgetData(snapshot: snapshot, day: DayKey(date, calendar: calendar)))
     }
 }
 
@@ -84,11 +82,11 @@ struct TodayStepWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: SharedStorage.widgetKind, provider: TodayStepProvider()) { entry in
             TodayStepWidgetView(entry: entry)
-                .containerBackground(Color.surface, for: .widget)
         }
         .configurationDisplayName("Today’s step")
         .description("Complete today’s step without opening the app.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular, .accessoryInline])
+        .contentMarginsDisabled()
     }
 }
 
@@ -97,42 +95,40 @@ struct TodayStepWidgetView: View {
     let entry: TodayStepEntry
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.xs) {
-            if family == .systemMedium, let goal = entry.goal {
-                Text(goal).compassFont(.caption).foregroundStyle(.ink2).lineLimit(2)
-            }
-            if family == .systemSmall {
-                stepTitle
-            }
-            Spacer(minLength: 0)
-            HStack(spacing: Space.xs) {
-                if family == .systemMedium {
-                    if let symbol = entry.partSymbol { Icon(CompassIcon(symbol)).foregroundStyle(.ink2) }
-                    stepTitle.frame(maxWidth: .infinity, alignment: .leading)
-                }
-                if entry.step != nil {
-                    Button(intent: CompleteStepIntent(done: !entry.done)) {
-                        ZStack {
-                            Circle().strokeBorder(Color.ink, lineWidth: 2)
-                            if entry.done {
-                                Circle().fill(Color.ink)
-                                Icon(.ok, size: IconSize.s).foregroundStyle(.ground)
-                            }
-                        }
-                        .frame(width: 44, height: 44)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(entry.done ? "Done. Tap to reopen" : "Mark step done")
-                }
-            }
+        switch family {
+        case .accessoryRectangular, .accessoryInline:
+            content
+                .containerBackground(for: .widget) { Color.clear }
+        default:
+            content
+                .containerBackground(Color.raised, for: .widget)
         }
-        .foregroundStyle(.ink)
     }
 
-    private var stepTitle: some View {
-        Text(entry.step ?? (entry.goal == nil ? "Open Compass to set your goal" : "No step today"))
-            .compassFont(.body, weight: .medium)
-            .foregroundStyle(entry.step == nil ? Color.ink2 : Color.ink)
-            .lineLimit(3)
+    private var layout: TodayWidgetLayout {
+        switch family {
+        case .systemMedium: .medium
+        case .accessoryRectangular: .rectangular
+        case .accessoryInline: .inline
+        default: .small
+        }
+    }
+
+    private var content: some View {
+        TodayWidgetContent(data: entry.data, layout: layout) { done in
+            Button(intent: CompleteStepIntent(done: !done)) {
+                if family == .accessoryRectangular {
+                    ZStack {
+                        Circle().strokeBorder(lineWidth: 2)
+                        if done { Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)) }
+                    }
+                    .frame(width: 28, height: 28)
+                } else {
+                    TodayWidgetCircle(done: done)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(done ? "Done. Tap to reopen" : "Mark step done")
+        }
     }
 }
