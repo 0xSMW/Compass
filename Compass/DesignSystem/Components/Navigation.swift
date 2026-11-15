@@ -54,12 +54,18 @@ struct NavBar: View {
             item(trailing)
         }
         .frame(height: 48)
+        // Controls keep their size at every text size (spec: Dynamic Type to AX5).
+        .dynamicTypeSize(.large)
         .background(alignment: .bottom) {
             if solid {
-                Color.ground
-                    .frame(height: 104)
-                    .padding(.horizontal, -14)
-                    .ignoresSafeArea()
+                // Solid backdrop from the top of the screen to 104, with a hairline (C11b).
+                VStack(spacing: 0) {
+                    Color.ground
+                    Rectangle().fill(Color.line).frame(height: 1)
+                }
+                .frame(height: 105)
+                .offset(y: 1)
+                .padding(.horizontal, -14)
             }
         }
     }

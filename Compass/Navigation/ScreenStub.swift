@@ -17,8 +17,8 @@ struct ScreenStub: View {
 
             VStack(alignment: .leading, spacing: Space.s) {
                 Text(id.rawValue).compassFont(.display)
-                Text(id.title).compassFont(.title)
-                Text(id.caption).compassFont(.body).foregroundStyle(.ink2)
+                Text(id.title).compassFont(.title).fixedSize(horizontal: false, vertical: true)
+                Text(id.caption).compassFont(.body).foregroundStyle(.ink2).fixedSize(horizontal: false, vertical: true)
                 Text("Stub · \(id.designRender)").compassFont(.micro).foregroundStyle(.ink3)
                 if !CompassType.fontsLoaded {
                     Text("Inter Tight not loaded").compassFont(.micro).foregroundStyle(.destructive)
@@ -38,12 +38,7 @@ struct ScreenStub: View {
         }
     }
 
-    private var trailing: NavItem? {
-        switch id.flow {
-        case .morning: .text("Skip") { model.closeRitual() }
-        default: nil
-        }
-    }
+    private var trailing: NavItem? { nil }
 
     private var onboardingProgress: Int? {
         switch id {
@@ -70,8 +65,10 @@ struct ScreenStub: View {
     private var dock: some View {
         switch id.flow {
         case .morning:
-            VoiceDock(micMode: id == .b1 ? .breathing : .rings, onKeyboard: next, onMic: next)
-                .region(.dock)
+            VoiceDock(micMode: id == .b1 ? .breathing : .rings, onKeyboard: next, onMic: next) {
+                LinkButton("Skip") { model.closeRitual() }
+            }
+            .region(.dock)
         case .evening:
             ChoiceCircles(yes: "Done", no: "Not today", onYes: next, onNo: next)
                 .region(.dock)

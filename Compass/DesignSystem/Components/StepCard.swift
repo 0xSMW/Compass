@@ -86,13 +86,13 @@ struct StepCard: View {
     @SwiftUI.State private var done = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.s) {
+        VStack(alignment: .leading, spacing: 0) {
             Text(cardTitle)
                 .compassFont(.heading)
                 .foregroundStyle(isDimTitle ? Color.ink2 : Color.ink)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+            Spacer(minLength: Space.s)
             HStack(spacing: Space.xs) {
                 label.frame(maxWidth: .infinity, alignment: .leading)
                 switch state {
