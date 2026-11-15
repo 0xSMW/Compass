@@ -146,6 +146,8 @@ struct TodayView: View {
                 case .storageFull: model.openSystemSettings()
                 }
             }
+        } else if model.saveFailed {
+            SystemSaveNotice { model.openSystemSettings() }
         } else if let change = model.timeZoneChange {
             SystemTimeZoneNotice(change: change, rhythm: model.settings.rhythm,
                                  onOK: { model.answerTimeZoneNotice(keepPrevious: false) },

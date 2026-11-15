@@ -6,6 +6,12 @@ import Synchronization
 public protocol Store: AnyObject, Sendable {
     func load() throws -> CompassSnapshot
     func save(_ snapshot: CompassSnapshot) throws
+    /// Load, mutate, save as one step. `JSONFileStore` does it under file coordination, so the widget's
+    /// change and the app's save never interleave.
+    @discardableResult
+    func update(_ body: (inout CompassSnapshot) throws -> Void) throws -> CompassSnapshot
+    /// When the stored data last changed on disk (nil: unknown, or nothing stored).
+    var modifiedAt: Date? { get }
 }
 
 extension Store {
@@ -18,6 +24,8 @@ extension Store {
         return snapshot
     }
 
+    public var modifiedAt: Date? { nil }
+
     /// Mark the step for `key` done (or undo). No-op if there is no step. Stamps the step so sync keeps
     /// this change over an older copy on another device (the widget calls this from its own process).
     @discardableResult
@@ -27,6 +35,7 @@ extension Store {
                 guard day.step != nil else { return }
                 day.step?.completedAt = done ? date : nil
                 day.step?.updatedAt = date
+                day.step?.completionChangedAt = date
             }
         }
     }
@@ -36,6 +45,8 @@ public final class InMemoryStore: Store, Sendable {
     private struct State {
         var snapshot: CompassSnapshot
         var saveCount = 0
+        var modifiedAt: Date?
+        var failsSaving = false
     }
     private let state: Mutex<State>
 
@@ -51,9 +62,27 @@ public final class InMemoryStore: Store, Sendable {
     }
 
     public func save(_ snapshot: CompassSnapshot) throws {
-        state.withLock {
+        try state.withLock {
+            if $0.failsSaving { throw CocoaError(.fileWriteOutOfSpace) }
             $0.snapshot = snapshot
             $0.saveCount += 1
+            $0.modifiedAt = Date()
+        }
+    }
+
+    public var modifiedAt: Date? { state.withLock { $0.modifiedAt } }
+
+    /// Tests: make every save fail (a full disk), or work again.
+    public var failsSaving: Bool {
+        get { state.withLock { $0.failsSaving } }
+        set { state.withLock { $0.failsSaving = newValue } }
+    }
+
+    /// Tests: another process (the widget) writes the store.
+    public func writeExternally(_ snapshot: CompassSnapshot, at date: Date) {
+        state.withLock {
+            $0.snapshot = snapshot
+            $0.modifiedAt = date
         }
     }
 }
@@ -92,7 +121,8 @@ public struct StoreProblem: Hashable, Sendable {
     }
 }
 
-/// JSON file store. A missing file loads as `.empty`. Writes are atomic.
+/// JSON file store. A missing file loads as `.empty`. Writes are atomic, and reads and writes are
+/// coordinated (`NSFileCoordinator`) because the widget's process reads and writes the same file.
 public final class JSONFileStore: Store, Sendable {
     public let url: URL
     private let lock = NSLock()
@@ -120,6 +150,51 @@ public final class JSONFileStore: Store, Sendable {
     /// `StoreError.corrupt` for one that doesn't decode.
     public func load() throws -> CompassSnapshot {
         lock.lock(); defer { lock.unlock() }
+        return try coordinated(writing: false) { try readFile() }
+    }
+
+    /// Load, change and save under one coordinated write, so another process can't write in between.
+    @discardableResult
+    public func update(_ body: (inout CompassSnapshot) throws -> Void) throws -> CompassSnapshot {
+        lock.lock(); defer { lock.unlock() }
+        if let blocked = blockedBy.withLock({ $0 }) { throw StoreError.newerSchema(blocked) }
+        return try coordinated(writing: true) {
+            var snapshot = try readFile()
+            try body(&snapshot)
+            try writeFile(snapshot)
+            return snapshot
+        }
+    }
+
+    public var modifiedAt: Date? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+    }
+
+    /// Runs `body` while holding file coordination for the store (other processes wait). On platforms
+    /// without `NSFileCoordinator` (Linux tests) the in-process lock is all there is.
+    private func coordinated<T>(writing: Bool, _ body: () throws -> T) throws -> T {
+        #if canImport(Darwin)
+        let coordinator = NSFileCoordinator(filePresenter: nil)
+        var coordinationError: NSError?
+        var result: Result<T, Error>?
+        if writing {
+            coordinator.coordinate(writingItemAt: url, options: .forMerging, error: &coordinationError) { _ in
+                result = Result { try body() }
+            }
+        } else {
+            coordinator.coordinate(readingItemAt: url, options: [], error: &coordinationError) { _ in
+                result = Result { try body() }
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        guard let result else { throw CocoaError(.fileWriteUnknown) }
+        return try result.get()
+        #else
+        return try body()
+        #endif
+    }
+
+    private func readFile() throws -> CompassSnapshot {
         guard FileManager.default.fileExists(atPath: url.path) else { return .empty }
         let data = try Data(contentsOf: url)
         if let version = CompassSnapshot.schemaVersion(of: data), version > CompassSnapshot.currentSchema {
@@ -177,6 +252,10 @@ public final class JSONFileStore: Store, Sendable {
     public func save(_ snapshot: CompassSnapshot) throws {
         lock.lock(); defer { lock.unlock() }
         if let blocked = blockedBy.withLock({ $0 }) { throw StoreError.newerSchema(blocked) }
+        try coordinated(writing: true) { try writeFile(snapshot) }
+    }
+
+    private func writeFile(_ snapshot: CompassSnapshot) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let data = try Self.encoder().encode(snapshot)
         try data.write(to: url, options: .atomic)

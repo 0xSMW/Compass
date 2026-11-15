@@ -120,6 +120,65 @@ final class AppModelSaveTests: XCTestCase {
         // The wipe reaches sync through LiveSync.wipeEverywhere, never as an ordinary local change.
         XCTAssertEqual(spy.syncNotifications, 0)
     }
+
+    // MARK: S3 · failed saves, the widget's writes
+
+    /// A save that fails (full disk) is remembered and shown; becoming active retries it instead of
+    /// reading the stale file back as a local edit (which would record the new note as deleted).
+    func testFailedSaveIsSurfacedAndTheStaleFileIsNeverAdopted() throws {
+        let spy = EffectsSpy()
+        let start = Fixtures.snapshot(today: Fixtures.today(notes: []))
+        let store = InMemoryStore(start)
+        let (model, _) = TestModel.make(snapshot: start, store: store, spy: spy)
+        store.failsSaving = true
+        model.addNote("typed while the disk was full")
+        XCTAssertTrue(model.saveFailed)
+        XCTAssertEqual(try store.load(), start, "nothing reached the disk")
+
+        model.reloadFromStore()
+        XCTAssertEqual(model.today?.notes.count, 1, "the stale file did not replace memory")
+        XCTAssertNil(model.today?.removedItems)
+        XCTAssertTrue(model.saveFailed)
+
+        store.failsSaving = false
+        model.reloadFromStore()
+        XCTAssertFalse(model.saveFailed)
+        XCTAssertEqual(try store.load().day(Fixtures.todayKey)?.notes.count, 1)
+    }
+
+    /// The widget completes the step in its own process; the app takes that in when it becomes active,
+    /// and its own next save doesn't overwrite it.
+    func testWidgetCompletionIsTakenInAndNeverOverwritten() throws {
+        let spy = EffectsSpy()
+        let start = Fixtures.snapshot(today: Fixtures.today(notes: []))
+        let store = InMemoryStore(start)
+        let (model, _) = TestModel.make(snapshot: start, store: store, spy: spy)
+        model.addNote("first")
+        var widget = try store.load()
+        widget.updateDay(Fixtures.todayKey) {
+            $0.step?.completedAt = Fixtures.date(Fixtures.todayKey, 15)
+            $0.step?.updatedAt = Fixtures.date(Fixtures.todayKey, 15)
+            $0.step?.completionChangedAt = Fixtures.date(Fixtures.todayKey, 15)
+        }
+        store.writeExternally(widget, at: Date().addingTimeInterval(60))
+        // The app saves before it has looked: the widget's completion survives.
+        model.addNote("second")
+        let saved = try store.load().day(Fixtures.todayKey)
+        XCTAssertEqual(saved?.notes.count, 2)
+        XCTAssertTrue(saved?.step?.isDone ?? false)
+        XCTAssertTrue(model.today?.step?.isDone ?? false)
+
+        // And on becoming active.
+        var undone = try store.load()
+        undone.updateDay(Fixtures.todayKey) {
+            $0.step?.completedAt = nil
+            $0.step?.completionChangedAt = Fixtures.date(Fixtures.todayKey, 16)
+        }
+        store.writeExternally(undone, at: Date().addingTimeInterval(120))
+        model.reloadFromStore()
+        XCTAssertFalse(model.today?.step?.isDone ?? true)
+        XCTAssertEqual(model.today?.notes.count, 2)
+    }
 }
 
 @MainActor

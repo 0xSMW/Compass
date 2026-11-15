@@ -27,6 +27,13 @@ final class AppModel {
     /// The store file couldn't be read at launch (damaged, or from a newer Compass). It was copied aside;
     /// `StoreProblemAlert` tells the user. Set by the live path only.
     var storeProblem: StoreProblem? = nil
+    /// The last save didn't reach the disk (full storage). What was added stays in memory and Today says
+    /// so; the store file is older than memory, so it is never read back over it (`reloadFromStore`).
+    /// Saving is retried on the next change and when the app becomes active.
+    private(set) var saveFailed = false
+    /// The store file's modification date right after this app last wrote (or read) it. A later date
+    /// means another process (the widget) wrote it.
+    @ObservationIgnored private(set) var lastSavedAt: Date?
     let launch: LaunchOptions
 
     /// Screen stack; the last element is on screen.
@@ -96,6 +103,8 @@ final class AppModel {
             let (loaded, problem) = fileStore.loadRecovering()
             storeProblem = problem
             snapshot = loaded
+            lastSavedAt = fileStore.modifiedAt
+            AudioTombstoneLog.shared.noteReferenced(loaded.referencedAudioFiles)
             conditions = .normal
             calendar = SharedStorage.calendar(for: loaded.settings)
             clock = { Date() }
@@ -209,9 +218,43 @@ final class AppModel {
     }
 
     private func save(origin: SnapshotOrigin) {
-        try? store.save(snapshot)
+        writeToStore()
         if origin != .remote { effects.didChangeLocally() }
         effects.reloadWidgets()
+        AudioTombstoneLog.shared.noteReferenced(snapshot.referencedAudioFiles)
+    }
+
+    /// Write the snapshot. A widget change that landed since the last write is taken in first, so the
+    /// app's save never overwrites it. A failure is remembered (`saveFailed`), never swallowed.
+    private func writeToStore() {
+        if !saveFailed, StoreReload.shouldRead(fileModifiedAt: store.modifiedAt, lastSavedAt: lastSavedAt, saveFailed: false),
+           let stored = try? store.load() {
+            snapshot = snapshot.takingWidgetChanges(from: stored)
+        }
+        do {
+            try store.save(snapshot)
+            lastSavedAt = store.modifiedAt
+            if saveFailed { saveFailed = false }
+        } catch {
+            if !saveFailed { saveFailed = true }
+        }
+    }
+
+    /// Becoming active: retry a failed save, or take in what the widget changed in the shared file since
+    /// this app last wrote it. Only a step completed or undone there is taken; a file this app didn't
+    /// manage to write is never adopted (it would read as notes and steps deleted here).
+    func reloadFromStore() {
+        if saveFailed {
+            writeToStore()
+            if !saveFailed { effects.reloadWidgets() }
+            return
+        }
+        guard StoreReload.shouldRead(fileModifiedAt: store.modifiedAt, lastSavedAt: lastSavedAt, saveFailed: saveFailed),
+              let stored = try? store.load() else { return }
+        lastSavedAt = store.modifiedAt
+        let next = snapshot.takingWidgetChanges(from: stored)
+        // A local change (made on this phone), so it syncs and the widget reloads like any other.
+        if next != snapshot { commit(next) }
     }
 
     func updateToday(_ body: (inout Day) -> Void) {
@@ -264,6 +307,8 @@ final class AppModel {
         }
     }
 
+    /// Synced settings travel to the user's other devices; `Settings.DeviceLocal` fields (reminders switch,
+    /// input, time-zone pin) stay on this one (`SyncApply`).
     func updateSettings(_ body: (inout Settings) -> Void) {
         mutate { body(&$0.settings) }
         calendar = SharedStorage.calendar(for: snapshot.settings)
@@ -276,6 +321,8 @@ final class AppModel {
     func deleteEverything() {
         snapshot = .empty
         if let fileStore = store as? JSONFileStore { try? fileStore.deleteAll() } else { try? store.save(.empty) }
+        saveFailed = false
+        lastSavedAt = store.modifiedAt
         effects.reloadWidgets()
         reset(to: .a1)
     }

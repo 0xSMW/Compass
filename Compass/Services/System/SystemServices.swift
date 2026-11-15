@@ -97,11 +97,9 @@ final class SystemServices {
         scheduleReminders()
     }
 
-    /// The widget completes steps in its own process; adopt the shared file when it differs.
+    /// The widget completes steps in its own process; take its change in (`AppModel.reloadFromStore`).
     private func reloadFromStore(_ model: AppModel) {
-        guard let stored = try? model.store.load(), stored != model.snapshot else { return }
-        // A local change (made on this phone), so it syncs and the widget reloads like any other.
-        model.commit(stored)
+        model.reloadFromStore()
     }
 
     // MARK: Clock (the entry screen follows the day, from any screen)

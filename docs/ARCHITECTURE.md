@@ -16,6 +16,8 @@ Packages/CompassCore/           Pure Swift, Linux-buildable. `swift test` runs h
     Store.swift                 Store protocol, InMemoryStore, JSONFileStore (schema check, quarantine)
     Sync.swift                  SyncEnvelope, SnapshotMerger (per-item updatedAt, wipe generations, E5)
     SyncLocal.swift             DeviceIdentity (E5 labels), LocalEdits (stamping), AudioSyncPlan
+    SyncApply.swift             SyncApply.plan (the coordinator's decision), StoreReload, widget merge,
+                                audio tombstone pruning
     Backup.swift                BackupRestoring, BackupReader (waits for iCloud placeholders), R3 reasons
     Services.swift              AudioRecorder, SpeechTranscriber, CloudAssist protocols (+ errors)
     Fakes.swift                 FakeAudioRecorder, FakeSpeechTranscriber, FakeCloudAssist (deterministic)
@@ -64,6 +66,43 @@ reflections get this install's `deviceID` and model. That is what sync merges on
 commit as `.restored` (synced, not stamped). Deleting a recording goes through `VoiceStorage.delete`,
 which leaves an audio tombstone so the file leaves iCloud and every device. Only recordings the
 snapshot refers to are uploaded or downloaded.
+
+A save that fails (full disk) sets `model.saveFailed`: Today's notes row says so in I4's words
+(`SystemSaveNotice`), memory keeps everything, and the save is retried on the next change and when the
+app becomes active. The store file is shared with the widget's process: `JSONFileStore` coordinates
+reads and writes (`NSFileCoordinator`) and the widget changes it with one coordinated
+read-modify-write (`Store.update`). The app looks at the file only when its modification date is newer
+than the app's last successful save (`StoreReload.shouldRead`), never while a save has failed, and then
+takes in only what the widget can change (a step's completion, `takingWidgetChanges`). A stale file is
+never adopted as a local edit, so it can't record notes and steps as deleted.
+
+## Sync (iCloud)
+
+`SyncCoordinator` (app) writes this device's `SyncEnvelope` to iCloud Drive and merges everyone's with
+`SnapshotMerger` (Core). Everything it decides is in Core and tested without iCloud:
+
+- **Per item.** Each note, step, reflection, intention and goal carries `updatedAt`; the later version
+  wins whichever envelope was saved later. A step's completion merges on its own stamp
+  (`completionChangedAt`), so a title or part edit made later elsewhere never reopens it.
+- **Settings.** The rhythm and the cloud-help switch sync, each on its own stamp (`rhythmUpdatedAt`,
+  `cloudAssistUpdatedAt`). The reminders switch, the input preference and the I3 time-zone pin are
+  `Settings.DeviceLocal`: they stay in the local store (so screens and the widget read them as before),
+  never stamp anything when changed, and every merge, and every restore, keeps this device's values.
+- **Deletions.** Days leave a `DayTombstone`, notes and steps an `ItemTombstone` on their day, recordings
+  an `AudioTombstone`. Audio tombstones are written only for recordings a saved snapshot used (a
+  discarded take never travelled) and are dropped after 90 days.
+- **Delete everything** is a generation boundary (`wipedAt`): every envelope keeps only what was created
+  after it (`keepingOnly(createdSince:)`). A day that only holds a morning skip made after the wipe
+  (`morningSkippedAt`, or the day's date for older data) or only deletions made after it is kept.
+- **`SyncApply.plan`** turns what was read into one action: erase (a remote wipe with nothing made here
+  since), adopt the survivors and reopen the entry screen (a remote wipe with local survivors), adopt
+  the merge (staying on any onboarding screen), put a fresh goal back on top (below), or keep.
+- **Starting fresh over a backup.** A1 asks once when iCloud holds data: "Restore" (R1, the only way R1
+  restores) or "Start a new goal". Sync never resets an onboarding draft. A backup merged mid-onboarding
+  is simply there when A7 finishes, and `setGoal` ends its goal (a past goal here, so the new goal wins
+  every merge). If onboarding finishes first, its goal is marked (`SyncState.freshGoalID`) and the merge
+  that would demote it instead ends the backup's goal and keeps the new one and its settings, as if the
+  backup had been merged first. The history stays in both orders.
 
 ## Platform services (live path only)
 

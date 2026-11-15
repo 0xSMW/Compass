@@ -237,7 +237,12 @@ extension AppModel {
     /// leaves the settings alone.
     func onboardingFinish(_ draft: OnboardingDraft) {
         let goal = draft.makeGoal(createdAt: now)
+        // A backup that arrived mid-onboarding is already merged here: `setGoal` ends its goal and the new
+        // one is current, history kept. One that hasn't arrived yet is handled the same way when it does
+        // (the fresh goal is marked for sync, which puts it back on top of the backup's goal).
+        let beforeAnyGoal = !draft.replacing && snapshot.goal == nil
         setGoal(goal)
+        if beforeAnyGoal, fixture == nil { LiveSync.markFreshGoal(goal.id) }
         if !draft.replacing {
             updateSettings { s in
                 s.rhythm = draft.rhythm.clamped

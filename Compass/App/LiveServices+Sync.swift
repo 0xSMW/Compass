@@ -38,6 +38,12 @@ enum LiveSync {
 
     static func wipeEverywhere(at date: Date) { coordinator?.wipeEverywhere(at: date) }
 
+    /// A first goal made here before the user's iCloud data was merged (see `SyncCoordinator.markFreshGoal`).
+    static func markFreshGoal(_ id: UUID) { coordinator?.markFreshGoal(id) }
+
+    /// Read iCloud now.
+    static func pullNow() { coordinator?.pullNow() }
+
     static var backupRestorer: BackupRestoring {
         if let restorer { return restorer }
         let r = ICloudBackupRestorer()
@@ -64,6 +70,9 @@ extension AppModel {
     /// Put a restored snapshot into the app (R2) and save it; sync carries on from it. Restored items
     /// keep their own devices and times (they are not stamped as made here).
     func applyRestoredSnapshot(_ restored: CompassSnapshot) {
+        // This device's own settings (reminders switch, input, time-zone pin) are not restored from another.
+        var restored = restored
+        restored.settings = restored.settings.keepingDeviceLocal(settings.deviceLocal)
         commit(restored, origin: .restored)
         calendar = SharedStorage.calendar(for: restored.settings)
         if let http = cloud as? HTTPCloudAssist { http.switchOn = restored.settings.cloudAssist }

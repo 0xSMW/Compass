@@ -53,12 +53,13 @@ struct OnboardingWelcomeView: View {
             .scrollingRegion(.custom(top: 224, bottom: 668))
 
             ButtonDock(primary: "Begin", link: "Restore from iCloud", onPrimary: {
-                // A backup in iCloud (a second device): restore it rather than onboard over it (M5).
+                // A backup in iCloud (a second device): ask once, Restore or Start a new goal (S2).
                 model.restoreRouting.begin(model)
             }, onLink: {
-                model.go(.r1)
+                model.restoreRouting.chooseRestore(model)
             })
         }
+        .restoreChoiceSheet(model)
         .onAppear { model.restoreRouting.checkForBackup(model) }
     }
 }

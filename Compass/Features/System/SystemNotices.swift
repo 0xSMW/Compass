@@ -50,3 +50,14 @@ struct SystemRecordingNotice: View {
         }
     }
 }
+
+/// Saving failed (the disk is full): what was added is still on screen, and saving is retried. I4's
+/// language and icon, in Today's notes row.
+struct SystemSaveNotice: View {
+    var onAction: () -> Void
+
+    var body: some View {
+        Notice(icon: .disk, text: "Your iPhone is full, so Compass can’t save. What you add stays here and saves when there’s room.",
+               actionTitle: "Manage storage", action: onAction)
+    }
+}

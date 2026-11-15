@@ -128,6 +128,17 @@ extension Goal {
 
 extension Settings {
     public var versionTime: Date { updatedAt ?? .distantPast }
+    /// When the rhythm last changed (older data, with no field stamps: when any setting did).
+    public var rhythmVersion: Date { rhythmUpdatedAt ?? legacyVersion ?? .distantPast }
+    /// When the cloud-help switch last changed (older data, with no field stamps: when any setting did).
+    public var cloudAssistVersion: Date { cloudAssistUpdatedAt ?? legacyVersion ?? .distantPast }
+    /// Settings saved before field stamps had one stamp for everything.
+    private var legacyVersion: Date? { rhythmUpdatedAt == nil && cloudAssistUpdatedAt == nil ? updatedAt : nil }
+}
+
+extension Step {
+    /// When the completion last changed: its own stamp, else the completion itself, else creation.
+    public var completionTime: Date { completionChangedAt ?? completedAt ?? createdAt }
 }
 
 // MARK: - Merge
@@ -196,7 +207,7 @@ public enum SnapshotMerger {
         switch goals.demoted {
         case .newer?: snap.settings = older.snapshot.settings
         case .older?: snap.settings = newer.snapshot.settings
-        case nil: snap.settings = latest(newer.snapshot.settings, older.snapshot.settings, by: \.versionTime)
+        case nil: snap.settings = mergeSettings(newer.snapshot.settings, older.snapshot.settings)
         }
 
         var keys = Set(newer.snapshot.days.map(\.key))
@@ -225,6 +236,23 @@ public enum SnapshotMerger {
     /// `a` comes from the newer envelope and wins ties.
     static func latest<T>(_ a: T, _ b: T, by time: KeyPath<T, Date>) -> T {
         b[keyPath: time] > a[keyPath: time] ? b : a
+    }
+
+    /// Synced settings field by field (`a` from the newer envelope wins ties): the rhythm and the cloud-help
+    /// switch each on their own stamp, so changing one on one device never undoes the other changed
+    /// elsewhere. Device-local fields (`Settings.DeviceLocal`) come along from `a`, and every device puts
+    /// its own back after the merge (`SyncApply`).
+    public static func mergeSettings(_ a: Settings, _ b: Settings) -> Settings {
+        var s = a
+        let rhythm = b.rhythmVersion > a.rhythmVersion ? b : a
+        let cloud = b.cloudAssistVersion > a.cloudAssistVersion ? b : a
+        s.rhythm = rhythm.rhythm
+        s.cloudAssist = cloud.cloudAssist
+        // Written out per field, so a side with one legacy stamp doesn't lend it to the other field.
+        s.rhythmUpdatedAt = rhythm.rhythmVersion == .distantPast ? nil : rhythm.rhythmVersion
+        s.cloudAssistUpdatedAt = cloud.cloudAssistVersion == .distantPast ? nil : cloud.cloudAssistVersion
+        s.updatedAt = [a.updatedAt, b.updatedAt].compactMap { $0 }.max()
+        return s
     }
 
     static func mergeTombstones(_ all: [DayTombstone]) -> [DayTombstone] {
@@ -302,7 +330,14 @@ public enum SnapshotMerger {
         }
 
         switch (n.step, o.step) {
-        case let (a?, b?): d.step = a.id == b.id ? latest(a, b, by: \.versionTime) : latest(a, b, by: \.createdAt)
+        case let (a?, b?) where a.id == b.id:
+            // Title, part and size from the later edit; the completion on its own stamp.
+            var step = latest(a, b, by: \.versionTime)
+            let completion = latest(a, b, by: \.completionTime)
+            step.completedAt = completion.completedAt
+            step.completionChangedAt = completion.completionChangedAt
+            d.step = step
+        case let (a?, b?): d.step = latest(a, b, by: \.createdAt)
         case let (a, b): d.step = a ?? b
         }
 
@@ -320,6 +355,7 @@ public enum SnapshotMerger {
         }
 
         d.morningSkipped = n.morningSkipped || o.morningSkipped
+        d.morningSkippedAt = [n.morningSkippedAt, o.morningSkippedAt].compactMap { $0 }.min()
 
         // Reflections: identity is the moment it was recorded; the later version of each wins.
         var reflections: [Date: Reflection] = [:]
@@ -346,13 +382,16 @@ public enum SnapshotMerger {
 // MARK: - Wipe generations
 
 extension CompassSnapshot {
-    /// What survives a "Delete everything" made at `wipe`: only things created at or after it. Settings
-    /// last changed before it go back to defaults. Days left with nothing are dropped.
+    /// What survives a "Delete everything" made at `wipe`: only things created at or after it. Synced
+    /// settings last changed before it go back to defaults (field by field); this device's own settings
+    /// stay. Days left with nothing are dropped, but a day that only says the morning was skipped after
+    /// the wipe, or only remembers notes and steps deleted after it, is kept: dropping it would bring the
+    /// morning back, or let another device revive the deleted note.
     public func keepingOnly(createdSince wipe: Date) -> CompassSnapshot {
         var s = CompassSnapshot()
         s.goal = goal.flatMap { $0.createdAt >= wipe ? $0 : nil }
         s.pastGoals = pastGoals.filter { $0.createdAt >= wipe }
-        s.settings = settings.versionTime >= wipe ? settings : Settings()
+        s.settings = settings.keepingOnly(changedSince: wipe)
         for day in days {
             var d = Day(key: day.key, goalID: day.goalID)
             d.intention = day.intention.flatMap { $0.createdAt >= wipe ? $0 : nil }
@@ -362,10 +401,15 @@ extension CompassSnapshot {
             d.reflection = day.reflection.flatMap { $0.createdAt >= wipe ? $0 : nil } ?? versions.first
             let others = versions.filter { $0.createdAt != d.reflection?.createdAt }
             d.mergeCandidates = others.isEmpty ? nil : others
-            guard d.intention != nil || d.step != nil || !d.notes.isEmpty || d.reflection != nil else { continue }
             let removed = (day.removedItems ?? []).filter { $0.deletedAt >= wipe }
             d.removedItems = removed.isEmpty ? nil : removed
-            d.morningSkipped = day.morningSkipped
+            let hasContent = d.intention != nil || d.step != nil || !d.notes.isEmpty || d.reflection != nil
+            // A skip stays with a day that kept content, and on its own when it was made after the wipe.
+            if day.morningSkipped, hasContent || day.skippedSince(wipe) {
+                d.morningSkipped = true
+                d.morningSkippedAt = day.morningSkippedAt
+            }
+            guard hasContent || d.morningSkipped || d.removedItems != nil else { continue }
             s.days.append(d)
         }
         return s
@@ -373,6 +417,36 @@ extension CompassSnapshot {
 
     /// Nothing the user made: no goal, no days.
     public var isBlank: Bool { goal == nil && pastGoals.isEmpty && days.isEmpty }
+}
+
+extension Settings {
+    /// After a wipe at `wipe`: each synced field changed before it goes back to its default. This
+    /// device's own settings (`DeviceLocal`) are not part of any generation and stay.
+    func keepingOnly(changedSince wipe: Date) -> Settings {
+        let defaults = Settings()
+        var s = self
+        if rhythmVersion < wipe {
+            s.rhythm = defaults.rhythm
+            s.rhythmUpdatedAt = nil
+        }
+        if cloudAssistVersion < wipe {
+            s.cloudAssist = defaults.cloudAssist
+            s.cloudAssistUpdatedAt = nil
+        }
+        if versionTime < wipe { s.updatedAt = nil }
+        return s
+    }
+}
+
+extension Day {
+    /// The morning skip was made at or after `wipe`: its stamp says so, or (older data) the day itself
+    /// is not before the wipe's day anywhere on Earth (UTC, with a day of slack for time zones).
+    func skippedSince(_ wipe: Date) -> Bool {
+        if let at = morningSkippedAt { return at >= wipe }
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        return key >= DayKey(wipe, calendar: utc).adding(days: -1, calendar: utc)
+    }
 }
 
 // MARK: - Day conflict helpers (E5)

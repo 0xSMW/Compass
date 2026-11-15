@@ -150,6 +150,9 @@ public struct Step: Identifiable, Codable, Hashable, Sendable {
     /// Last change (completing, undoing, editing). Sync keeps the newer version of the same step, so a
     /// completion on one device is not undone by another device's unrelated save. nil in older data.
     public var updatedAt: Date?
+    /// Last time `completedAt` changed (completed or undone). Sync merges the completion on this stamp
+    /// alone, so a title or part edit made later on another device doesn't undo it. nil in older data.
+    public var completionChangedAt: Date?
 
     public init(
         id: UUID = UUID(),
@@ -159,7 +162,8 @@ public struct Step: Identifiable, Codable, Hashable, Sendable {
         completedAt: Date? = nil,
         size: StepSize = .regular,
         source: StepSource = .user,
-        updatedAt: Date? = nil
+        updatedAt: Date? = nil,
+        completionChangedAt: Date? = nil
     ) {
         self.id = id
         self.title = title
@@ -169,6 +173,7 @@ public struct Step: Identifiable, Codable, Hashable, Sendable {
         self.size = size
         self.source = source
         self.updatedAt = updatedAt
+        self.completionChangedAt = completionChangedAt
     }
 
     public var isDone: Bool { completedAt != nil }
@@ -292,6 +297,9 @@ public struct Day: Identifiable, Codable, Hashable, Sendable {
     /// Notes and steps deleted from this day (by id), so a merge doesn't bring them back from a device
     /// that still has them. A version edited after the deletion wins. Written by `LocalEdits`.
     public var removedItems: [ItemTombstone]? = nil
+    /// When the morning was skipped here (`LocalEdits` stamps it). Lets "Delete everything" tell a skip made
+    /// after it from one made before. nil in older data (the day's date stands in).
+    public var morningSkippedAt: Date? = nil
 
     public var id: DayKey { key }
 
@@ -383,8 +391,12 @@ public struct Settings: Codable, Hashable, Sendable {
     public var input: InputPreference
     /// Time zone the rhythm follows. nil = device time zone. (I3: the day follows you.)
     public var timeZoneID: String?
-    /// Last change made on some device. Sync keeps the newest settings. nil = defaults / older data.
+    /// Last change to a synced field (`rhythm`, `cloudAssist`) made on some device. nil = defaults / older data.
     public var updatedAt: Date?
+    /// When `rhythm` last changed. Sync merges it on this stamp alone. nil in older data (`updatedAt` stands in).
+    public var rhythmUpdatedAt: Date?
+    /// When `cloudAssist` last changed. Sync merges it on this stamp alone. nil in older data (`updatedAt` stands in).
+    public var cloudAssistUpdatedAt: Date?
 
     public init(
         rhythm: Rhythm = .standard,
@@ -392,7 +404,9 @@ public struct Settings: Codable, Hashable, Sendable {
         notificationsEnabled: Bool = true,
         input: InputPreference = .voice,
         timeZoneID: String? = nil,
-        updatedAt: Date? = nil
+        updatedAt: Date? = nil,
+        rhythmUpdatedAt: Date? = nil,
+        cloudAssistUpdatedAt: Date? = nil
     ) {
         self.rhythm = rhythm
         self.cloudAssist = cloudAssist
@@ -400,6 +414,43 @@ public struct Settings: Codable, Hashable, Sendable {
         self.input = input
         self.timeZoneID = timeZoneID
         self.updatedAt = updatedAt
+        self.rhythmUpdatedAt = rhythmUpdatedAt
+        self.cloudAssistUpdatedAt = cloudAssistUpdatedAt
+    }
+}
+
+extension Settings {
+    /// Settings that belong to one device and never travel through sync: the reminders switch (iOS asks
+    /// per device), the input preference, and the I3 time-zone pin (a phone abroad keeps home time while
+    /// the iPad at home follows its own zone). They live in the local store with the rest of `Settings`,
+    /// so the widget and every screen read them as before, but a merge always keeps this device's values
+    /// (`SyncApply`) and editing them never stamps the synced fields.
+    public struct DeviceLocal: Hashable, Sendable {
+        public var notificationsEnabled: Bool
+        public var input: InputPreference
+        public var timeZoneID: String?
+
+        public init(notificationsEnabled: Bool = true, input: InputPreference = .voice, timeZoneID: String? = nil) {
+            self.notificationsEnabled = notificationsEnabled
+            self.input = input
+            self.timeZoneID = timeZoneID
+        }
+    }
+
+    public var deviceLocal: DeviceLocal {
+        get { DeviceLocal(notificationsEnabled: notificationsEnabled, input: input, timeZoneID: timeZoneID) }
+        set {
+            notificationsEnabled = newValue.notificationsEnabled
+            input = newValue.input
+            timeZoneID = newValue.timeZoneID
+        }
+    }
+
+    /// These settings with this device's own `DeviceLocal` values.
+    public func keepingDeviceLocal(_ local: DeviceLocal) -> Settings {
+        var s = self
+        s.deviceLocal = local
+        return s
     }
 }
 

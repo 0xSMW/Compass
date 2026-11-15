@@ -64,7 +64,7 @@ public enum LocalEdits {
     public static func stamp(_ new: CompassSnapshot, since old: CompassSnapshot, at now: Date, device: DeviceIdentity) -> CompassSnapshot {
         guard new != old else { return new }
         var s = new
-        if changed(new.settings, old.settings, \.updatedAt) { s.settings.updatedAt = now }
+        s.settings = stampSettings(new.settings, since: old.settings, at: now)
 
         let oldGoals = Dictionary((old.pastGoals + [old.goal].compactMap { $0 }).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         func stampGoal(_ g: Goal) -> Goal {
@@ -78,7 +78,11 @@ public enum LocalEdits {
 
         let oldDays = Dictionary(old.days.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
         s.days = s.days.map { day in
-            guard let before = oldDays[day.key] else { return claimNew(in: day, device) }
+            guard let before = oldDays[day.key] else {
+                var d = claimNew(in: day, device)
+                if d.morningSkipped, d.morningSkippedAt == nil { d.morningSkippedAt = now }
+                return d
+            }
             if day == before { return day }
             var d = day
             if let i = d.intention, let b = before.intention, i.createdAt == b.createdAt, changed(i, b, \.updatedAt) {
@@ -86,7 +90,11 @@ public enum LocalEdits {
             }
             if let st = d.step, let b = before.step, st.id == b.id, changed(st, b, \.updatedAt) {
                 d.step?.updatedAt = now
+                if st.completedAt != b.completedAt, st.completionChangedAt == b.completionChangedAt {
+                    d.step?.completionChangedAt = now
+                }
             }
+            if d.morningSkipped, !before.morningSkipped, d.morningSkippedAt == nil { d.morningSkippedAt = now }
             var gone = Set(before.notes.map(\.id)).subtracting(d.notes.map(\.id))
             if let s = before.step, d.step?.id != s.id { gone.insert(s.id) }
             if !gone.isEmpty {
@@ -112,6 +120,23 @@ public enum LocalEdits {
             d.mergeCandidates = d.mergeCandidates?.map(stampReflection)
             return d
         }
+        return s
+    }
+
+    /// Synced fields get their own stamps (and `updatedAt`) when they change. Device-local fields
+    /// (`Settings.DeviceLocal`) never stamp anything: they don't travel.
+    static func stampSettings(_ new: Settings, since old: Settings, at now: Date) -> Settings {
+        var s = new
+        var syncedChanged = false
+        if new.rhythm != old.rhythm {
+            syncedChanged = true
+            if new.rhythmUpdatedAt == old.rhythmUpdatedAt { s.rhythmUpdatedAt = now }
+        }
+        if new.cloudAssist != old.cloudAssist {
+            syncedChanged = true
+            if new.cloudAssistUpdatedAt == old.cloudAssistUpdatedAt { s.cloudAssistUpdatedAt = now }
+        }
+        if syncedChanged, new.updatedAt == old.updatedAt { s.updatedAt = now }
         return s
     }
 

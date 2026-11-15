@@ -6,13 +6,13 @@ extension CompassSnapshot {
     /// Days that moved, across the current and past goals ("212 steps").
     public var totalSteps: Int { days.filter(\.moved).count }
 
-    /// Recordings kept: spoken notes, spoken evening entries (all versions), spoken intentions, the why ("186 memos").
+    /// Recordings kept: spoken notes, spoken evening entries (all versions), the why ("186 memos").
+    /// A spoken intention is not one: only its words are kept (its audio is deleted once transcribed).
     public var memoCount: Int {
         var n = 0
         for d in days {
             n += d.notes.filter(\.isSpoken).count
             n += d.reflectionVersions.filter { $0.duration != nil }.count
-            if d.intention?.duration != nil { n += 1 }
         }
         for g in [goal].compactMap({ $0 }) + pastGoals where g.why?.isSpoken == true { n += 1 }
         return n

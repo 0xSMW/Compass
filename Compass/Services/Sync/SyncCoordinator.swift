@@ -24,6 +24,9 @@ struct SyncState: Codable, Equatable {
     var wipedAt: Date?
     /// Newest wipe this device has already carried out.
     var appliedWipe: Date?
+    /// A first goal onboarding made here before any backup was merged; it wins over the backup's goal
+    /// (`SyncApplyInput.freshGoalID`). Cleared once settled.
+    var freshGoalID: UUID?
 
     static var url: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -205,20 +208,22 @@ final class SyncCoordinator {
     }
 
     /// Merge what other devices wrote into the model (on the main actor, against the latest local state).
+    /// What to do is decided by `SyncApply.plan` (CompassCore, tested branch by branch); this carries it out.
     private func apply(_ remote: [SyncEnvelope]) {
         guard let model, let local = envelope() else { return }
-        let others = remote.filter { $0.deviceID != state.deviceID }
-        guard let merged = SnapshotMerger.merge([local] + others) else { return }
+        let input = SyncApplyInput(local: local, remote: remote, appliedWipe: state.appliedWipe,
+                                   isOnboarding: model.current.flow == .onboarding, freshGoalID: state.freshGoalID)
+        guard let plan = SyncApply.plan(input) else { return }
         let before = model.snapshot
-        let newWipe = merged.wipedAt.map { $0 > (state.appliedWipe ?? .distantPast) } ?? false
+        let merged = plan.merged
 
         state.tombstones = merged.tombstones
         state.wipedAt = merged.wipedAt
-        if newWipe { state.appliedWipe = merged.wipedAt }
+        if plan.newWipe { state.appliedWipe = merged.wipedAt }
+        state.freshGoalID = plan.freshGoalID
 
-        // An old wipe a fresh install hears about for the first time has nothing here to erase.
-        let lostLocalData = newWipe && merged.wipedAt.map { before.keepingOnly(createdSince: $0) != before } == true
-        if lostLocalData && merged.snapshot.isBlank {
+        switch plan.action {
+        case .eraseLocal:
             // "Delete everything" on another device and nothing made here since: erase here too.
             state.tombstones = []
             DataEraser.eraseLocalData()
@@ -227,32 +232,37 @@ final class SyncCoordinator {
             model.deleteEverything()
             syncAudio(referencedBefore: before.referencedAudioFiles, merged: merged)
             return
-        }
-
-        AudioTombstoneLog.shared.adopt(merged.audioTombstones)
-        state.save()
-        if merged.snapshot != model.snapshot {
-            // Saves and reloads the widget, without counting as this device's own change.
-            model.commit(merged.snapshot, origin: .remote)
+        case .adopt(let snapshot, let source):
+            AudioTombstoneLog.shared.adopt(merged.audioTombstones)
+            state.save()
+            // `.merge` saves and reloads the widget without counting as this device's own change; a fresh
+            // goal put back on top (`.localChange`) is this device's decision and is stamped and pushed.
+            model.commit(snapshot, origin: source == .localChange ? .local : .remote)
             // Our envelope should now carry the merged result too.
             pushSoon()
+        case .keep:
+            AudioTombstoneLog.shared.adopt(merged.audioTombstones)
+            state.save()
         }
-        if lostLocalData {
-            // Only what this device made after the wipe is left; open wherever that leads.
-            model.goToEntry()
-        } else if before.goal == nil, merged.snapshot.goal != nil, Self.isOnboarding(model.current) {
-            // A second device mid-onboarding just received the real goal: don't let onboarding replace
-            // it. Open by the clock, as if restored.
-            model.onboardingDraft.reset()
-            model.goToEntry()
-        }
-        syncAudio(referencedBefore: before.referencedAudioFiles, merged: merged)
+        // Only what this device made after a wipe is left; open wherever that leads. A goal arriving
+        // mid-onboarding never ends it: finishing sets the new goal on top (`onboardingFinish`).
+        if plan.openEntry { model.goToEntry() }
+        var after = merged
+        after.snapshot = model.snapshot
+        syncAudio(referencedBefore: before.referencedAudioFiles, merged: after)
     }
 
-    /// Onboarding screens a sync-delivered goal ends (R1–R3 are restoring it already).
-    static func isOnboarding(_ id: ScreenID) -> Bool {
-        id.flow == .onboarding && ![ScreenID.r1, .r2, .r3].contains(id)
+    // MARK: Starting fresh over a backup (S2)
+
+    /// Onboarding finished here with a first goal before this device had merged the user's iCloud data:
+    /// the next merges put it back on top of the backup's goal (`SyncApply`).
+    func markFreshGoal(_ id: UUID) {
+        state.freshGoalID = id
+        state.save()
     }
+
+    /// Read iCloud now (A1 "Start a new goal": bring the backup in while the user onboards).
+    func pullNow() { pullSoon(delay: 0) }
 
     /// After a merge: drop local recordings the merge removed, remove deleted recordings from iCloud,
     /// clear recordings from before a wipe, and bring in recordings the merged snapshot uses.
@@ -288,7 +298,7 @@ final class SyncCoordinator {
         pushTask?.cancel()
         pullTask?.cancel()
         let deviceID = state.deviceID
-        state = SyncState(deviceID: deviceID, lastLocalChange: date, tombstones: [], wipedAt: date, appliedWipe: date)
+        state = SyncState(deviceID: deviceID, lastLocalChange: date, tombstones: [], wipedAt: date, appliedWipe: date, freshGoalID: nil)
         AudioTombstoneLog.shared.reset()
         let marker = SyncEnvelope(deviceID: deviceID, deviceName: SyncDevice.model, savedAt: date, snapshot: .empty, wipedAt: date)
         if let root {

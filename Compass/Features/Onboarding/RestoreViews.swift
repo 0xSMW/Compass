@@ -37,6 +37,12 @@ struct RestoreProgressView: View {
         }
         .onAppear {
             guard !staticBoard, task == nil else { return }
+            // Only after the user chose to restore (S2): otherwise ask on A1 first.
+            guard model.restoreRouting.restoreChosen else {
+                model.restoreRouting.choosing = true
+                model.reset(to: .a1)
+                return
+            }
             task = Task { @MainActor in await run(draft: draft) }
         }
         .onDisappear { task?.cancel() }
@@ -45,6 +51,7 @@ struct RestoreProgressView: View {
     private func cancel() {
         task?.cancel()
         task = nil
+        model.restoreRouting.restoreChosen = false
         model.onboardingBack(from: id)
     }
 
@@ -84,6 +91,7 @@ struct RestoreProgressView: View {
             guard !Task.isCancelled else { return }
             model.applyRestoredSnapshot(snapshot)
             routing.backupFound = false
+            routing.restoreChosen = false
             UIAccessibility.post(notification: .announcement, argument: "Restored")
             model.replace(with: .r2)
         } catch {
@@ -106,24 +114,68 @@ final class RestoreRouting {
     var backupFound = false
     private var checking = false
 
+    /// What the backup holds ("212 steps · 186 memos · 1 goal"), for A1's question.
+    var foundSummary: BackupSummary?
+    /// A1 is asking "Restore" or "Start a new goal" (once, when there is something to restore).
+    var choosing = false
+    /// The user chose to restore (A1's question or link, R3's Try again). R1 restores only then.
+    var restoreChosen = false
+
     /// A1: look for a backup in the background (it may take a while on a new phone).
     func checkForBackup(_ model: AppModel) {
         guard model.fixture == nil, !checking, !backupFound else { return }
         checking = true
         let backup = model.backupRestorer
         Task { @MainActor in
-            if case .available = await backup.availability() { self.backupFound = true }
+            if case .available(let found) = await backup.availability() {
+                self.backupFound = true
+                self.foundSummary = found
+            }
             self.checking = false
         }
     }
 
-    /// A1 "Begin": restore first when a backup exists; a merge would never let onboarding replace it.
+    /// A1 "Begin": with a backup in iCloud (or its data already synced in), ask once; otherwise onboard.
     func begin(_ model: AppModel) {
-        if backupFound {
-            model.go(.r1)
+        if backupFound || !model.snapshot.isBlank {
+            if foundSummary == nil, !model.snapshot.isBlank { foundSummary = BackupSummary(snapshot: model.snapshot) }
+            choosing = true
         } else {
             model.onboardingDraft.reset()
             model.go(.a2)
+        }
+    }
+
+    /// "Restore" (A1's question or "Restore from iCloud"): R1 brings the backup in.
+    func chooseRestore(_ model: AppModel) {
+        choosing = false
+        restoreChosen = true
+        model.go(.r1)
+    }
+
+    /// "Start a new goal": onboard; the backup is merged meanwhile and the new goal is set on top of it,
+    /// so its goal becomes a past goal and the history stays (`onboardingFinish`, `SyncApply`).
+    func chooseNewGoal(_ model: AppModel) {
+        choosing = false
+        restoreChosen = false
+        model.onboardingDraft.reset()
+        LiveSync.pullNow()
+        model.go(.a2)
+    }
+}
+
+extension View {
+    /// A1's one question when a backup exists: Restore, or Start a new goal (history stays either way).
+    func restoreChoiceSheet(_ model: AppModel) -> some View {
+        let routing = model.restoreRouting
+        return compassSheet(isPresented: Binding(get: { routing.choosing }, set: { routing.choosing = $0 }),
+                            height: 376, label: "Restore from iCloud?") {
+            ConfirmSheetContent(title: "Restore from iCloud?",
+                                message: [routing.foundSummary?.line, "Or start a new goal. Your history stays."]
+                                    .compactMap { $0 }.joined(separator: "\n"))
+        } actions: {
+            PrimaryButton("Restore") { routing.chooseRestore(model) }
+            SecondaryButton("Start a new goal") { routing.chooseNewGoal(model) }
         }
     }
 }
@@ -202,6 +254,7 @@ struct RestoreNothingView: View {
                 model.onboardingDraft.reset()
                 model.replace(with: .a2)
             }, onLink: {
+                model.restoreRouting.restoreChosen = true
                 model.replace(with: .r1)
             })
         }
