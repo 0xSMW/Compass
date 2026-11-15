@@ -105,8 +105,10 @@ struct AboveKeyboardAction<Leading: View>: View {
     var body: some View {
         Group {
             HStack(spacing: Space.s) {
-                leading
+                // The leading view takes what it needs first; the action keeps room for its label.
+                leading.layoutPriority(1)
                 PrimaryButton(title, action: action)
+                    .frame(minWidth: Leading.self == EmptyView.self ? nil : 128)
                     .disabled(!enabled)
                     .opacity(enabled ? 1 : 0.4)
             }
