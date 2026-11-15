@@ -372,7 +372,7 @@ struct TodayView: View {
         case .typing where isFixture:
             ZStack(alignment: .top) {
                 TodayKeyboardPlaceholder()
-                    .region(.custom(top: 508, bottom: ScreenMetrics.designHeight, inset: 0))
+                    .region(.keyboard)
                 noteField
                     .region(.aboveKeyboard)
             }

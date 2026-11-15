@@ -8,6 +8,8 @@ import SwiftUI
 struct ScreenMetrics: Equatable {
     var size: CGSize = CGSize(width: 390, height: 844)
     var safeArea: EdgeInsets = EdgeInsets(top: 47, leading: 0, bottom: 34, trailing: 0)
+    /// Top of the real software keyboard in this frame's coordinates, when it is up.
+    var keyboardTop: CGFloat? = nil
 
     static let designHeight: CGFloat = 844
     static let designWidth: CGFloat = 390
@@ -27,6 +29,21 @@ struct ScreenMetrics: Equatable {
 
     /// Distance from the bottom of the screen for a design y.
     func bottomInset(_ designY: CGFloat) -> CGFloat { size.height - y(designY) }
+
+    // MARK: Keyboard
+
+    /// The system keyboard's height (with the predictive bar) on this kind of phone: 336 on Face ID
+    /// phones (the boards' 508 on 844), 260 on Home-button phones (iPhone SE).
+    var estimatedKeyboardHeight: CGFloat { safeArea.bottom > 0 ? Self.designHeight - 508 : 260 }
+
+    /// Where the keyboard starts: the real one when up, else where it will be (drawn placeholders).
+    var keyboardY: CGFloat { keyboardTop ?? (size.height - estimatedKeyboardHeight) }
+
+    /// The lifted action: 56 tall, 16 above the keys (436–492 on 844).
+    var aboveKeyboardSpan: (top: CGFloat, bottom: CGFloat) {
+        let bottom = keyboardY - 16
+        return (bottom - 56, bottom)
+    }
 }
 
 private struct ScreenMetricsKey: EnvironmentKey {
@@ -69,8 +86,11 @@ enum Region: Equatable {
     case player
     /// Today dock: keyboard + Note 680–744.
     case todayDock
-    /// Action above the keyboard 436–492 (16 above keys at 508).
+    /// Action above the keyboard: 56 tall, 16 above the keys (436–492 on 844). Keyboard-relative: it
+    /// follows the real keyboard, or the estimated one on screens the boards don't draw.
     case aboveKeyboard
+    /// The keyboard itself (drawn placeholder in screenshots): from the keyboard's top to the bottom.
+    case keyboard
     /// Anything else, in design coordinates. `bottom == nil` = natural height from `top`.
     case custom(top: CGFloat, bottom: CGFloat?, inset: CGFloat = 24)
     /// Bottom-anchored content that grows up from `bottom` (Today step card: 656).
@@ -92,6 +112,7 @@ enum Region: Equatable {
         case .player: 672
         case .todayDock: 680
         case .aboveKeyboard: 436
+        case .keyboard: 508
         case .custom(let top, _, _): top
         case .growsUp: nil
         }
@@ -111,6 +132,7 @@ enum Region: Equatable {
         case .player: 752
         case .todayDock: 744
         case .aboveKeyboard: 492
+        case .keyboard: 844
         case .custom(_, let bottom, _): bottom
         case .growsUp(let bottom): bottom
         }
@@ -119,6 +141,7 @@ enum Region: Equatable {
     var inset: CGFloat {
         switch self {
         case .nav: 14
+        case .keyboard: 0
         case .custom(_, _, let inset): inset
         default: Space.inset
         }
@@ -139,8 +162,16 @@ private struct RegionModifier: ViewModifier {
     let region: Region
 
     func body(content: Content) -> some View {
-        let top = region.top.map(metrics.y)
-        let bottom = region.bottom.map(metrics.y)
+        var top = region.top.map(metrics.y)
+        var bottom = region.bottom.map(metrics.y)
+        switch region {
+        case .aboveKeyboard:
+            (top, bottom) = metrics.aboveKeyboardSpan
+        case .keyboard:
+            (top, bottom) = (metrics.keyboardY, metrics.size.height)
+        default:
+            break
+        }
         let height: CGFloat? = {
             if let top, let bottom { return max(0, bottom - top) }
             return nil

@@ -168,7 +168,7 @@ struct ListeningWave: View {
 }
 
 /// Keyboard stand-in for screenshots of typing states (the CI simulator has no software keyboard):
-/// #1C1C1F from 508 to the bottom with three rows of keys. Place with `.region(.custom(top: 508, bottom: 844, inset: 0))`.
+/// #1C1C1F from 508 to the bottom with three rows of keys. Place with `.region(.keyboard)`.
 struct KeyboardPlaceholder: View {
     var body: some View {
         VStack(spacing: 12) {
@@ -279,7 +279,7 @@ struct AboveKeyboardAction: View {
                 .opacity(enabled ? 1 : 0.4)
                 .region(.aboveKeyboard)
             if drawsKeyboard {
-                KeyboardPlaceholder().region(.custom(top: 508, bottom: 844, inset: 0))
+                KeyboardPlaceholder().region(.keyboard)
             }
         }
     }

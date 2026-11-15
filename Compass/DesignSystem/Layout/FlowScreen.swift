@@ -10,7 +10,8 @@ import SwiftUI
 ///         ChoiceCircles(yes: "Done", no: "Not today", onYes: …, onNo: …).region(.dock)
 ///     }
 ///
-/// The keyboard never moves the layout (planned reflow only): put the lifted action in `.aboveKeyboard`.
+/// The keyboard never moves the layout (planned reflow only): put the lifted action in `.aboveKeyboard`,
+/// which follows the real keyboard's top (`KeyboardFrame`), and draw screenshot keyboards in `.keyboard`.
 struct FlowScreen<Content: View>: View {
     var background: Color
     @ViewBuilder var content: Content
@@ -24,7 +25,9 @@ struct FlowScreen<Content: View>: View {
         GeometryReader { outer in
             let insets = outer.safeAreaInsets
             GeometryReader { inner in
-                let metrics = ScreenMetrics(size: inner.size, safeArea: insets)
+                let originY = inner.frame(in: .global).minY
+                let metrics = ScreenMetrics(size: inner.size, safeArea: insets,
+                                            keyboardTop: KeyboardFrame.shared.top.map { $0 - originY })
                 ZStack(alignment: .top) {
                     background
                     content

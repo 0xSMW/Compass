@@ -136,6 +136,43 @@ jobs:
           if [ -z "${TEST_RUNNER_SCREENS}" ] && [ "$COUNT" -lt 66 ] && [ "$STATUS" = "0" ]; then echo "Expected 66 screenshots"; STATUS=1; fi
           echo "status=$STATUS" >> "$GITHUB_OUTPUT"
 
+      - name: Small-screen keyboard pass (iPhone SE, 375x667)
+        id: small
+        env:
+          TEST_RUNNER_SMALL_SCREENS: A4k,B5,C10
+          TEST_RUNNER_SCREENSHOT_DIR: ${{ github.workspace }}/build/screens-se
+        run: |
+          set +e
+          mkdir -p build/screens-se
+          RUNTIME=$(xcrun simctl list devices -j | python3 -c "
+          import json,sys
+          u=sys.argv[1]
+          for rt,l in json.load(sys.stdin)['devices'].items():
+              if any(x['udid']==u for x in l): print(rt)" "${{ steps.sim.outputs.udid }}")
+          SE=""
+          for TYPE in com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation com.apple.CoreSimulator.SimDeviceType.iPhone-SE--2nd-generation-; do
+            SE=$(xcrun simctl create "Compass SE" "$TYPE" "$RUNTIME" 2>/dev/null) && break
+          done
+          if [ -z "$SE" ]; then echo "No iPhone SE simulator for $RUNTIME"; xcrun simctl list devicetypes | grep -i se; echo "status=1" >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo "iPhone SE: $SE on $RUNTIME"
+          xcrun simctl boot "$SE"; xcrun simctl bootstatus "$SE" -b
+          xcrun simctl status_bar "$SE" override --time "9:41" --batteryState charged --batteryLevel 100 || true
+          xcrun simctl ui "$SE" appearance dark || true
+          xcodebuild test-without-building \
+            -project Compass.xcodeproj -scheme Compass \
+            -destination "id=$SE" \
+            -derivedDataPath build/DerivedData \
+            -resultBundlePath build/SmallScreen.xcresult \
+            -only-testing:CompassUITests/SmallScreenKeyboardTests \
+            > build/small.log 2>&1
+          STATUS=$?
+          grep -E "Test Case|error:|failed|passed|skipped|TEST" build/small.log | tail -40
+          COUNT=$(ls build/screens-se | wc -l | tr -d ' ')
+          echo "Small-screen screenshots: $COUNT"
+          if [ "$COUNT" -lt 3 ] && [ "$STATUS" = "0" ]; then echo "Expected 3 small-screen screenshots"; STATUS=1; fi
+          xcrun simctl shutdown "$SE" || true
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
       - name: Normalise screenshots to 390x844 and commit
         if: always() && steps.sim.outcome == 'success' && github.event_name == 'push' && github.ref_name == env.SCREENSHOT_BRANCH
         run: |
@@ -147,6 +184,12 @@ jobs:
           for f in "${PNGS[@]}"; do
             sips -z 844 390 "$f" --out "renders/ios/$(basename "$f")" > /dev/null
           done
+          # Small-screen keyboard pass (iPhone SE), at 375x667 pt.
+          SE_PNGS=(build/screens-se/*.png)
+          if [ ${#SE_PNGS[@]} -gt 0 ]; then
+            mkdir -p renders/ios-se
+            for f in "${SE_PNGS[@]}"; do sips -z 667 375 "$f" --out "renders/ios-se/$(basename "$f")" > /dev/null; done
+          fi
           echo "Simulator: ${{ steps.sim.outputs.name }}" > renders/ios/README.txt
           echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> renders/ios/README.txt
           echo "Commit: ${{ github.sha }}" >> renders/ios/README.txt
@@ -157,6 +200,7 @@ jobs:
           latest=$(git log "origin/${GITHUB_REF_NAME}" --format=%H --invert-grep --grep='\[skip ci\]' -1)
           if [ "$latest" != "${GITHUB_SHA}" ]; then echo "Newer code ($latest) is on the branch; its run publishes screenshots"; exit 0; fi
           git add renders/ios
+          if [ -d renders/ios-se ]; then git add renders/ios-se; fi
           if git diff --cached --quiet; then echo "No screenshot changes"; exit 0; fi
           git commit -m "Update iOS screenshots from ${GITHUB_SHA::7} [skip ci]"
           for i in 1 2 3 4; do
@@ -185,5 +229,8 @@ jobs:
           fi
           if [ "${{ steps.tests.outputs.status }}" != "0" ]; then
             echo "Screenshot tests failed"; grep -E "error:|failed" build/test.log | head -60 || true; FAIL=1
+          fi
+          if [ "${{ steps.small.outputs.status }}" != "0" ]; then
+            echo "Small-screen keyboard pass failed"; grep -E "error:|failed" build/small.log | head -60 || true; FAIL=1
           fi
           exit $FAIL

@@ -49,7 +49,7 @@ struct OnboardingKeyboardPlaceholder: View {
         .padding(.horizontal, 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color.raised)
-        .region(.custom(top: 508, bottom: 844, inset: 0))
+        .region(.keyboard)
         .accessibilityHidden(true)
     }
 }
