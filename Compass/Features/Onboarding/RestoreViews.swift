@@ -75,7 +75,7 @@ struct RestoreProgressView: View {
                 backup.cancel()
             }
             guard !Task.isCancelled else { return }
-            model.onboardingAdopt(snapshot)
+            model.applyRestoredSnapshot(snapshot)
             UIAccessibility.post(notification: .announcement, argument: "Restored")
             model.replace(with: .r2)
         } catch {

@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import UserNotifications
 import CompassCore
 
 /// What onboarding has collected so far (A2–A7). One per process; cleared when onboarding finishes
@@ -142,136 +141,14 @@ final class OnboardingDraft {
     }
 }
 
-// MARK: - Voice capture (A3)
+// MARK: - Restore pacing
 
-/// Listens for the goal (or the A4b answer): words land as said, stops on silence (the transcriber
-/// finishes its stream), or when the user taps stop. Drives the waveform from the recorder's levels.
-@MainActor
-@Observable
-final class OnboardingVoiceCapture {
-    var settled = ""
-    var pending = ""
-    var levels: [Float] = []
-    private(set) var isRunning = false
-
-    @ObservationIgnored private var task: Task<Void, Never>?
-    @ObservationIgnored private var levelTask: Task<Void, Never>?
-    @ObservationIgnored private var onFinish: (@MainActor (String) -> Void)?
-    @ObservationIgnored private var recorder: AudioRecorder?
-    @ObservationIgnored private var restoreScript: (() -> Void)?
-
-    var text: String { TranscriptUpdate(settled: settled, pending: pending).text }
-
-    func start(model: AppModel, script: String, onFinish: @escaping @MainActor (String) -> Void) {
-        guard !isRunning else { return }
-        isRunning = true
-        self.onFinish = onFinish
-        let recorder = model.recorder
-        let transcriber = model.transcriber
-        self.recorder = recorder
-        // The fakes stand in until the on-device recogniser lands: give them the board's words for
-        // this question, and pace them so words visibly land.
-        var paced = false
-        if let fake = transcriber as? FakeSpeechTranscriber {
-            let old = fake.script
-            fake.script = script
-            restoreScript = { fake.script = old }
-            paced = !model.launch.uiTest
-        }
-        let pace = paced
-        task = Task { [weak self] in
-            var recording = false
-            do {
-                try await recorder.start()
-                recording = true
-            } catch {
-                recording = false
-            }
-            if recording {
-                self?.levelTask = Task { [weak self] in
-                    for await level in recorder.levels() {
-                        if Task.isCancelled { break }
-                        self?.push(level)
-                        if pace { try? await Task.sleep(nanoseconds: 60_000_000) }
-                    }
-                }
-            }
-            do {
-                for try await update in transcriber.live() {
-                    if Task.isCancelled { break }
-                    self?.settled = update.settled
-                    self?.pending = update.pending
-                    if update.isFinal { break }
-                    if pace { try? await Task.sleep(nanoseconds: 160_000_000) }
-                }
-            } catch {
-                // Permission or recognition failure: keep whatever landed; the review screen lets them type.
-            }
-            if Task.isCancelled { return }
-            self?.finish()
-        }
-    }
-
-    private func push(_ level: Float) {
-        levels.append(level)
-        if levels.count > 38 { levels.removeFirst(levels.count - 38) }
-    }
-
-    /// Stop now (the stop button) and hand over what was said.
-    func finish() {
-        guard isRunning else { return }
-        let words = text
-        teardown()
-        onFinish?(words)
-        onFinish = nil
-    }
-
-    /// Leave without using the words (back, switching to the keyboard).
-    func cancel() {
-        guard isRunning else { return }
-        teardown()
-        onFinish = nil
-    }
-
-    private func teardown() {
-        isRunning = false
-        task?.cancel()
-        levelTask?.cancel()
-        task = nil
-        levelTask = nil
-        restoreScript?()
-        restoreScript = nil
-        if let recorder {
-            Task { _ = try? await recorder.stop() }
-        }
-        recorder = nil
-    }
-}
-
-// MARK: - Restore service hook
-
-/// Where R1 looks for a backup. The iCloud sync owner sets `live` to its `BackupRestoring`
-/// implementation at launch; until then iCloud reads as unavailable (R3).
-@MainActor
-enum OnboardingRestoreService {
-    static var live: BackupRestoring = OnboardingNoBackup()
-}
-
-/// Live default before iCloud restore is wired: nothing to restore.
-final class OnboardingNoBackup: BackupRestoring, @unchecked Sendable {
-    func availability() async -> BackupAvailability { .nothing(.iCloudUnavailable) }
-    func restore(progress: @escaping @Sendable (Double) -> Void) async throws -> CompassSnapshot {
-        throw RestoreError.iCloudUnavailable
-    }
-    func cancel() {}
-}
-
-/// The fixture restorer, paced so the bar visibly fills outside screenshots.
+/// The fixture restorer, paced so the bar visibly fills when clicking through fixtures by hand.
 final class OnboardingPacedBackup: BackupRestoring, @unchecked Sendable {
-    let base: FakeBackupRestoring
+    let base: BackupRestoring
     let delay: UInt64
 
-    init(base: FakeBackupRestoring, delay: TimeInterval) {
+    init(base: BackupRestoring, delay: TimeInterval) {
         self.base = base
         self.delay = UInt64(delay * 1_000_000_000)
     }
@@ -292,28 +169,6 @@ final class OnboardingPacedBackup: BackupRestoring, @unchecked Sendable {
     func cancel() { base.cancel() }
 }
 
-// MARK: - Notifications (A6)
-
-enum OnboardingNotifications {
-    static let morningID = "compass.rhythm.morning"
-    static let eveningID = "compass.rhythm.evening"
-
-    /// One notification at each moment, nothing else. Morning shows the goal (I5).
-    static func schedule(rhythm: Rhythm, goalText: String) {
-        let center = UNUserNotificationCenter.current()
-        center.removePendingNotificationRequests(withIdentifiers: [morningID, eveningID])
-        func request(_ id: String, body: String, at time: TimeOfDay) -> UNNotificationRequest {
-            let content = UNMutableNotificationContent()
-            content.body = body
-            content.sound = nil
-            let trigger = UNCalendarNotificationTrigger(dateMatching: DateComponents(hour: time.hour, minute: time.minute), repeats: true)
-            return UNNotificationRequest(identifier: id, content: content, trigger: trigger)
-        }
-        center.add(request(morningID, body: goalText, at: rhythm.morning)) { _ in }
-        center.add(request(eveningID, body: "What did you do today?", at: rhythm.evening)) { _ in }
-    }
-}
-
 // MARK: - AppModel actions for onboarding and restore
 
 extension AppModel {
@@ -327,27 +182,27 @@ extension AppModel {
         }
     }
 
-    /// Mic and speech permission, asked the first time the user taps the mic (A2, A4b, "Say it again").
-    func onboardingVoiceAllowed() async -> Bool {
-        var mic = recorder.permission
-        if mic == .notDetermined { mic = await recorder.requestPermission() }
-        var speech = transcriber.permission
-        if mic == .granted, speech == .notDetermined { speech = await transcriber.requestPermission() }
-        conditions.microphone = mic
-        conditions.speech = speech
-        return mic == .granted && speech == .granted
+    /// A2 / A4b / "Say it again": start listening (VoiceCapture asks for mic and speech the first
+    /// time), then turn to A3. Mic off or storage full → typing instead (A4k).
+    func onboardingListen(answering: Bool, draft: OnboardingDraft, orType: @escaping @MainActor () -> Void) {
+        if let fake = transcriber as? FakeSpeechTranscriber {
+            // Fixture runs: the fake speaks the board's words for this question.
+            fake.script = answering ? "Run twice a week, sleep by eleven and see friends every Sunday" : Fixtures.goalText
+        }
+        Task { @MainActor in
+            do {
+                try await VoiceCapture.shared.start(recorder: recorder, transcriber: transcriber)
+                draft.answering = answering
+                replace(with: .a3)
+            } catch {
+                orType()
+            }
+        }
     }
 
-    /// A6 "Allow notifications": the system prompt, at the moment the times are on screen.
+    /// A6 "Allow notifications": the system prompt, while the times are on screen.
     func onboardingRequestNotifications() async -> Bool {
-        if fixture != nil {
-            let granted = conditions.notifications != .denied
-            conditions.notifications = granted ? .granted : .denied
-            return granted
-        }
-        let granted = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge])) ?? false
-        conditions.notifications = granted ? .granted : .denied
-        return granted
+        await requestNotificationPermission() == .granted
     }
 
     /// A7 Start: save the goal and settings, then land by the clock (Center before noon,
@@ -362,22 +217,16 @@ extension AppModel {
             s.input = draft.usedVoice ? .voice : .typing
         }
         if let fake = cloud as? FakeCloudAssist { fake.isEnabled = draft.cloudAssist }
-        if fixture == nil, draft.notificationsEnabled {
-            OnboardingNotifications.schedule(rhythm: draft.rhythm, goalText: goal.text)
-        }
+        if let http = cloud as? HTTPCloudAssist { http.switchOn = draft.cloudAssist }
+        // Sync picks up the new goal; System reschedules the two reminders from the saved settings.
+        saveAndSync()
         draft.reset()
         goToEntry()
     }
 
-    /// The restorer R1 talks to: the board's fake under `-screen`, the iCloud one otherwise.
+    /// The restorer R1 talks to: the user's iCloud live, the fixture fake under `-screen`.
     var onboardingBackup: BackupRestoring {
-        guard fixture != nil else { return OnboardingRestoreService.live }
-        return OnboardingPacedBackup(base: FakeBackupRestoring(conditions: conditions), delay: launch.uiTest ? 0 : 0.35)
-    }
-
-    /// Adopt a restored snapshot as this iPhone's data.
-    func onboardingAdopt(_ restored: CompassSnapshot) {
-        snapshot = restored
-        updateSettings { _ in }
+        guard fixture != nil, !launch.uiTest else { return backupRestorer }
+        return OnboardingPacedBackup(base: backupRestorer, delay: 0.35)
     }
 }

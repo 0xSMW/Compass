@@ -73,15 +73,8 @@ extension View {
 
 /// Asks for mic + speech the first time, then turns to A3; falls back to typing when refused.
 @MainActor
-private func onboardingStartListening(model: AppModel, draft: OnboardingDraft, answering: Bool, orType: @escaping () -> Void) {
-    Task { @MainActor in
-        if await model.onboardingVoiceAllowed() {
-            draft.answering = answering
-            model.replace(with: .a3)
-        } else {
-            orType()
-        }
-    }
+private func onboardingStartListening(model: AppModel, draft: OnboardingDraft, answering: Bool, orType: @escaping @MainActor () -> Void) {
+    model.onboardingListen(answering: answering, draft: draft, orType: orType)
 }
 
 // MARK: - A1 · Welcome
@@ -158,30 +151,27 @@ struct OnboardingGoalQuestionView: View {
 // MARK: - A3 · Listening
 
 /// The question greys; words land under it; stops on silence. Also listens for the A4b answer.
+/// The take lives in `VoiceCapture.shared` (started on the screen before, so A2 → A3 is turn-taking).
 struct OnboardingListeningView: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.motionReduced) private var reduced
     let id: ScreenID
 
-    @State private var capture = OnboardingVoiceCapture()
+    @State private var finishing = false
 
-    /// Launched straight onto A3 (screenshots): show the board's words, don't start the fakes.
-    private var staticBoard: Bool { model.fixture?.id == id }
+    /// Launched straight onto A3 (screenshots): show the board's words; nothing is recording.
+    private var staticBoard: Bool { model.fixture?.id == id && !VoiceCapture.shared.isBusy }
 
     var body: some View {
         let draft = OnboardingDraft.shared
+        let capture = VoiceCapture.shared
         let question = draft.answering ? (draft.clarifyingQuestion ?? "Where are you going?") : "Where are you going?"
         let board = staticBoard ? model.fixture?.transcript : nil
         let settled = board?.settled ?? capture.settled
         let pending = board?.pending ?? capture.pending
 
         FlowScreen {
-            NavBar(leading: .back {
-                capture.cancel()
-                model.replace(with: draft.answering ? .a4b : .a2)
-                draft.answering = false
-            }, progress: 1)
-            .region(.nav)
+            NavBar(leading: .back { leave(to: draft.answering ? .a4b : .a2, keepWords: false) }, progress: 1)
+                .region(.nav)
 
             VStack(alignment: .leading, spacing: Space.s) {
                 Text(question)
@@ -203,30 +193,48 @@ struct OnboardingListeningView: View {
                 .region(.wave)
 
             OnboardingVoiceDock(micMode: .listening, micLabel: "Stop", onKeyboard: {
-                let words = staticBoard ? (board?.text ?? "") : capture.text
-                capture.cancel()
-                if !words.isEmpty { draft.text = GoalShaper.normalize(words) }
+                leave(to: .a4k, keepWords: true)
+            }, onMic: finish)
+        }
+        .onAppear {
+            capture.onSilence = { finish() }
+        }
+        .onDisappear {
+            capture.onSilence = nil
+        }
+    }
+
+    /// Stop (tap or silence): the words become the goal (A4), or the answer replaces it; a vague goal
+    /// gets one question (A4b). No words: typing.
+    private func finish() {
+        let draft = OnboardingDraft.shared
+        if staticBoard {
+            model.replace(with: draft.accept(captured: model.fixture?.transcript?.text ?? "", byVoice: true))
+            return
+        }
+        guard !finishing else { return }
+        finishing = true
+        Task { @MainActor in
+            let take = await VoiceCapture.shared.stop()
+            // The goal keeps its words, not the audio.
+            VoiceStorage.shared.delete(take.recording?.fileName)
+            if take.transcript.isEmpty {
                 draft.answering = false
                 model.replace(with: .a4k)
-            }, onMic: {
-                if staticBoard {
-                    model.replace(with: draft.accept(captured: board?.text ?? "", byVoice: true))
-                } else if capture.isRunning {
-                    capture.finish()
-                } else {
-                    model.replace(with: draft.accept(captured: capture.text, byVoice: true))
-                }
-            })
-        }
-        .task {
-            guard !staticBoard else { return }
-            UIAccessibility.post(notification: .announcement, argument: "Listening")
-            let script = draft.answering ? "Run twice a week, sleep by eleven and see friends every Sunday" : Fixtures.goalText
-            capture.start(model: model, script: script) { words in
-                model.replace(with: draft.accept(captured: words, byVoice: true))
+            } else {
+                model.replace(with: draft.accept(captured: take.transcript, byVoice: true))
             }
         }
-        .onDisappear { capture.cancel() }
+    }
+
+    /// Back or the keyboard: drop the audio; the keyboard keeps the words said so far.
+    private func leave(to next: ScreenID, keepWords: Bool) {
+        let draft = OnboardingDraft.shared
+        let words = staticBoard ? (model.fixture?.transcript?.text ?? "") : VoiceCapture.shared.text
+        if keepWords, !words.isEmpty { draft.text = GoalShaper.normalize(words) }
+        draft.answering = false
+        Task { @MainActor in await VoiceCapture.shared.discard() }
+        model.replace(with: next)
     }
 }
 
