@@ -15,9 +15,9 @@ final class VoicePlayback {
     private(set) var waveforms: [String: [Float]] = [:]
 
     @ObservationIgnored private var player: AVAudioPlayer?
-    @ObservationIgnored private let delegate = PlayerDelegate()
+    private let delegate = PlayerDelegate()
     @ObservationIgnored private var loading: Set<String> = []
-    @ObservationIgnored private let storage: VoiceStorage
+    private let storage: VoiceStorage
 
     init(storage: VoiceStorage = .shared) {
         self.storage = storage
@@ -43,7 +43,8 @@ final class VoicePlayback {
             try session.setActive(true)
             let player = try AVAudioPlayer(contentsOf: storage.url(for: fileName))
             delegate.onFinish = { [weak self] in
-                Task { @MainActor in self?.finished() }
+                guard let self else { return }
+                Task { @MainActor in self.finished() }
             }
             player.delegate = delegate
             player.prepareToPlay()
@@ -77,15 +78,16 @@ final class VoicePlayback {
         guard storage.exists(fileName), !loading.contains(fileName) else { return nil }
         loading.insert(fileName)
         let url = storage.url(for: fileName)
-        Task.detached(priority: .utility) { [weak self] in
+        Task.detached(priority: .utility) {
             let levels = VoicePlayback.readLevels(url: url, bars: bars)
-            await MainActor.run {
-                guard let self else { return }
-                self.loading.remove(fileName)
-                if let levels { self.waveforms[fileName] = levels }
-            }
+            await self.storeWaveform(levels, for: fileName)
         }
         return nil
+    }
+
+    private func storeWaveform(_ levels: [Float]?, for fileName: String) {
+        loading.remove(fileName)
+        if let levels { waveforms[fileName] = levels }
     }
 
     nonisolated static func readLevels(url: URL, bars: Int) -> [Float]? {

@@ -108,7 +108,8 @@ final class LiveAudioRecorder: AudioRecorder, @unchecked Sendable {
             file = try AVAudioFile(forWriting: url, settings: settings, commonFormat: format.commonFormat, interleaved: format.isInterleaved)
         } catch {
             try? session.setActive(false, options: .notifyOthersOnDeactivation)
-            throw storage.hasRoomForRecording ? error : RecorderError.storageFull
+            if storage.hasRoomForRecording { throw error }
+            throw RecorderError.storageFull
         }
 
         lock.withLock {
