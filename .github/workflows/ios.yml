@@ -78,6 +78,7 @@ jobs:
       - name: Build app, widget and UI tests
         run: |
           set -o pipefail
+          mkdir -p build
           xcodebuild build-for-testing \
             -project Compass.xcodeproj -scheme Compass \
             -destination "id=${{ steps.sim.outputs.udid }}" \
@@ -111,7 +112,9 @@ jobs:
           set -euo pipefail
           mkdir -p renders/ios
           shopt -s nullglob
-          for f in build/screens-raw/*.png; do
+          PNGS=(build/screens-raw/*.png)
+          if [ ${#PNGS[@]} -eq 0 ]; then echo "No screenshots produced"; exit 0; fi
+          for f in "${PNGS[@]}"; do
             sips -z 844 390 "$f" --out "renders/ios/$(basename "$f")" > /dev/null
           done
           echo "Simulator: ${{ steps.sim.outputs.name }}" > renders/ios/README.txt
