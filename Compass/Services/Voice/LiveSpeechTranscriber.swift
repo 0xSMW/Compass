@@ -11,7 +11,7 @@ import CompassCore
 ///
 /// Live words come from the recorder's own audio buffers (`LiveAudioRecorder.addConsumer`), so the
 /// microphone is opened once and the saved m4a and the transcript match.
-final class LiveSpeechTranscriber: SpeechTranscriber, @unchecked Sendable {
+final class LiveSpeechTranscriber: CompassCore.SpeechTranscriber, @unchecked Sendable {
     private let source: LiveAudioRecorder
     private let storage: VoiceStorage
     private let locale: Locale
@@ -24,18 +24,18 @@ final class LiveSpeechTranscriber: SpeechTranscriber, @unchecked Sendable {
 
     // MARK: Permission
 
-    var permission: PermissionState { Self.map(SFSpeechRecognizer.authorizationStatus()) }
+    var permission: CompassCore.PermissionState { Self.map(SFSpeechRecognizer.authorizationStatus()) }
 
-    func requestPermission() async -> PermissionState {
+    func requestPermission() async -> CompassCore.PermissionState {
         if permission != .notDetermined { return permission }
-        return await withCheckedContinuation { (continuation: CheckedContinuation<PermissionState, Never>) in
+        return await withCheckedContinuation { (continuation: CheckedContinuation<CompassCore.PermissionState, Never>) in
             SFSpeechRecognizer.requestAuthorization { status in
                 continuation.resume(returning: Self.map(status))
             }
         }
     }
 
-    static func map(_ status: SFSpeechRecognizerAuthorizationStatus) -> PermissionState {
+    static func map(_ status: SFSpeechRecognizerAuthorizationStatus) -> CompassCore.PermissionState {
         switch status {
         case .authorized: return .granted
         case .denied, .restricted: return .denied
@@ -69,14 +69,14 @@ final class LiveSpeechTranscriber: SpeechTranscriber, @unchecked Sendable {
         }
     }
 
-    func live() -> AsyncThrowingStream<TranscriptUpdate, Error> {
+    func live() -> AsyncThrowingStream<CompassCore.TranscriptUpdate, Error> {
         AsyncThrowingStream { continuation in
             guard permission == .granted else {
-                continuation.finish(throwing: TranscriberError.permissionDenied)
+                continuation.finish(throwing: CompassCore.TranscriberError.permissionDenied)
                 return
             }
             guard let recognizer = onDeviceRecognizer() else {
-                continuation.finish(throwing: TranscriberError.failed)
+                continuation.finish(throwing: CompassCore.TranscriberError.failed)
                 return
             }
             let request = SFSpeechAudioBufferRecognitionRequest()
@@ -110,10 +110,10 @@ final class LiveSpeechTranscriber: SpeechTranscriber, @unchecked Sendable {
                         continuation.yield(.recognizing(state.lastText, isFinal: true))
                         continuation.finish()
                     } else if state.audioEnded {
-                        continuation.yield(TranscriptUpdate(settled: "", isFinal: true))
+                        continuation.yield(CompassCore.TranscriptUpdate(settled: "", isFinal: true))
                         continuation.finish()
                     } else {
-                        continuation.finish(throwing: TranscriberError.failed)
+                        continuation.finish(throwing: CompassCore.TranscriberError.failed)
                     }
                 }
             }
@@ -142,11 +142,11 @@ final class LiveSpeechTranscriber: SpeechTranscriber, @unchecked Sendable {
         }
     }
 
-    func transcribe(_ recording: Recording) async throws -> String {
-        guard permission == .granted else { throw TranscriberError.permissionDenied }
-        guard let recognizer = onDeviceRecognizer() else { throw TranscriberError.failed }
+    func transcribe(_ recording: CompassCore.Recording) async throws -> String {
+        guard permission == .granted else { throw CompassCore.TranscriberError.permissionDenied }
+        guard let recognizer = onDeviceRecognizer() else { throw CompassCore.TranscriberError.failed }
         let url = storage.url(for: recording.fileName)
-        guard FileManager.default.fileExists(atPath: url.path) else { throw TranscriberError.failed }
+        guard FileManager.default.fileExists(atPath: url.path) else { throw CompassCore.TranscriberError.failed }
 
         let request = SFSpeechURLRecognitionRequest(url: url)
         request.requiresOnDeviceRecognition = true
@@ -161,14 +161,14 @@ final class LiveSpeechTranscriber: SpeechTranscriber, @unchecked Sendable {
                 if let result, result.isFinal {
                     once.run { continuation.resume(returning: result.bestTranscription.formattedString) }
                 } else if error != nil {
-                    once.run { continuation.resume(throwing: TranscriberError.failed) }
+                    once.run { continuation.resume(throwing: CompassCore.TranscriberError.failed) }
                 }
             }
         }
         once.task = nil
         once.recognizer = nil
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { throw TranscriberError.failed }
+        if trimmed.isEmpty { throw CompassCore.TranscriberError.failed }
         return trimmed
     }
 }
