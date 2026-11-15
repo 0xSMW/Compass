@@ -178,13 +178,12 @@ struct OnboardingListeningView: View {
                     .compassFont(draft.answering ? .heading : .title)
                     .foregroundStyle(.ink2)
                     .onboardingWraps()
-                ScrollView {
-                    LiveTranscript(settled: settled, pending: pending)
-                        .onboardingWraps()
-                }
-                .scrollIndicators(.hidden)
-                .defaultScrollAnchor(.bottom)
-                .accessibilityLabel(settled.isEmpty && pending.isEmpty ? "Listening" : settled + " " + pending)
+                // Words land right under the question.
+                LiveTranscript(settled: settled, pending: pending)
+                    .onboardingWraps()
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .clipped()
+                    .accessibilityLabel(settled.isEmpty && pending.isEmpty ? "Listening" : settled + " " + pending)
             }
             .region(.focalTop)
 
@@ -496,6 +495,9 @@ struct OnboardingRhythmView: View {
             Text(time.description)
                 .font(.custom(CompassType.micro.fontName(.medium), fixedSize: 28))
                 .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize()
+                .layoutPriority(1)
                 .accessibilityLabel("\(title) at \(time.description)")
             IconButton(.minus, label: "\(title) earlier", action: earlier)
             IconButton(.plus, label: "\(title) later", action: later)
