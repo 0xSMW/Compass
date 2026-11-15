@@ -24,13 +24,14 @@ Packages/CompassCore/           Pure Swift, Linux-buildable. `swift test` runs h
   Tests/CompassCoreTests/       DayEngine, Store, History, Fixture tests
 Compass/
   App/                          CompassApp + RootView, AppModel, LaunchOptions      (shared)
-  Navigation/                   ScreenRegistry (ID → flow), ScreenStub             (shared)
+  Navigation/                   ScreenRegistry (ID → flow)                         (shared)
   DesignSystem/
     Tokens/                     Colors, Typography, Metrics (Space/Radius/ControlSize/IconSize/Motion),
                                 Icons (also compiled into the widget)
     Icons.xcassets              34 template SVG icons "icon-<id>" from symbols.html (scripts/gen_icons.py)
     Layout/                     Regions (ScreenMetrics, Region, .region()), FlowScreen, TodayScaffold
-    Components/                 Buttons, Voice, Navigation, Controls, StepCard (+ Feedback, CompassSheet)
+    Components/                 CompassText, CompassTextEditor, Buttons, Voice, Navigation, Controls,
+                                StepCard (+ Feedback, CompassSheet, confirm / part-picker sheets)
   Features/<Flow>/              ONE FOLDER PER FLOW, owned by that flow's agent
     Onboarding/OnboardingScreens.swift   A1–A8, R1–R3
     Morning/MorningScreens.swift         B1–B8
@@ -100,7 +101,7 @@ snapshot refers to are uploaded or downloaded.
    static func view(for id: ScreenID) -> some View {
        switch id {
        case .d1, .d1L, .d7: EveningQuestionView(id: id)
-       default: ScreenStub(id: id)
+       default: EmptyView() // ScreenRegistry sends only this flow's IDs
        }
    }
    ```
@@ -143,48 +144,76 @@ snapshot refers to are uploaded or downloaded.
 
 ## Design system (SwiftUI port of kit.css)
 
-Tokens: colours `.ground .surface .raised .line .line2 .ink .noticeInk .ink2 .ink3 .dim .destructive .scrim`
-(`ShapeStyle` statics, so `.foregroundStyle(.ink2)` and `Color.ink` both work).
-Type: `.compassFont(.display | .title | .live | .heading | .body | .caption | .micro, weight:)` —
-Inter Tight / Plex Mono, spec line heights, Dynamic Type scaled to the spec's AX5 column.
-`Space.xs/s/m/l/xl = 8/16/24/32/48`, `Radius.card 24 / tile 12 / pill(h)`, `ControlSize`, `IconSize`, `Motion`.
-Layout: `FlowScreen { … }` + `.region(.nav | .subject | .focal | .focalTop | .middle(top:) | .wave | .dock |
+Everything on screen comes from `Compass/DesignSystem`. Features compose these pieces; they don't set
+fonts, draw their own docks, notices, chips or sheets, or use system menus, alerts or pickers.
+
+**Tokens.** Colours `.ground .surface .raised .line .line2 .ink .noticeInk .ink2 .ink3 .dim .destructive .scrim`
+(`ShapeStyle` statics). Text is never `.dim` (3.8:1): placeholders use `.ink3` (5.7:1).
+`Space.xs/s/m/l/xl = 8/16/24/32/48`, `Radius.card 24 / tile 12 / pill(h)`, `ControlSize`, `IconSize`
+(`xs 16 · s 20 · i 24 · m 28 · l 36`, kit.css `svg.*`), `Motion` (`turnTaking` 200 ms, `answerToRecord` 240 ms,
+`complete` 240 ms, `breath` 4 s; every one cut with Reduce Motion / `-uitest`).
+
+**Type.** `CompassType`: `display 44/48 · title 34/40 · live 24/32 · heading 22/28 · body 17/24 · caption 15/20 ·
+micro 13/16 mono` plus the board-only tokens `label` (13/16 Inter 500, History day labels), `nav` (17 → 22 at
+AX), `bodyMono` (Settings times), `time` (28/32 mono, A6), `numeral` (96, −0.05em, F2) and `clock` (96,
+−0.04em, I5). Each scales along the spec's curve to its AX5 size (micro is `mono axC` 22/28 at AX).
+
+**Text: one primitive.** `CompassText(_:style:weight:color:)` (or `runs:` for live words) sets every style on
+the spec's exact line boxes: a UILabel with a fixed paragraph line height, glyphs centred in each box as CSS
+does, and no line-break strategy, so lines break like the boards (SwiftUI's `Text` can't go below the font's
+natural line, so title/display grew 1–2pt a line, and it pushes a word down to avoid orphans). It reads the
+environment like `Text`: Dynamic Type, `.lineLimit`, `.multilineTextAlignment`, `.truncationMode(.head)`
+(keeps the newest words), `.minimumScaleFactor`; colour is a parameter. Typed text uses
+`CompassTextEditor` (UITextView, same line boxes, ink3 placeholder, `lines:` range, Return submits) through
+`UnderlineField` and `BoxedField`. `.compassFont` remains only for the widget extension (no UIKit there; the
+app's I6 board passes `CompassText` into `TodayWidgetContent`).
+
+**Layout.** `FlowScreen { … }` + `.region(.nav | .subject | .focal | .focalTop | .middle(top:) | .wave | .dock |
 .buttonDock | .buttonDockHigh | .linkDock | .labels | .player | .todayDock | .aboveKeyboard | .keyboard |
 .custom(top:bottom:inset:) | .growsUp(bottom:))`. `.aboveKeyboard` is keyboard-relative (16 above the real
 keyboard via `KeyboardFrame`, or the estimated one: 508 on 844, 260pt tall on iPhone SE); draw screenshot
-keyboards in `.keyboard`; `TodayScaffold(onHistory:onSettings:header:notes:card:dock:overlay:)`.
+keyboards with `KeyboardPlaceholder().region(.keyboard)`. `.scrollingRegion(_:)` places text that can
+outgrow its region at large sizes: it sits on the region's lines, and scrolls inside it (starting at the top)
+instead of running into the dock (A1, A2, A5–A7, R1–R3, F2, F3, G2). `TodayScaffold(onHistory:onSettings:
+trailing:header:notes:card:dock:overlay:)`; `trailing` swaps Settings for a visible escape (C10 "Cancel").
+
+**Sheets.** `CompassSheet(height:label:dismissTitle:contentTop:onDismiss:content:actions:)` /
+`.compassSheet(isPresented:…) { content } actions: { … }`. `height` is the board's height at Large; the sheet
+grows to fit its content up to the safe top and the content scrolls beyond that. Actions sit bottom-anchored
+(last one on 684–740, the 712 line) and the escape link (`dismissTitle`, "Cancel"/"Close") is always drawn on
+744–792: no hidden gestures (the scrim tap and VoiceOver escape also dismiss). Levels inside a sheet (C6 →
+Counts toward, E4 → part / delete) swap its content; Cancel goes one level back. Built on it:
+`.confirmSheet(isPresented:title:message:confirm:role:onConfirm:)` (replaces `confirmationDialog`),
+`.partPickerSheet(isPresented:parts:selected:onPick:)` and `PartPickerRows` (replace `Menu`), and
+`TimeStepperRow` (A6's − 07:00 + row, used by Settings instead of a wheel `DatePicker`).
 
 | Component | kit.css | Notes |
 |---|---|---|
 | `MicButton(mode: .idle/.rings/.breathing/.listening/.recording, size:icon:label:action:)` | `.mic` `.ringw` `.glow` `.stop` | breath 4 s, still when reduced |
-| `Waveform(levels:lit:count:)`, `LevelBar(level:)`, `MiniWaveform(levels:)` | `.wavebar`, `.minw` | level bar when reduced |
-| `ChoiceCircles(yes:no:yesIcon:onYes:onNo:)` | `.dockc` `.choice` | 96 circles; 72pt buttons at AX sizes |
-| `VoiceDock(micMode:keyboardLabel:onKeyboard:onMic:side:)` | `.dock` `.side` | keyboard left, Skip right |
-| `Player(duration:isPlaying:levels:showsRedo:onPlay:onRedo:)` | `.player` | 80 tall on 712 |
-| `PrimaryButton(_:icon:role:height:action:)` | `.btn` `.btn.danger` | `role: .destructive` |
-| `SecondaryButton(_:icon:height:action:)` | `.btn2` | |
-| `LinkButton(_:tone: .quiet/.ink, action:)` | `.lnk` `.lnk.ink` | |
+| `Waveform(levels:lit:count:isStatic:)`, `LevelBar(level:)`, `MiniWaveform(levels:)` | `.wavebar`, `.minw` | level bar when reduced unless `isStatic` (fixture bars) |
+| `ChoiceCircles(yes:no:yesIcon:onYes:onNo:)` | `.dockc` `.choice` | check 36; the tapped circle becomes the mic in 240 ms; 72pt buttons at AX |
+| `VoiceDock(micMode:micLabel:keyboardLabel:onKeyboard:onMic:side:)`, `DockSkip` | `.dock` `.side` | the one voice dock; keyboard glyph 28 at AX |
+| `TodayDock(recording:typingFirst:levels:onKeyboard:onNote:)`, `NotePill` | `.tdock` `.pill` | `typingFirst` swaps the jobs (Start with: Typing) |
+| `Player(duration:isPlaying:levels:showsRedo:onPlay:onRedo:)` | `.player` | 80 tall on 712; redo 20 (28 at AX); duration micro |
+| `PrimaryButton`, `SecondaryButton` | `.btn` `.btn2` | icon 20 (28 at AX); `role: .destructive` |
+| `LinkButton(_:tone: .quiet/.ink/.destructive, style:padding:minHeight:)` | `.lnk` | never under 44 × 44 |
 | `ButtonDock(primary:primaryIcon:role:link:onPrimary:onLink:)` | `.dockb` + `.dockl` | places itself |
-| `CircleButton(_:label:style: .outline/.ink, action:)` | `.c56` `.c56.ink` | |
-| `IconButton(_:label:bare:tint:action:)` | `.ic44` `.ic44.bare` | |
-| `NotePill(title:recording:levels:action:)`, `TodayDock(recording:onKeyboard:onNote:)` | `.pill` `.tdock` | |
-| `NoteRow(text:duration:action:)` | `.note` | |
-| `Chip(title:icon:trailing:accessibilityLabel:action:)` | `.chip` | |
-| `Tile(icon:)` | `.tile` | |
-| `ListRow(icon:tile:title:value:showsTopLine:tint:action:accessory:)` | `.lr` | |
+| `CircleButton(_:label:style: .outline/.ink/.fill, size:iconSize:)` | `.c56` | |
+| `IconButton(_:label:bare:tint:iconSize:)` | `.ic44` | |
+| `NoteRow(note:count:action:)` / `NoteRow(text:spoken:meta:…)` | `.note` | the one note row; meta drops at AX |
+| `Chip(title:icon:iconTint:trailing:accessibilityLabel:tint:action:)` | `.chip` | the one chip; no action = static (E2); grows at AX |
+| `Notice(icon:text:actions:layout: .inline/.stacked, actionSpacing:actionHeight:centred:onDismiss:)` | `.notice` | the one notice (I1–I4, D6, D6b, Today); 44pt action targets |
+| `Tile`, `ListRow(icon:tile:title:value:valueStyle:showsTopLine:lineColor:tint:action:accessory:)`, `RowChevron` | `.tile` `.lr` | |
 | `CompassSwitch(label:isOn:)` | `.sw` | |
-| `UnderlineField(prompt:text:style:axis:focused:showsFocus:)` | `.field` `.field.focus` | |
-| `.compassSheet(isPresented:height:label:content:)`, `CompassSheet` | `.sheet` `.scrim` `.grab` | |
-| `Notice(icon:text:actionTitle:action:)` | `.notice` | |
-| `StepCard(title:partTitle:partIcon:state: .empty/.open/.justDone/.done, onToggle:onUndo:onOptions:onPlan:showsOptions:)` | `.slot` | min 176, grows up |
-| `CompletionCircle(isDone:onChange:)` + `Feedback` | `.c56.done(.on)` | 240 ms fill, click (silent switch), light haptic, "Done, undo available" |
-| `NavBar(leading:trailing:progress:solid:)`, `NavItem.close/.back/.text/.icon` | `.nav` `.navb` | pinned to Large type (controls keep size); `solid` = ground + hairline |
-| `ProgressDots(total:current:)` | `.prog` | 4 segments |
-| `SubjectLine(icon:text:)` | `.ctx` | |
+| `UnderlineField(prompt:text:style:lines:focused:showsFocus:label:onSubmit:)`, `BoxedField` | `.field` | on `CompassTextEditor` |
+| `StepCard(…)`, `CompletionCircle` + `Feedback` | `.slot` `.c56.done` | min 176, grows up; 240 ms fill, one click |
+| `NavBar(leading:trailing:progress:solid:scalesText:)`, `NavItem.close(_:)/.back/.quietBack/.text/.icon` (`iconSize`) | `.nav` `.navb` | `scalesText`: 24 → 28 icons, 17 → 22 text, 16 → 20 chevrons at AX |
+| `ProgressDots`, `SubjectLine(icon:text:redoLabel:onRedo:)` | `.prog` `.ctx` | symbol 20 (28 at AX), redo 20 |
 | `LiveTranscript(settled:pending:style:)` | `.live` + `.dim` | |
-| `SegmentedPill(options:selection:)`, `OptionCard(selected:action:content:)` | history `.seg` `.opt` | |
-| `DayMarkView(mark:size:)`, `GoalEndMarker(achieved:)` | history `.dot` `.dr` `.tm` | |
-| `Icon(_ :size:)`, `CompassIcon` (34 cases, `.sfSymbol`, `init(PartSymbol)`) | `symbols.html` | |
+| `SegmentedPill`, `OptionCard` | history `.seg` `.opt` | 44pt segment targets |
+| `DayMarkView(mark:size: .week/.line)`, `GoalEndMarker(achieved:size:)` | history `.dot` `.dr` `.tm` | the one history mark (E1 rows, E3 weeks, E2 subject) |
+| `KeyboardPlaceholder` | `.keys` | screenshots only |
+| `Icon(_:size:)`, `CompassIcon` (34 cases) | `symbols.html` | |
 
 ## CI loop and screenshots
 

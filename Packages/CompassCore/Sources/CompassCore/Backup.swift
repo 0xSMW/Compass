@@ -296,7 +296,7 @@ extension Fixtures {
 
     /// What R1/R2 bring back: the standard goal and history, without past goals ("1 goal").
     public static var restorableSnapshot: CompassSnapshot {
-        var s = snapshot(today: nil)
+        var s = totalsSnapshot
         s.pastGoals = []
         return s
     }

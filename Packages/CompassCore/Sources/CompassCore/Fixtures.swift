@@ -162,9 +162,10 @@ public enum Fixtures {
         ("Gym, legs", strengthPartID), ("Lunch with Priya", friendsPartID), ("Fixed the invoice flow", wealthPartID),
     ]
 
-    /// Past days for the standard goal: 14 Apr → 9 Nov, patterned like the boards.
-    public static func historyDays(calendar: Calendar = Fixtures.calendar) -> [Day] {
-        let start = DayKey(year: 2026, month: 4, day: 14)
+    /// Past days for the standard goal: `start` (14 Apr) → 9 Nov, patterned like the boards. Evening
+    /// entries before `spokenFrom` were typed (no recording); from then on they were spoken.
+    public static func historyDays(calendar: Calendar = Fixtures.calendar, start: DayKey = DayKey(year: 2026, month: 4, day: 14),
+                                   spokenFrom: DayKey? = nil) -> [Day] {
         let yesterday = todayKey.adding(days: -1, calendar: calendar)
         let lastWeekStart = todayKey.adding(days: -6, calendar: calendar)
         let patternStart = lastWeekStart.adding(days: -7 * weekPatterns.count, calendar: calendar)
@@ -196,7 +197,9 @@ public enum Fixtures {
             if moved {
                 let stepName = key == yesterday ? pitchStepTitle : title
                 day.step = Step(id: uuid(10_000 + i), title: stepName, partID: part, createdAt: at(7, 10), completedAt: at(17, 30))
-                day.reflection = Reflection(outcome: .moved, transcript: title, summary: title, duration: 10, partID: part, createdAt: at(21, 10))
+                let spoken = spokenFrom.map { key >= $0 } ?? true
+                day.reflection = Reflection(outcome: .moved, transcript: title, summary: title, duration: spoken ? 10 : nil, partID: part,
+                                            createdAt: at(21, 10))
             } else if let reason, key >= patternStart.adding(days: -14, calendar: calendar) {
                 // Recent missed days carry their reason; quiet weeks (7–13 Oct) stay empty.
                 if !(key >= patternStart && key < lastWeekStart && weekPatterns[patternStart.days(to: key, calendar: calendar) / 7] == "0000000") {
@@ -223,6 +226,18 @@ public enum Fixtures {
         var days = history ?? historyDays()
         if let today { days.append(today) }
         return CompassSnapshot(goal: goal, pastGoals: pastGoals, days: days, settings: settings)
+    }
+
+    /// The whole store the totals boards count (R1 "212 steps · 186 memos · 1 goal", R2, H2 "212 steps,
+    /// 186 memos and 2 past goals"): the same goal and patterns, kept since 20 Feb, with evening entries
+    /// typed until 13 Apr and spoken after. None of these screens shows the start date. (G1/G2's "Since 14
+    /// Apr · 212 steps" can't come out naturally: 14 Apr–10 Nov is 211 days, one step a day.)
+    public static var totalsSnapshot: CompassSnapshot {
+        let start = DayKey(year: 2026, month: 2, day: 20)
+        var g = goal
+        g.createdAt = date(start, 8)
+        return snapshot(today: nil, goal: g,
+                        history: historyDays(start: start, spokenFrom: DayKey(year: 2026, month: 4, day: 13)))
     }
 
     public static var pastGoals: [Goal] {
@@ -369,7 +384,11 @@ public enum Fixtures {
             cond.transcriptionFails = true
 
         // E · History
-        case .e1, .e3: evening(today(done: true, reflection: savedReflection), hour: 21, minute: 40)
+        case .e1: evening(today(done: true, reflection: savedReflection), hour: 21, minute: 40)
+        case .e3:
+            // history.html E3 lists nine weeks and stops at 9–15 Sep: the weeks since this goal began.
+            evening(today(done: true, reflection: savedReflection), hour: 21, minute: 40)
+            snap.goal?.createdAt = date(DayKey(year: 2026, month: 9, day: 9), 8)
         case .e2, .e4, .e6:
             evening(today(done: true, reflection: savedReflection), hour: 21, minute: 40)
             selected = DayKey(year: 2026, month: 11, day: 7)
@@ -427,7 +446,9 @@ public enum Fixtures {
             snap = snapshot(today: d, goal: g)
 
         // H · Settings
-        case .h1, .h2: break
+        case .h1: break
+        // Nothing yet today, so the totals are the store's (the same as R1's backup).
+        case .h2: snap = totalsSnapshot
 
         // I · System
         case .i1: morning(); cond.microphone = .denied

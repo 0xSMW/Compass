@@ -167,10 +167,30 @@ final class SyncMergeTests: XCTestCase {
 
 final class BackupTests: XCTestCase {
     func testFixtureCountsMatchBoards() {
+        // settings.html H2: "212 steps, 186 memos and 2 past goals".
         let s = Fixtures.fixture(for: .h2).snapshot
         XCTAssertEqual(s.pastGoals.count, 2)
-        XCTAssertGreaterThan(s.totalSteps, 150)
-        XCTAssertGreaterThan(s.memoCount, 150)
+        XCTAssertEqual(s.totalSteps, 212)
+        XCTAssertEqual(s.memoCount, 186)
+        // onboarding.html R1 / R2: "212 steps · 186 memos · 1 goal", "212 steps restored."
+        let backup = BackupSummary(snapshot: Fixtures.restorableSnapshot)
+        XCTAssertEqual(backup.line, "212 steps · 186 memos · 1 goal")
+        XCTAssertEqual(backup.steps, 212)
+        // goal.html G1 / G2 count this goal since 14 Apr: one step a day can't reach the boards' 212
+        // in the 211 days to 10 Nov, so they show the patterned history's own totals.
+        XCTAssertEqual(Fixtures.fixture(for: .g1).snapshot.movedCount, 166)
+        XCTAssertEqual(Fixtures.fixture(for: .g2).snapshot.movedCount, 167)
+    }
+
+    func testEarlierWeeksStopWhereTheBoardDoes() {
+        // history.html E3: nine weeks, 4–10 Nov back to 9–15 Sep.
+        let f = Fixtures.fixture(for: .e3)
+        let builder = HistoryBuilder(calendar: f.calendar)
+        let weeks = builder.weeks(snapshot: f.snapshot, today: DayKey(f.now, calendar: f.calendar))
+        XCTAssertEqual(weeks.map { builder.label(for: $0) }.first, "4–10 Nov")
+        XCTAssertEqual(weeks.map { builder.label(for: $0) }.last, "9–15 Sep")
+        XCTAssertEqual(weeks.count, 9)
+        XCTAssertEqual(weeks.map(\.movedCount), [6, 6, 5, 2, 0, 2, 6, 6, 7])
     }
 
     func testPastGoalLines() {
