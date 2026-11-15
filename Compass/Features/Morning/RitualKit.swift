@@ -28,10 +28,8 @@ struct RitualSubject: View {
             if let icon {
                 Icon(icon, size: dts.isAccessibilitySize ? IconSize.m : IconSize.s).padding(.top, 2)
             }
-            Text(text)
-                .compassFont(.body)
+            RitualText(text, style: .body, color: .ink2)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
             if let onRedo {
                 IconButton(.redo, label: redoLabel ?? "Say it again", bare: true, action: onRedo)
                     .padding(.top, -10)
@@ -113,10 +111,7 @@ struct ListeningFocal: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s) {
-            Text(question)
-                .ritualFont(.title)
-                .foregroundStyle(.ink2)
-                .fixedSize(horizontal: false, vertical: true)
+            RitualText(question, style: .title, color: .ink2)
             TranscriptScroll(settled: settled, pending: pending)
         }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -290,28 +285,67 @@ struct AboveKeyboardAction: View {
     }
 }
 
-/// `compassFont` keeps the spec's line height only when it is taller than Inter Tight's natural line.
-/// Display (44/48, 56/60 at AX5) and title (34/40, 48/52) are tighter, so ritual text would grow a few
-/// points per line and drift off the boards. This applies the negative leading too.
-private struct RitualTightFontModifier: ViewModifier {
-    @Environment(\.dynamicTypeSize) private var dts
-    let style: CompassType
+/// Text on the board's exact line boxes, wrapped like the boards.
+///
+/// SwiftUI ignores negative `lineSpacing`, and display (44/48, 56/60 at AX5) and title (34/40, 48/52)
+/// are tighter than Inter Tight's natural line, so ritual text would grow a few points per line. SwiftUI
+/// also moves a word down to avoid a one-word last line, which the boards don't do. A UILabel with a
+/// fixed paragraph line height and no line-break strategy keeps CSS's line boxes and breaks; glyphs sit
+/// centred in each box.
+struct RitualText: UIViewRepresentable {
+    let text: String
+    var style: CompassType
+    var color: Color = .ink
 
-    func body(content: Content) -> some View {
-        let size = style.size(for: dts)
-        let leading = style.lineHeight(for: dts) - style.uiFont(for: dts).lineHeight
-        content
-            .font(style.font(for: dts))
-            .tracking(style.spec.tracking * size)
-            .lineSpacing(leading)
-            .padding(.vertical, leading / 2)
+    init(_ text: String, style: CompassType, color: Color = .ink) {
+        self.text = text
+        self.style = style
+        self.color = color
     }
-}
 
-extension View {
-    /// Display / title with the board's exact line boxes (see `RitualTightFontModifier`).
-    func ritualFont(_ style: CompassType) -> some View {
-        modifier(RitualTightFontModifier(style: style))
+    func makeUIView(context: Context) -> UILabel {
+        let label = UILabel()
+        label.numberOfLines = 0
+        label.lineBreakMode = .byWordWrapping
+        label.backgroundColor = .clear
+        label.adjustsFontForContentSizeCategory = false
+        label.isAccessibilityElement = true
+        label.accessibilityTraits = .staticText
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        label.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        return label
+    }
+
+    func updateUIView(_ label: UILabel, context: Context) {
+        label.attributedText = attributed(context.environment.dynamicTypeSize)
+        label.accessibilityLabel = text
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView label: UILabel, context: Context) -> CGSize? {
+        let width = proposal.width ?? ScreenMetrics.designWidth - 2 * Space.inset
+        label.attributedText = attributed(context.environment.dynamicTypeSize)
+        label.preferredMaxLayoutWidth = width
+        let fitted = label.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        return CGSize(width: width, height: ceil(fitted.height))
+    }
+
+    private func attributed(_ dts: DynamicTypeSize) -> NSAttributedString {
+        let font = style.uiFont(for: dts)
+        let lineHeight = style.lineHeight(for: dts)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.minimumLineHeight = lineHeight
+        paragraph.maximumLineHeight = lineHeight
+        paragraph.lineBreakMode = .byWordWrapping
+        paragraph.lineBreakStrategy = []
+        // UIKit puts a line box's slack above the glyphs; CSS splits it evenly.
+        let baselineOffset = (lineHeight - font.lineHeight) / 2
+        return NSAttributedString(string: text, attributes: [
+            .font: font,
+            .foregroundColor: UIColor(color),
+            .kern: style.spec.tracking * style.size(for: dts),
+            .paragraphStyle: paragraph,
+            .baselineOffset: baselineOffset,
+        ])
     }
 }
 

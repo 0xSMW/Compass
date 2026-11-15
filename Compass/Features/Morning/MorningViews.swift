@@ -17,9 +17,7 @@ struct MorningCenterView: View {
             NavBar(leading: model.morningClose, scalesText: true).region(.nav)
 
             VStack(alignment: .leading, spacing: Space.m) {
-                Text(model.goal?.text ?? "")
-                    .ritualFont(.display)
-                    .fixedSize(horizontal: false, vertical: true)
+                RitualText(model.goal?.text ?? "", style: .display)
                 Text(MorningSession.Purpose.intention.question)
                     .compassFont(.heading)
                     .foregroundStyle(.ink2)
@@ -115,9 +113,7 @@ struct MorningPlanView: View {
 
             VStack(alignment: .leading, spacing: Space.s) {
                 if let idea {
-                    Text(idea.title)
-                        .ritualFont(.title)
-                        .fixedSize(horizontal: false, vertical: true)
+                    RitualText(idea.title, style: .title)
                     let part = model.part(idea.partID)
                     HStack(alignment: .top, spacing: Space.xs) {
                         if let part { Icon(CompassIcon(part.symbol), size: IconSize.s) }
@@ -191,9 +187,7 @@ struct MorningNameStepView: View {
                 RitualSubject(text: model.goal?.text ?? "").region(.subject)
             }
 
-            Text(MorningSession.Purpose.step.question)
-                .ritualFont(.title)
-                .fixedSize(horizontal: false, vertical: true)
+            RitualText(MorningSession.Purpose.step.question, style: .title)
                 .region(.focal)
 
             if let problem = ritualMicProblem(model, session.micProblem) {
@@ -293,9 +287,7 @@ struct MorningWhyView: View {
             RitualSubject(text: model.goal?.text ?? "").region(.subject)
 
             VStack(alignment: .leading, spacing: Space.s) {
-                Text(MorningSession.Purpose.why.question)
-                    .ritualFont(.title)
-                    .fixedSize(horizontal: false, vertical: true)
+                RitualText(MorningSession.Purpose.why.question, style: .title)
                 Text("You’ll hear your answer on hard days.")
                     .compassFont(.body)
                     .foregroundStyle(.ink2)

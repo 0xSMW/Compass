@@ -17,9 +17,7 @@ struct EveningQuestionView: View {
 
             RitualSubject(icon: subject.icon, text: subject.text).region(.subject)
 
-            Text(hasStep ? "Did you do it?" : "Did you move toward it today?")
-                .ritualFont(.title)
-                .fixedSize(horizontal: false, vertical: true)
+            RitualText(hasStep ? "Did you do it?" : "Did you move toward it today?", style: .title)
                 .region(.focal)
 
             ChoiceCircles(
@@ -46,9 +44,7 @@ struct EveningDoneEarlierView: View {
 
             RitualSubject(icon: subject.icon, text: subject.text).region(.subject)
 
-            Text(ReflectionRules.question(outcome: .moved, kind: .doneEarlier))
-                .ritualFont(.title)
-                .fixedSize(horizontal: false, vertical: true)
+            RitualText(ReflectionRules.question(outcome: .moved, kind: .doneEarlier), style: .title)
                 .region(.focal)
 
             RitualVoiceDock(
@@ -90,9 +86,7 @@ struct EveningReflectView: View {
             if session.typing {
                 typing
             } else if let problem = session.micProblem {
-                Text(question)
-                    .ritualFont(.title)
-                    .fixedSize(horizontal: false, vertical: true)
+                RitualText(question, style: .title)
                     .region(.focal)
                 TypeInsteadDock(reason: problem) {
                     session.micProblem = nil
@@ -131,10 +125,7 @@ struct EveningReflectView: View {
     @ViewBuilder
     private var typing: some View {
         VStack(alignment: .leading, spacing: Space.s) {
-            Text(question)
-                .ritualFont(.title)
-                .foregroundStyle(.ink2)
-                .fixedSize(horizontal: false, vertical: true)
+            RitualText(question, style: .title, color: .ink2)
             UnderlineField(prompt: "Type it here", text: $session.draft, style: .live, focused: $focused)
                 .accessibilityLabel(question)
         }
@@ -205,9 +196,7 @@ struct EveningSavedView: View {
         let showsTranscript = ReflectionRules.showsTranscript(r)
         let open = expanded && showsTranscript
         VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .ritualFont(.title)
-                .fixedSize(horizontal: false, vertical: true)
+            RitualText(title, style: .title)
                 .contentTransition(.opacity)
                 .animation(Motion.animation(Motion.turnTaking, reduced: reduced), value: title)
 
