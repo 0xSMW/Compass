@@ -57,13 +57,14 @@ extension AppModel {
     /// (R1/R2 restore the fixture; R3 has nothing).
     var backupRestorer: BackupRestoring {
         if fixture != nil { return FakeBackupRestoring(conditions: conditions) }
+        if launch.tapThrough { return FakeBackupRestoring(snapshot: nil) } // a fresh install: Begin onboards
         return LiveSync.backupRestorer
     }
 
     /// This install, for stamping new recordings and telling devices apart in E5. Screenshot runs use a
     /// fixed id and take the fixtures' "This iPhone" labels at their word.
     var deviceIdentity: DeviceIdentity {
-        if fixture != nil { return DeviceIdentity(id: "fixture-device", model: SyncDevice.model, trustsLegacyLabels: true) }
+        if fixture != nil || launch.tapThrough { return DeviceIdentity(id: "fixture-device", model: SyncDevice.model, trustsLegacyLabels: true) }
         return LiveSync.deviceIdentity
     }
 

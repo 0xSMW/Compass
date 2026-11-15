@@ -2,7 +2,6 @@ name: iOS
 
 on:
   push:
-    branches: [main, claude/friendly-ritchie-5q2nh9]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -13,15 +12,18 @@ on:
 
 # No concurrency group: several agents push in parallel and each needs its own
 # run to finish. Screenshot commits rebase before pushing; README.txt names the
-# commit that produced the current PNGs. Only pushes to the screenshot branch
-# commit PNGs back; pull requests and main build and test without writing.
+# commit that produced the current PNGs. Only a push to a branch other than the
+# default one commits PNGs back (to that same branch, github.ref_name), from the
+# `screenshots` job: the only job with write access. Pull requests and the
+# default branch build and test read-only.
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   XCODE_APP: /Applications/Xcode_26.6.app
-  SCREENSHOT_BRANCH: claude/friendly-ritchie-5q2nh9
+  # Screenshots are published for pushes to any branch except the default one.
+  PUBLISH_SCREENSHOTS: ${{ github.event_name == 'push' && github.ref_name != github.event.repository.default_branch }}
 
 jobs:
   core:
@@ -88,13 +90,20 @@ jobs:
             | tee build/build.log | grep -E "error:|warning: .*deprecated|BUILD|\*\*" || true
           grep -q "TEST BUILD SUCCEEDED" build/build.log || { grep -E "error:" -A3 build/build.log | head -200; exit 1; }
 
+      # Gate: any concurrency warning fails the run (strict checking is `complete`, Swift 5 mode).
+      # Fix it, or `@preconcurrency import` the module it comes from; an `@unchecked Sendable` needs a
+      # one-line justification comment.
       - name: Concurrency warnings (strict checking, Swift 5 mode)
+        id: warnings
         if: always()
         run: |
-          grep -E "warning: .*(Sendable|actor-isolated|main actor|data race|concurrency|isolation)" build/build.log \
+          mkdir -p build && touch build/build.log
+          grep -E "warning: .*(Sendable|actor-isolated|main actor|data race|concurrency|isolation|Swift 6 language mode|preconcurrency)" build/build.log \
             | sed -E 's#^.*/(Compass[^:]*|Shared[^:]*|Packages[^:]*):#\1:#' | sort -u > build/concurrency-warnings.txt || true
-          echo "Unique concurrency warnings: $(wc -l < build/concurrency-warnings.txt | tr -d ' ')"
+          COUNT=$(wc -l < build/concurrency-warnings.txt | tr -d ' ')
+          echo "Unique concurrency warnings: $COUNT"
           head -80 build/concurrency-warnings.txt
+          if [ "$COUNT" -gt 0 ]; then echo "::error::$COUNT concurrency warning(s); new warnings fail CI"; echo "status=1" >> "$GITHUB_OUTPUT"; else echo "status=0" >> "$GITHUB_OUTPUT"; fi
 
       - name: Check privacy manifest and usage strings in the app bundle
         run: |
@@ -136,12 +145,30 @@ jobs:
             -derivedDataPath build/DerivedData \
             -resultBundlePath build/Screenshots.xcresult \
             -only-testing:CompassUITests \
+            -skip-testing:CompassUITests/TapThroughTests \
             > build/test.log 2>&1
           STATUS=$?
           grep -E "Test Case|error:|failed|passed|TEST" build/test.log | tail -80
           COUNT=$(ls build/screens-raw | wc -l | tr -d ' ')
           echo "Screenshots: $COUNT"
           if [ -z "${TEST_RUNNER_SCREENS}" ] && [ "$COUNT" -lt 66 ] && [ "$STATUS" = "0" ]; then echo "Expected 66 screenshots"; STATUS=1; fi
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+      # One day through the live flow on the fakes (A1 → … → A7 → B1 → B4/B5 → C3 + note → D1 → D5).
+      - name: Tap-through UI test (live flow on fakes)
+        id: tapthrough
+        run: |
+          set +e
+          xcodebuild test-without-building \
+            -project Compass.xcodeproj -scheme Compass \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build/DerivedData \
+            -resultBundlePath build/TapThrough.xcresult \
+            -only-testing:CompassUITests/TapThroughTests \
+            > build/tapthrough.log 2>&1
+          STATUS=$?
+          grep -E "Test Case|error:|failed|passed|Executed|TEST" build/tapthrough.log | tail -40
+          if ! grep -q "Executed 1 test" build/tapthrough.log; then echo "The tap-through test did not run"; STATUS=1; fi
           echo "status=$STATUS" >> "$GITHUB_OUTPUT"
 
       - name: Small-screen keyboard pass (iPhone SE, 375x667)
@@ -181,42 +208,37 @@ jobs:
           xcrun simctl shutdown "$SE" || true
           echo "status=$STATUS" >> "$GITHUB_OUTPUT"
 
-      - name: Normalise screenshots to 390x844 and commit
-        if: always() && steps.sim.outcome == 'success' && github.event_name == 'push' && github.ref_name == env.SCREENSHOT_BRANCH
+      - name: Normalise screenshots to 390x844
+        if: always() && steps.sim.outcome == 'success' && env.PUBLISH_SCREENSHOTS == 'true'
         run: |
           set -euo pipefail
-          mkdir -p renders/ios
+          mkdir -p build/publish/ios
           shopt -s nullglob
           PNGS=(build/screens-raw/*.png)
           if [ ${#PNGS[@]} -eq 0 ]; then echo "No screenshots produced"; exit 0; fi
           for f in "${PNGS[@]}"; do
-            sips -z 844 390 "$f" --out "renders/ios/$(basename "$f")" > /dev/null
+            sips -z 844 390 "$f" --out "build/publish/ios/$(basename "$f")" > /dev/null
           done
           # Small-screen keyboard pass (iPhone SE), at 375x667 pt.
           SE_PNGS=(build/screens-se/*.png)
           if [ ${#SE_PNGS[@]} -gt 0 ]; then
-            mkdir -p renders/ios-se
-            for f in "${SE_PNGS[@]}"; do sips -z 667 375 "$f" --out "renders/ios-se/$(basename "$f")" > /dev/null; done
+            mkdir -p build/publish/ios-se
+            for f in "${SE_PNGS[@]}"; do sips -z 667 375 "$f" --out "build/publish/ios-se/$(basename "$f")" > /dev/null; done
           fi
-          echo "Simulator: ${{ steps.sim.outputs.name }}" > renders/ios/README.txt
-          echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> renders/ios/README.txt
-          echo "Commit: ${{ github.sha }}" >> renders/ios/README.txt
-          ls renders/ios | wc -l
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          for i in 1 2 3 4; do git fetch --depth=50 origin "${GITHUB_REF_NAME}" && break; sleep $((i * 10)); done
-          latest=$(git log "origin/${GITHUB_REF_NAME}" --format=%H --invert-grep --grep='\[skip ci\]' -1)
-          if [ "$latest" != "${GITHUB_SHA}" ]; then echo "Newer code ($latest) is on the branch; its run publishes screenshots"; exit 0; fi
-          git add renders/ios
-          if [ -d renders/ios-se ]; then git add renders/ios-se; fi
-          if git diff --cached --quiet; then echo "No screenshot changes"; exit 0; fi
-          git commit -m "Update iOS screenshots from ${GITHUB_SHA::7} [skip ci]"
-          for i in 1 2 3 4; do
-            git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
-            sleep $((i * 10))
-          done
-          # Network trouble publishing PNGs is not a test failure; the next run publishes them.
-          echo "::warning::Could not push screenshots"
+          echo "Simulator: ${{ steps.sim.outputs.name }}" > build/publish/ios/README.txt
+          echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> build/publish/ios/README.txt
+          echo "Commit: ${{ github.sha }}" >> build/publish/ios/README.txt
+          ls build/publish/ios | wc -l
+
+      - name: Upload screenshots for publishing
+        if: always() && steps.sim.outcome == 'success' && env.PUBLISH_SCREENSHOTS == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: build/publish
+          if-no-files-found: ignore
+          retention-days: 3
 
       - name: Upload logs and results
         if: always()
@@ -243,4 +265,57 @@ jobs:
           if [ "${{ steps.small.outputs.status }}" != "0" ]; then
             echo "Small-screen keyboard pass failed"; grep -E "error:|failed" build/small.log | head -60 || true; FAIL=1
           fi
+          if [ "${{ steps.tapthrough.outputs.status }}" != "0" ]; then
+            echo "Tap-through UI test failed"; grep -E "error:|failed" build/tapthrough.log | head -60 || true; FAIL=1
+          fi
+          if [ "${{ steps.warnings.outputs.status }}" != "0" ]; then
+            echo "Concurrency warnings:"; cat build/concurrency-warnings.txt || true; FAIL=1
+          fi
           exit $FAIL
+
+  # Commits the PNGs back to the pushed branch (never on pull requests or the default branch). The only
+  # job with write access; it runs no project code.
+  screenshots:
+    name: Publish screenshots to the branch
+    needs: app
+    if: always() && needs.app.result != 'cancelled' && github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 50
+
+      - name: Download screenshots
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: screenshots
+          path: build/publish
+
+      - name: Commit screenshots
+        if: steps.download.outcome == 'success'
+        run: |
+          set -euo pipefail
+          if [ ! -f build/publish/ios/README.txt ]; then echo "No screenshots to publish"; exit 0; fi
+          mkdir -p renders/ios
+          cp build/publish/ios/* renders/ios/
+          if [ -d build/publish/ios-se ]; then mkdir -p renders/ios-se; cp build/publish/ios-se/* renders/ios-se/; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for i in 1 2 3 4; do git fetch --depth=50 origin "${GITHUB_REF_NAME}" && break; sleep $((i * 10)); done
+          latest=$(git log "origin/${GITHUB_REF_NAME}" --format=%H --invert-grep --grep='\[skip ci\]' -1)
+          if [ "$latest" != "${GITHUB_SHA}" ]; then echo "Newer code ($latest) is on the branch; its run publishes screenshots"; exit 0; fi
+          git add renders/ios
+          if [ -d renders/ios-se ]; then git add renders/ios-se; fi
+          if git diff --cached --quiet; then echo "No screenshot changes"; exit 0; fi
+          git commit -m "Update iOS screenshots from ${GITHUB_SHA::7} [skip ci]"
+          for i in 1 2 3 4; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            sleep $((i * 10))
+          done
+          # Network trouble publishing PNGs is not a test failure; the next run publishes them.
+          echo "::warning::Could not push screenshots"

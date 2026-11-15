@@ -226,6 +226,7 @@ public struct BackupReader: Sendable {
 }
 
 /// Deterministic restorer for screenshots and tests: R1/R2 restore the standard fixture, R3 has nothing.
+// @unchecked Sendable: `cancelled` is guarded by `lock`; `snapshot` is set before use.
 public final class FakeBackupRestoring: BackupRestoring, @unchecked Sendable {
     private let lock = NSLock()
     public var snapshot: CompassSnapshot?

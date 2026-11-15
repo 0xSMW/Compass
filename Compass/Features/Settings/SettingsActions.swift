@@ -12,7 +12,7 @@ extension AppModel {
     /// H2: everything goes — the snapshot, every recording, the widget's copy, sync bookkeeping — on this
     /// iPhone and in iCloud. Screenshot runs only reset the in-memory model.
     func eraseEverything() {
-        if fixture == nil {
+        if fixture == nil, !launch.tapThrough {
             LiveSync.wipeEverywhere(at: now)
             DataEraser.eraseLocalData()
         }

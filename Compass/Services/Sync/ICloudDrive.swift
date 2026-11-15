@@ -20,6 +20,7 @@ import CompassCore
 ///
 /// Layout: `<container>/Compass/Devices/<deviceID>.json`, `<container>/Compass/Audio/<file>`.
 /// All methods block (file coordination, downloads): call them off the main thread.
+// @unchecked Sendable: no mutable state; its only property is a private FileManager instance (thread-safe).
 final class ICloudDrive: @unchecked Sendable {
     static let containerIdentifier = "iCloud.app.compass.Compass"
 
@@ -213,6 +214,7 @@ final class ICloudDrive: @unchecked Sendable {
 }
 
 /// `ICloudDrive`'s envelope folder as a `BackupReader` source. Finds the container on first use.
+// @unchecked Sendable: `root` is guarded by `lock`; `drive` is an immutable, stateless ICloudDrive.
 final class ICloudEnvelopeSource: EnvelopeSource, @unchecked Sendable {
     private let drive: ICloudDrive
     private let lock = NSLock()

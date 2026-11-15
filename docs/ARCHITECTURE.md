@@ -178,6 +178,13 @@ never adopted as a local edit, so it can't record notes and steps as deleted.
   Today, evening or return root is replaced by the new entry screen when `DayEngine.clockMoved` says the
   day or its part moved on. It waits while something is said or typed; an evening answer saves to the
   day the evening opened on (`EveningSession.dayKey`).
+- Session state is owned by `AppModel`, one per model (so tests never share it): `model.voice`
+  (`VoiceCapture`), `model.morningSession`, `model.eveningSession`, `model.onboardingDraft`,
+  `model.restoreRouting`, `model.historySelection`, `model.system` (`SystemServices`). Only stateless or
+  process-wide services stay `static let shared` (`VoiceStorage`, `VoicePlayback`, `AudioTombstoneLog`,
+  `KeyboardFrame`), each with a comment saying why.
+- A sync merge that changes today's phase (`DayEngine.sameStage`) and a tapped reminder judge the screen
+  like the clock (`refreshEntryAfterMerge`, `openFromReminder`); mid-answer they wait (`pendingEntryMove`).
 - Notes: a voice note takes its recording's id (`<note id>.m4a`, `NoteRules`); Today's notes row, the
   notes list and E2 open `NoteDetailSheet` (plays, Edit note, Delete note).
 
@@ -257,9 +264,13 @@ Counts toward, E4 → part / delete) swap its content; Cancel goes one level bac
 
 ## CI loop and screenshots
 
-`.github/workflows/ios.yml` runs on pushes to `main` and `claude/friendly-ritchie-5q2nh9`, on pull requests,
-and on manual dispatch (optional `screens` input like `C3,C4`). Only pushes to the screenshot branch commit
-PNGs back:
+`.github/workflows/ios.yml` runs on every push, on pull requests and on manual dispatch (optional `screens`
+input like `C3,C4`). The workflow is read-only; only the `screenshots` job has `contents: write`, and it runs
+only for a push to a branch other than the default one, committing the PNGs back to that branch
+(`github.ref_name`). Any concurrency warning fails the run (fix it or `@preconcurrency import`; every
+`@unchecked Sendable` carries a one-line justification). `TapThroughTests` (launch arg `-tapthrough`: the live
+flow from A1 on fakes, an in-memory store and a movable clock) drives A1 → A7 → B1 → B4/B5 → C3 + a typed
+note → 21:05 → D1 → D5 and fails on any broken hop:
 1. `core` (ubuntu, swift:6.2): `swift test` in `Packages/CompassCore`.
 2. `app` (macos-26, Xcode 26.6): `xcodegen generate`, build app + widget + UI tests on the iPhone 16e
    simulator (iOS 26.2, 390×844 pt; falls back to 17e), run `CompassTests` (unit), run `ScreenshotTests`, scale each PNG to

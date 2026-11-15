@@ -358,6 +358,7 @@ final class SyncIntegrityTests: XCTestCase {
 
     // MARK: M4 · restore with placeholder envelopes
 
+    // @unchecked Sendable: shared state is read and written under `lock`.
     final class FakeSource: EnvelopeSource, @unchecked Sendable {
         let lock = NSLock()
         var available = true
@@ -384,6 +385,7 @@ final class SyncIntegrityTests: XCTestCase {
         func readEnvelope(_ name: String) -> SyncEnvelope? { lock.withLock { envelopes[name] } }
     }
 
+    // @unchecked Sendable: `now` is guarded by `lock`.
     final class FakeClock: @unchecked Sendable {
         let lock = NSLock()
         var now = Date(timeIntervalSince1970: 0)
@@ -447,6 +449,7 @@ final class SyncIntegrityTests: XCTestCase {
         XCTAssertEqual(read.pending, 1)
     }
 
+    // @unchecked Sendable: the reader reports progress synchronously on the test's thread.
     final class ProgressLog: @unchecked Sendable {
         var values: [Double] = []
         func add(_ v: Double) { values.append(v) }

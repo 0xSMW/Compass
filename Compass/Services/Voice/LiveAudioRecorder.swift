@@ -19,6 +19,7 @@ enum LiveVoiceError: Error, Equatable {
 /// services reset finalise the m4a with everything said so far, finish the level stream (which
 /// `VoiceCapture` treats like a pause after speech, so the screen saves) and keep the `Recording`
 /// for the next `stop()`. Nothing that was said is thrown away.
+// @unchecked Sendable: all mutable state (engine, file, take, continuations, consumers) is guarded by `lock`.
 final class LiveAudioRecorder: AudioRecorder, @unchecked Sendable {
     typealias BufferHandler = (AVAudioPCMBuffer) -> Void
 

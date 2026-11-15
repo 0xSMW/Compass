@@ -223,6 +223,7 @@ final class BackupTests: XCTestCase {
 }
 
 final class HTTPCloudAssistTests: XCTestCase {
+    // @unchecked Sendable: written by the stubbed transport, read after the awaited call returns.
     final class Recorder: @unchecked Sendable {
         var requests: [URLRequest] = []
     }

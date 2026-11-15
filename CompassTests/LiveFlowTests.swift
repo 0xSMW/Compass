@@ -3,6 +3,7 @@ import CompassCore
 @testable import Compass
 
 /// A clock the test moves by hand.
+// @unchecked Sendable: read and moved only on the main actor by the (MainActor) tests.
 final class TestClock: @unchecked Sendable {
     var now: Date
     init(_ now: Date) { self.now = now }

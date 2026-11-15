@@ -40,7 +40,7 @@ final class SystemServices {
     // MARK: Lifecycle
 
     func start(model: AppModel) {
-        guard !started, model.fixture == nil else { return }
+        guard !started, model.fixture == nil, !model.launch.tapThrough else { return }
         started = true
         self.model = model
 

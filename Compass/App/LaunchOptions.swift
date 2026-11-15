@@ -8,6 +8,8 @@ import CompassCore
 /// - `-ax5`: force the largest accessibility text size. Implied for the "largest" states
 ///   (A8, B8, C11, C11b, D7, D8, E6).
 /// - `-uitest`: deterministic rendering for screenshots (motion reduced, no persistence).
+/// - `-tapthrough`: the live flow from A1 on fakes, an in-memory store and a movable clock, for the
+///   tap-through UI test (`TapThroughTests`). Implies `-uitest`.
 ///
 /// As the host of the `CompassTests` unit tests (no `-screen`), the app opens on a fixture so it never
 /// touches the real store, iCloud or notifications; the tests build their own `AppModel`s.
@@ -15,6 +17,7 @@ struct LaunchOptions: Equatable {
     var screen: ScreenID?
     var forceAX5: Bool = false
     var uiTest: Bool = false
+    var tapThrough: Bool = false
 
     static func parse(_ arguments: [String] = ProcessInfo.processInfo.arguments) -> LaunchOptions {
         var options = LaunchOptions()
@@ -27,12 +30,16 @@ struct LaunchOptions: Equatable {
                 options.forceAX5 = true
             case "-uitest":
                 options.uiTest = true
+            case "-tapthrough":
+                options.tapThrough = true
+                options.uiTest = true
             default:
                 break
             }
             i += 1
         }
-        if options.screen == nil, isUnitTestHost {
+        if options.tapThrough { options.screen = nil }
+        if options.screen == nil, !options.tapThrough, isUnitTestHost {
             options.screen = .c1
             options.uiTest = true
         }

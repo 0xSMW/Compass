@@ -1,6 +1,8 @@
 import Foundation
 import AVFoundation
-import Speech
+// SFSpeechRecognizer / SFSpeechRecognitionTask predate Sendable; they are only touched from the
+// recogniser callback and the stream's termination handler, and `cancel()` is thread-safe.
+@preconcurrency import Speech
 import CompassCore
 
 /// Speech to text on the phone, never on a server.
@@ -11,6 +13,7 @@ import CompassCore
 ///
 /// Live words come from the recorder's own audio buffers (`LiveAudioRecorder.addConsumer`), so the
 /// microphone is opened once and the saved m4a and the transcript match.
+// @unchecked Sendable: only immutable lets (a thread-safe recorder and a Sendable storage value).
 final class LiveSpeechTranscriber: CompassCore.SpeechTranscriber, @unchecked Sendable {
     private let source: LiveAudioRecorder
     private let storage: VoiceStorage
@@ -55,6 +58,7 @@ final class LiveSpeechTranscriber: CompassCore.SpeechTranscriber, @unchecked Sen
     // MARK: Live
 
     /// Tracks one live task across the recogniser's callback thread and the recorder's.
+    // @unchecked Sendable: every stored property is read and written under `lock`.
     private final class LiveState: @unchecked Sendable {
         private let lock = NSLock()
         private var _lastText = ""
@@ -127,6 +131,7 @@ final class LiveSpeechTranscriber: CompassCore.SpeechTranscriber, @unchecked Sen
 
     // MARK: Saved recording (Try again)
 
+    // @unchecked Sendable: `done` is guarded by `lock`; task/recognizer are set once before any callback runs.
     private final class Once: @unchecked Sendable {
         private let lock = NSLock()
         private var done = false

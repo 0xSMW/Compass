@@ -155,6 +155,7 @@ final class OnboardingDraft {
 // MARK: - Restore pacing
 
 /// The fixture restorer, paced so the bar visibly fills when clicking through fixtures by hand.
+// @unchecked Sendable: only immutable lets; `base` is itself a Sendable BackupRestoring.
 final class OnboardingPacedBackup: BackupRestoring, @unchecked Sendable {
     let base: BackupRestoring
     let delay: UInt64

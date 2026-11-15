@@ -319,6 +319,7 @@ final class SyncCoordinator {
 
 /// R1–R3 against the user's iCloud: what's there (waiting for files that are still in the cloud), then
 /// bring it and its recordings back.
+// @unchecked Sendable: `cancelled` and `lastRead` are guarded by `lock`; `drive` is immutable and stateless.
 final class ICloudBackupRestorer: BackupRestoring, @unchecked Sendable {
     private let drive = ICloudDrive()
     private let lock = NSLock()

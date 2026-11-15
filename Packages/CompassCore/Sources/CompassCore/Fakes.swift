@@ -1,6 +1,7 @@
 import Foundation
 
 /// Deterministic recorder. Emits a fixed level pattern (the design's waveform heights / 40).
+// @unchecked Sendable: `isRecording` is guarded by `lock`; the other vars are configured before use (tests, fixtures).
 public final class FakeAudioRecorder: AudioRecorder, @unchecked Sendable {
     private let lock = NSLock()
     public var permission: PermissionState
@@ -46,6 +47,7 @@ public final class FakeAudioRecorder: AudioRecorder, @unchecked Sendable {
 }
 
 /// Deterministic transcriber: emits `script` word by word, last word pending until final.
+// @unchecked Sendable: test double; its vars are set on the main actor before a take starts and only read after.
 public final class FakeSpeechTranscriber: SpeechTranscriber, @unchecked Sendable {
     public var permission: PermissionState
     public var script: String
@@ -88,6 +90,7 @@ public final class FakeSpeechTranscriber: SpeechTranscriber, @unchecked Sendable
 }
 
 /// Deterministic cloud assist. Summaries and ideas come from `Fixtures`.
+// @unchecked Sendable: test double; its switches are flipped on the main actor between calls, never during one.
 public final class FakeCloudAssist: CloudAssist, @unchecked Sendable {
     public var isEnabled: Bool
     public var isOnline: Bool
