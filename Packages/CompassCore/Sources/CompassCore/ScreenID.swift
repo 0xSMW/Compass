@@ -196,6 +196,9 @@ extension ScreenID {
     public static func entry(for phase: DayPhase, today: Day?) -> ScreenID {
         switch phase {
         case .onboarding: return .a1
+        case .goalEnded:
+            // An ended goal keeps the Today frame; the card offers "Set the next goal".
+            return entry(for: .today, today: today)
         case .morning(let plan):
             if !plan.startsWithCenter { return .b6 }
             if plan.asksWhy { return .b7 }

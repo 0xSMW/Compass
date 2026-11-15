@@ -141,7 +141,7 @@ public struct NotificationPlanner: Sendable {
 
     public func plan(snapshot: CompassSnapshot, now: Date) -> [PlannedReminder] {
         guard snapshot.settings.notificationsEnabled, let goal = snapshot.goal, goal.status == .active else { return [] }
-        let rhythm = snapshot.settings.rhythm
+        let rhythm = snapshot.settings.rhythm.clamped
         let today = DayKey(now, calendar: calendar)
         var result: [PlannedReminder] = []
         for offset in 0..<max(0, daysAhead) {

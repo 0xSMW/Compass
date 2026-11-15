@@ -156,21 +156,8 @@ extension DayEngine {
     public func morningPlan(at now: Date, snapshot: CompassSnapshot) -> MorningPlan? {
         guard let goal = snapshot.goal, goal.status == .active else { return nil }
         let todayKey = DayKey(now, calendar: calendar)
-        let time = TimeOfDay(now, calendar: calendar)
-        let quiet = quietDays(before: todayKey, snapshot: snapshot)
-        let dayNumber = goalDayNumber(goal: goal, today: todayKey)
-        let quietest = quietestPart(goal: goal, snapshot: snapshot, endingBefore: todayKey)?.id
-        let planning: MorningPlan.Planning
-        if quiet >= 1 {
-            planning = .suggestion(partID: quietest, size: .smaller)
-        } else if dayNumber <= firstWeekLength {
-            planning = .nameYourOwn
-        } else {
-            planning = .suggestion(partID: quietest, size: .regular)
-        }
-        let beforeNoon = time < .noon
-        let asksWhy = beforeNoon && dayNumber == whyDay && goal.why == nil && !goal.whyAsked
-        return MorningPlan(startsWithCenter: beforeNoon, asksWhy: asksWhy, planning: planning, quietDays: quiet)
+        return morningPlan(goal: goal, today: todayKey, time: TimeOfDay(now, calendar: calendar),
+                           quietDays: quietDays(before: todayKey, snapshot: snapshot), snapshot: snapshot)
     }
 
     /// The part a new step counts toward unless the user picks another: the quietest one.

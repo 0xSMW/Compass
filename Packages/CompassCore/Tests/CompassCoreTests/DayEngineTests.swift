@@ -12,10 +12,34 @@ final class DayEngineTests: XCTestCase {
         XCTAssertEqual(engine.phase(at: at(9), snapshot: .empty), .onboarding)
     }
 
-    func testAchievedGoalIsOnboarding() {
+    func testAchievedGoalStaysInTodayFrame() {
         var g = Fixtures.goal
         g.status = .achieved
-        XCTAssertEqual(engine.phase(at: at(9), snapshot: CompassSnapshot(goal: g)), .onboarding)
+        g.endedAt = at(8)
+        // Achieved, no history yet: still not Welcome. Any time of day, no rituals.
+        for h in [7, 13, 22] {
+            let phase = engine.phase(at: at(h), snapshot: CompassSnapshot(goal: g))
+            XCTAssertEqual(phase, .goalEnded, "\(h):00")
+            XCTAssertEqual(ScreenID.entry(for: phase, today: nil), .c1)
+        }
+        // With the fixture's history (Today has a done step): Today's frame, never A1.
+        var snap = Fixtures.snapshot(today: Fixtures.today(done: true))
+        snap.goal = g
+        XCTAssertEqual(engine.phase(at: at(9), snapshot: snap), .goalEnded)
+        XCTAssertEqual(ScreenID.entry(for: engine.phase(at: at(9), snapshot: snap), today: snap.day(today)), .c4)
+        XCTAssertNil(engine.morningPlan(at: at(9), snapshot: snap))
+    }
+
+    func testNoGoalWithHistoryIsNotOnboarding() {
+        var snap = Fixtures.snapshot(today: nil)
+        var ended = snap.goal!
+        ended.status = .replaced
+        snap.pastGoals = [ended]
+        snap.goal = nil
+        XCTAssertEqual(engine.phase(at: at(9), snapshot: snap), .goalEnded)
+        // A day with only a note still counts as history.
+        let notesOnly = CompassSnapshot(days: [Day(key: today, notes: [Note(text: "x", createdAt: at(8))])])
+        XCTAssertEqual(engine.phase(at: at(9), snapshot: notesOnly), .goalEnded)
     }
 
     func testMorningBeforeNoonStartsWithCenterAndSuggestion() {
