@@ -46,6 +46,9 @@ public struct Goal: Identifiable, Codable, Hashable, Sendable {
     public var why: Note?
     /// True once B7 has been shown (asked once, skippable).
     public var whyAsked: Bool
+    /// Last edit on the device that made it (sync picks the newer version of the same goal). nil in
+    /// data saved before per-item sync stamps; `createdAt` stands in.
+    public var updatedAt: Date?
 
     public init(
         id: UUID = UUID(),
@@ -55,7 +58,8 @@ public struct Goal: Identifiable, Codable, Hashable, Sendable {
         status: GoalStatus = .active,
         endedAt: Date? = nil,
         why: Note? = nil,
-        whyAsked: Bool = false
+        whyAsked: Bool = false,
+        updatedAt: Date? = nil
     ) {
         self.id = id
         self.text = text
@@ -65,6 +69,7 @@ public struct Goal: Identifiable, Codable, Hashable, Sendable {
         self.endedAt = endedAt
         self.why = why
         self.whyAsked = whyAsked
+        self.updatedAt = updatedAt
     }
 
     public var activeParts: [GoalPart] { parts.filter { !$0.isArchived } }
@@ -83,15 +88,23 @@ public struct Note: Identifiable, Codable, Hashable, Sendable {
     public var text: String
     public var duration: TimeInterval?
     public var createdAt: Date
-    /// Device that captured it, e.g. "This iPhone" or "iPad" (E5 merges two devices).
+    /// Model of the device that captured it ("iPhone", "iPad"). Older data and fixtures may hold
+    /// "This iPhone"; `DeviceIdentity` decides what to show.
     public var device: String?
+    /// Stable id of the install that captured it (`SyncEnvelope.deviceID`). nil in older data.
+    public var deviceID: String?
+    /// Last edit (sync keeps the newer version of the same note). nil = never edited.
+    public var updatedAt: Date?
 
-    public init(id: UUID = UUID(), text: String, duration: TimeInterval? = nil, createdAt: Date, device: String? = nil) {
+    public init(id: UUID = UUID(), text: String, duration: TimeInterval? = nil, createdAt: Date, device: String? = nil,
+                deviceID: String? = nil, updatedAt: Date? = nil) {
         self.id = id
         self.text = text
         self.duration = duration
         self.createdAt = createdAt
         self.device = device
+        self.deviceID = deviceID
+        self.updatedAt = updatedAt
     }
 
     public var isSpoken: Bool { duration != nil }
@@ -102,11 +115,14 @@ public struct Intention: Codable, Hashable, Sendable {
     public var text: String
     public var duration: TimeInterval?
     public var createdAt: Date
+    /// Last edit. nil = never edited.
+    public var updatedAt: Date?
 
-    public init(text: String, duration: TimeInterval? = nil, createdAt: Date) {
+    public init(text: String, duration: TimeInterval? = nil, createdAt: Date, updatedAt: Date? = nil) {
         self.text = text
         self.duration = duration
         self.createdAt = createdAt
+        self.updatedAt = updatedAt
     }
 }
 
@@ -131,6 +147,9 @@ public struct Step: Identifiable, Codable, Hashable, Sendable {
     public var completedAt: Date?
     public var size: StepSize
     public var source: StepSource
+    /// Last change (completing, undoing, editing). Sync keeps the newer version of the same step, so a
+    /// completion on one device is not undone by another device's unrelated save. nil in older data.
+    public var updatedAt: Date?
 
     public init(
         id: UUID = UUID(),
@@ -139,7 +158,8 @@ public struct Step: Identifiable, Codable, Hashable, Sendable {
         createdAt: Date,
         completedAt: Date? = nil,
         size: StepSize = .regular,
-        source: StepSource = .user
+        source: StepSource = .user,
+        updatedAt: Date? = nil
     ) {
         self.id = id
         self.title = title
@@ -148,6 +168,7 @@ public struct Step: Identifiable, Codable, Hashable, Sendable {
         self.completedAt = completedAt
         self.size = size
         self.source = source
+        self.updatedAt = updatedAt
     }
 
     public var isDone: Bool { completedAt != nil }
@@ -178,10 +199,15 @@ public struct Reflection: Codable, Hashable, Sendable {
     public var duration: TimeInterval?
     public var partID: UUID?
     public var createdAt: Date
-    /// Device that recorded it ("This iPhone", "iPad"); used when two devices changed the same day (E5).
+    /// Model of the device that recorded it ("iPhone", "iPad"); shown when two devices changed the same
+    /// day (E5). Older data and fixtures may hold "This iPhone"; `DeviceIdentity` decides what to show.
     public var device: String?
     /// The memo's file in the app's audio folder (`Recording.fileName`). nil when typed.
     public var audioFileName: String?
+    /// Stable id of the install that recorded it (`SyncEnvelope.deviceID`). nil in older data.
+    public var deviceID: String?
+    /// Last edit (E4, a summary arriving). nil = never edited.
+    public var updatedAt: Date?
 
     public init(
         outcome: ReflectionOutcome,
@@ -192,7 +218,9 @@ public struct Reflection: Codable, Hashable, Sendable {
         partID: UUID? = nil,
         createdAt: Date,
         device: String? = nil,
-        audioFileName: String? = nil
+        audioFileName: String? = nil,
+        deviceID: String? = nil,
+        updatedAt: Date? = nil
     ) {
         self.outcome = outcome
         self.transcript = transcript
@@ -203,6 +231,8 @@ public struct Reflection: Codable, Hashable, Sendable {
         self.createdAt = createdAt
         self.device = device
         self.audioFileName = audioFileName
+        self.deviceID = deviceID
+        self.updatedAt = updatedAt
     }
 
     /// Text shown in History and on the saved screen: summary if any, else transcript.
@@ -350,26 +380,36 @@ public struct Settings: Codable, Hashable, Sendable {
     public var input: InputPreference
     /// Time zone the rhythm follows. nil = device time zone. (I3: the day follows you.)
     public var timeZoneID: String?
+    /// Last change made on some device. Sync keeps the newest settings. nil = defaults / older data.
+    public var updatedAt: Date?
 
     public init(
         rhythm: Rhythm = .standard,
         cloudAssist: Bool = true,
         notificationsEnabled: Bool = true,
         input: InputPreference = .voice,
-        timeZoneID: String? = nil
+        timeZoneID: String? = nil,
+        updatedAt: Date? = nil
     ) {
         self.rhythm = rhythm
         self.cloudAssist = cloudAssist
         self.notificationsEnabled = notificationsEnabled
         self.input = input
         self.timeZoneID = timeZoneID
+        self.updatedAt = updatedAt
     }
 }
 
 // MARK: - Snapshot
 
 /// Everything Compass stores. Synced through iCloud in the real app; no account.
+///
+/// Encoded with a `schemaVersion` (see `currentSchema`). Files without one are schema 1. A file from a
+/// newer schema is not decoded by this version: `JSONFileStore` refuses it rather than misreading it.
 public struct CompassSnapshot: Codable, Hashable, Sendable {
+    /// 1: original layout. 2: per-item `updatedAt` and `deviceID` (all optional, so 1 decodes as 2).
+    public static let currentSchema = 2
+
     public var goal: Goal?
     public var pastGoals: [Goal]
     /// All days, any order. Use `day(_:)` / `sortedDays`.
@@ -384,6 +424,33 @@ public struct CompassSnapshot: Codable, Hashable, Sendable {
     }
 
     public static let empty = CompassSnapshot()
+
+    enum CodingKeys: String, CodingKey { case schemaVersion, goal, pastGoals, days, settings }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        goal = try c.decodeIfPresent(Goal.self, forKey: .goal)
+        pastGoals = try c.decodeIfPresent([Goal].self, forKey: .pastGoals) ?? []
+        days = try c.decodeIfPresent([Day].self, forKey: .days) ?? []
+        settings = try c.decodeIfPresent(Settings.self, forKey: .settings) ?? Settings()
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(Self.currentSchema, forKey: .schemaVersion)
+        try c.encodeIfPresent(goal, forKey: .goal)
+        try c.encode(pastGoals, forKey: .pastGoals)
+        try c.encode(days, forKey: .days)
+        try c.encode(settings, forKey: .settings)
+    }
+
+    /// The schema a stored snapshot was written with, read without decoding the rest. 1 when absent;
+    /// nil when the data isn't a JSON object at all.
+    public static func schemaVersion(of data: Data) -> Int? {
+        struct Header: Decodable { var schemaVersion: Int? }
+        guard let header = try? JSONDecoder().decode(Header.self, from: data) else { return nil }
+        return header.schemaVersion ?? 1
+    }
 
     public func day(_ key: DayKey) -> Day? { days.first { $0.key == key } }
 

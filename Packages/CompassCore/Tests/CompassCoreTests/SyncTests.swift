@@ -130,9 +130,13 @@ final class SyncMergeTests: XCTestCase {
     func testReplacedGoalOnOneDeviceMovesToPast() {
         let old = Fixtures.goal
         let new = Goal(text: "Run a marathon.", createdAt: at(10))
+        var ended = old
+        ended.status = .replaced
+        ended.endedAt = at(10)
         let a = CompassSnapshot(goal: old)
-        let b = CompassSnapshot(goal: new)
-        // The device with the old goal saved later (it didn't touch the goal); the new goal still wins.
+        let b = CompassSnapshot(goal: new, pastGoals: [ended])
+        // The device with the old goal saved later (it didn't touch the goal); the new goal still wins,
+        // because the replacing device knew the old one (it is in its past goals).
         let merged = SnapshotMerger.merge(envelope("A", "iPhone", savedAt: at(12), a), envelope("B", "iPad", savedAt: at(11), b))
         XCTAssertEqual(merged.snapshot.goal?.id, new.id)
         XCTAssertEqual(merged.snapshot.pastGoals.map(\.id), [old.id])
