@@ -338,7 +338,7 @@ public enum Fixtures {
             evening(today())
             switch id {
             case .d3: transcript = TranscriptUpdate(settled: "Texted Sam. Friday is on, his place, and Priya is", pending: "coming")
-            case .d3L: transcript = TranscriptUpdate(settled: String(longReflectionTranscript.dropLast(1)), pending: "")
+            case .d3L: transcript = TranscriptUpdate(settled: longLiveTranscript, pending: "coming")
             case .d4: transcript = TranscriptUpdate(settled: "Sick. Slept most of the", pending: "day")
             default: break
             }

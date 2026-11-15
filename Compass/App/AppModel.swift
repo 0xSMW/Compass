@@ -58,8 +58,9 @@ final class AppModel {
             clock = { Date() }
             store = fileStore
             // Real AVAudioRecorder / SFSpeechRecognizer / cloud clients replace these fakes later.
-            recorder = FakeAudioRecorder()
-            transcriber = FakeSpeechTranscriber()
+            let voice = LiveVoiceServices.make() // LiveServices+Voice.swift
+            recorder = voice.recorder
+            transcriber = voice.transcriber
             cloud = LiveSync.makeCloudAssist(settings: loaded.settings)
             path = []
             path = [entryScreen]

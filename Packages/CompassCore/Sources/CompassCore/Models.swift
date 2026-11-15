@@ -180,6 +180,8 @@ public struct Reflection: Codable, Hashable, Sendable {
     public var createdAt: Date
     /// Device that recorded it ("This iPhone", "iPad"); used when two devices changed the same day (E5).
     public var device: String?
+    /// The memo's file in the app's audio folder (`Recording.fileName`). nil when typed.
+    public var audioFileName: String?
 
     public init(
         outcome: ReflectionOutcome,
@@ -189,7 +191,8 @@ public struct Reflection: Codable, Hashable, Sendable {
         duration: TimeInterval? = nil,
         partID: UUID? = nil,
         createdAt: Date,
-        device: String? = nil
+        device: String? = nil,
+        audioFileName: String? = nil
     ) {
         self.outcome = outcome
         self.transcript = transcript
@@ -199,6 +202,7 @@ public struct Reflection: Codable, Hashable, Sendable {
         self.partID = partID
         self.createdAt = createdAt
         self.device = device
+        self.audioFileName = audioFileName
     }
 
     /// Text shown in History and on the saved screen: summary if any, else transcript.
