@@ -51,7 +51,10 @@ final class TapThroughTests: XCTestCase {
         d.expectScreen("C3")
 
         // D · 21:05: the evening comes in by the clock; Done, said, saved.
-        app.buttons["tapthrough-evening"].firstMatch.tap()
+        let clock = app.buttons["tapthrough-evening"].firstMatch
+        XCTAssertTrue(clock.waitForExistence(timeout: 5), "No clock control")
+        clock.tap()
+        XCTAssertEqual(clock.value as? String, "1", "the clock control didn't get the tap")
         d.expectScreen("D1")
         d.tap("Done")
         // D3 listens (it may save on silence before its marker is seen), then D5 shows what was saved.
