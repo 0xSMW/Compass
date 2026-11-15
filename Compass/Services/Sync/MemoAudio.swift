@@ -17,6 +17,15 @@ enum MemoAudio {
         return items.filter { extensions.contains($0.pathExtension.lowercased()) }
     }
 
+    /// Names of every recording on this device.
+    static func allNames() -> Set<String> { Set(allFiles().map(\.lastPathComponent)) }
+
+    /// Remove a local copy because a merge says it's gone (deleted or wiped on another device). Unlike
+    /// `VoiceStorage.delete`, this records no new tombstone: the deletion is already known.
+    static func removeLocalCopy(_ name: String) {
+        try? FileManager.default.removeItem(at: VoiceStorage.shared.directory.appendingPathComponent(name))
+    }
+
     /// The file behind a spoken note (`<note id>.m4a`).
     static func fileName(for note: Note) -> String? {
         note.isSpoken ? VoiceStorage.shared.fileName(for: note.id) : nil

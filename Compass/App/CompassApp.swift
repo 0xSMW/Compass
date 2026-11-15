@@ -10,6 +10,7 @@ struct CompassApp: App {
         WindowGroup {
             RootView()
                 .systemServices()
+                .storeProblemAlert()
                 .environment(model)
                 .preferredColorScheme(.dark)
         }

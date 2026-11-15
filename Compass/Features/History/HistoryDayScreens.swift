@@ -303,15 +303,15 @@ struct HistoryConflictView: View {
                         ForEach(versions, id: \.createdAt) { r in
                             OptionCard(selected: r.createdAt == selected, action: { chosen = r.createdAt }) {
                                 HStack(spacing: Space.xs) {
-                                    Icon(deviceIcon(r.device), size: IconSize.s)
-                                    Text("\(deviceLabel(r.device)) · \(HistoryFormat.time(r.createdAt, calendar: model.calendar))")
+                                    Icon(deviceIcon(r), size: IconSize.s)
+                                    Text("\(deviceLabel(r)) · \(HistoryFormat.time(r.createdAt, calendar: model.calendar))")
                                         .compassFont(.caption)
                                 }
                                 .foregroundStyle(.ink3)
                                 Text(r.displayText).compassFont(.body).foregroundStyle(.ink)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
-                            .accessibilityLabel("\(deviceLabel(r.device)), \(HistoryFormat.time(r.createdAt, calendar: model.calendar)): \(r.displayText)")
+                            .accessibilityLabel("\(deviceLabel(r)), \(HistoryFormat.time(r.createdAt, calendar: model.calendar)): \(r.displayText)")
                         }
                     }
                     .accessibilityElement(children: .contain)
@@ -338,17 +338,18 @@ struct HistoryConflictView: View {
         }
     }
 
-    /// This device's version first (E5 preselects "This iPhone"), else the earliest.
+    /// The version recorded on this device first (E5 preselects "This iPhone"), else the earliest.
+    /// Devices are told apart by the stored device id (`DeviceIdentity`), never by the label text.
     private func defaultChoice(_ versions: [Reflection]) -> Date? {
-        (versions.first { SyncDevice.isThisDevice($0.device) } ?? versions.first)?.createdAt
+        model.deviceIdentity.defaultChoice(versions)?.createdAt
     }
 
-    private func deviceLabel(_ device: String?) -> String {
-        SyncDevice.isThisDevice(device) ? SyncDevice.thisDeviceLabel : (device ?? "Another device")
+    /// "This iPhone" only for a version recorded here; otherwise its device's model ("iPad", "iPhone").
+    private func deviceLabel(_ r: Reflection) -> String {
+        model.deviceIdentity.label(for: r)
     }
 
-    private func deviceIcon(_ device: String?) -> CompassIcon {
-        let label = deviceLabel(device).lowercased()
-        return label.contains("ipad") ? .tablet : .phone
+    private func deviceIcon(_ r: Reflection) -> CompassIcon {
+        model.deviceIdentity.isTablet(r) ? .tablet : .phone
     }
 }

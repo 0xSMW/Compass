@@ -36,9 +36,12 @@ struct VoiceStorage: Sendable {
         return FileManager.default.fileExists(atPath: directory.appendingPathComponent(fileName).path)
     }
 
+    /// Remove a recording for good: here, and (through sync's audio tombstones) from iCloud and the
+    /// user's other devices, which never copy it back.
     func delete(_ fileName: String?) {
         guard let fileName, !fileName.isEmpty else { return }
         try? FileManager.default.removeItem(at: directory.appendingPathComponent(fileName))
+        AudioTombstoneLog.shared.record(fileName)
     }
 
     /// Free space for "important" data on the volume that holds the audio folder.

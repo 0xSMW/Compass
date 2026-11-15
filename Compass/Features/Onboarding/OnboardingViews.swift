@@ -101,12 +101,13 @@ struct OnboardingWelcomeView: View {
             .region(.focal)
 
             ButtonDock(primary: "Begin", link: "Restore from iCloud", onPrimary: {
-                OnboardingDraft.shared.reset()
-                model.go(.a2)
+                // A backup in iCloud (a second device): restore it rather than onboard over it (M5).
+                RestoreRouting.shared.begin(model)
             }, onLink: {
                 model.go(.r1)
             })
         }
+        .onAppear { RestoreRouting.shared.checkForBackup(model) }
     }
 }
 

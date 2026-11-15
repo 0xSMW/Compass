@@ -3,20 +3,16 @@ import Observation
 import UIKit
 import CompassCore
 
-/// Which device wrote something. Items written on this device carry "This iPhone" (as the rest of the
-/// app stores them); the envelope names the device by model ("iPhone", "iPad").
+/// Which device wrote something. Features store "This iPhone" on what they record; the save path
+/// (`LocalEdits.stamp`) replaces it with this install's `deviceID` and model, and E5 compares those ids
+/// through `DeviceIdentity`, so "This iPhone" is only shown for things recorded here.
 @MainActor
 enum SyncDevice {
     static var model: String { UIDevice.current.model }
     /// "This iPhone"
     static var thisDeviceLabel: String { "This \(model)" }
-    /// Stored on items created here.
+    /// Stored on items created here until the save path stamps them with the device id.
     static var label: String { thisDeviceLabel }
-
-    static func isThisDevice(_ device: String?) -> Bool {
-        guard let device else { return true }
-        return device.hasPrefix("This ")
-    }
 }
 
 /// Bookkeeping kept on this device only (Application Support/Compass/sync-state.json).
@@ -48,11 +44,16 @@ struct SyncState: Codable, Equatable {
 
 /// Keeps the app's snapshot and audio in step with the user's other devices through iCloud.
 ///
-/// - `AppModel`'s single save path calls `noteLocalChange()` after every local change; this pushes
-///   this device's envelope 2 s after the last change, and when the app goes to the background.
+/// - `AppModel`'s single save path stamps every local change (`LocalEdits`: per-item `updatedAt`, this
+///   device's id on new recordings) and calls `noteLocalChange()`; this pushes this device's envelope
+///   2 s after the last change, and when the app goes to the background.
 /// - Pulls when the app becomes active and whenever iCloud reports changed files (NSMetadataQuery),
 ///   merges every device's envelope with `SnapshotMerger` and puts the result back into the model.
-///   Two devices editing the same day surface as E5 (`Day.mergeCandidates`).
+///   Two devices recording the same evening surface as E5 (`Day.mergeCandidates`).
+/// - Audio: only recordings the snapshot uses travel (`AudioSyncPlan`); deletions travel as audio
+///   tombstones and are removed from iCloud and every device.
+/// - "Delete everything" is a generation boundary (`SnapshotMerger`): a device that edited offline after
+///   the wipe keeps only what it made after it, and checks for a newer wipe before every push.
 /// - Does nothing at all when iCloud is unavailable (no account, iCloud Drive off, unsigned build):
 ///   Compass keeps working on this device only.
 @MainActor
@@ -74,14 +75,15 @@ final class SyncCoordinator {
         if let saved = SyncState.load() {
             state = saved
         } else {
-            // First sync on this install: data already here counts as current, so an old wipe marker
-            // or an older device can't erase it.
             var fresh = SyncState()
-            if model.snapshot.goal != nil || !model.snapshot.days.isEmpty { fresh.lastLocalChange = Date() }
+            if !model.snapshot.isBlank { fresh.lastLocalChange = Date() }
             state = fresh
             fresh.save()
         }
     }
+
+    /// This install, for stamping items and labelling E5.
+    var deviceIdentity: DeviceIdentity { DeviceIdentity(id: state.deviceID, model: SyncDevice.model) }
 
     func start() {
         let center = NotificationCenter.default
@@ -154,16 +156,30 @@ final class SyncCoordinator {
     private func envelope() -> SyncEnvelope? {
         guard let model else { return nil }
         return SyncEnvelope(deviceID: state.deviceID, deviceName: SyncDevice.model, savedAt: state.lastLocalChange,
-                            snapshot: model.snapshot, tombstones: state.tombstones, wipedAt: state.wipedAt)
+                            snapshot: model.snapshot, tombstones: state.tombstones, wipedAt: state.wipedAt,
+                            audioTombstones: AudioTombstoneLog.shared.all)
     }
 
     func pushNow() {
         pushTask?.cancel()
         guard let root, let envelope = envelope() else { return }
         let drive = self.drive
-        io.async {
+        let knownWipe = state.appliedWipe ?? .distantPast
+        let referenced = envelope.snapshot.referencedAudioFiles
+        io.async { [weak self] in
+            // Another device wiped since this one last merged: merge first, so nothing from before the
+            // wipe goes back up (neither the envelope nor its recordings).
+            if let remoteWipe = drive.readEnvelopes(root: root).compactMap(\.wipedAt).max(), remoteWipe > knownWipe {
+                Task { @MainActor in self?.pullSoon(delay: 0) }
+                return
+            }
             try? drive.write(envelope, root: root)
-            drive.upload(audio: MemoAudio.allFiles(), root: root)
+            let tombstones = envelope.audioTombstones
+            drive.deleteAudio(named: Set(tombstones.map(\.name)), root: root)
+            let local = MemoAudio.allFiles()
+            let names = AudioSyncPlan.toUpload(local: Set(local.map(\.lastPathComponent)), remote: drive.audioNames(root: root),
+                                               referenced: referenced, tombstones: tombstones)
+            drive.upload(audio: local.filter { names.contains($0.lastPathComponent) }, root: root)
         }
     }
 
@@ -184,7 +200,6 @@ final class SyncCoordinator {
         let drive = self.drive
         io.async { [weak self] in
             let remote = drive.readEnvelopes(root: root)
-            drive.download(audioInto: MemoAudio.syncedAudioDirectory, root: root)
             Task { @MainActor in self?.apply(remote) }
         }
     }
@@ -194,27 +209,67 @@ final class SyncCoordinator {
         guard let model, let local = envelope() else { return }
         let others = remote.filter { $0.deviceID != state.deviceID }
         guard let merged = SnapshotMerger.merge([local] + others) else { return }
-
-        if let wipe = merged.wipedAt, wipe > (state.appliedWipe ?? .distantPast), wipe > state.lastLocalChange {
-            // "Delete everything" on another device: erase here too.
-            state.wipedAt = wipe
-            state.appliedWipe = wipe
-            state.tombstones = []
-            DataEraser.eraseLocalData()
-            state.save()
-            model.deleteEverything()
-            return
-        }
+        let before = model.snapshot
+        let newWipe = merged.wipedAt.map { $0 > (state.appliedWipe ?? .distantPast) } ?? false
 
         state.tombstones = merged.tombstones
         state.wipedAt = merged.wipedAt
-        if let wipe = merged.wipedAt, wipe > (state.appliedWipe ?? .distantPast) { state.appliedWipe = wipe }
+        if newWipe { state.appliedWipe = merged.wipedAt }
+
+        if newWipe && merged.snapshot.isBlank {
+            // "Delete everything" on another device and nothing made here since: erase here too.
+            state.tombstones = []
+            DataEraser.eraseLocalData()
+            AudioTombstoneLog.shared.reset(keeping: merged.audioTombstones)
+            state.save()
+            model.deleteEverything()
+            syncAudio(referencedBefore: before.referencedAudioFiles, merged: merged)
+            return
+        }
+
+        AudioTombstoneLog.shared.adopt(merged.audioTombstones)
         state.save()
         if merged.snapshot != model.snapshot {
             // Saves and reloads the widget, without counting as this device's own change.
             model.commit(merged.snapshot, origin: .remote)
             // Our envelope should now carry the merged result too.
             pushSoon()
+        }
+        if newWipe {
+            // Only what this device made after the wipe is left; open wherever that leads.
+            model.goToEntry()
+        } else if before.goal == nil, merged.snapshot.goal != nil, Self.isOnboarding(model.current) {
+            // A second device mid-onboarding just received the real goal: don't let onboarding replace
+            // it. Open by the clock, as if restored.
+            OnboardingDraft.shared.reset()
+            model.goToEntry()
+        }
+        syncAudio(referencedBefore: before.referencedAudioFiles, merged: merged)
+    }
+
+    /// Onboarding screens a sync-delivered goal ends (R1–R3 are restoring it already).
+    static func isOnboarding(_ id: ScreenID) -> Bool {
+        id.flow == .onboarding && ![ScreenID.r1, .r2, .r3].contains(id)
+    }
+
+    /// After a merge: drop local recordings the merge removed, remove deleted recordings from iCloud,
+    /// clear recordings from before a wipe, and bring in recordings the merged snapshot uses.
+    private func syncAudio(referencedBefore: Set<String>, merged: SyncEnvelope) {
+        guard let root else { return }
+        let drive = self.drive
+        let referenced = merged.snapshot.referencedAudioFiles
+        let tombstones = AudioTombstoneLog.shared.all
+        let wipe = merged.wipedAt
+        io.async {
+            let local = MemoAudio.allNames()
+            let remove = AudioSyncPlan.toRemoveLocally(local: local, referencedBefore: referencedBefore,
+                                                       referencedAfter: referenced, tombstones: tombstones)
+            for name in remove { MemoAudio.removeLocalCopy(name) }
+            drive.deleteAudio(named: Set(tombstones.map(\.name)), root: root)
+            if let wipe { drive.purgeAudio(recordedBefore: wipe, root: root) }
+            let wanted = AudioSyncPlan.toDownload(remote: drive.audioNames(root: root), local: local.subtracting(remove),
+                                                  referenced: referenced, tombstones: tombstones)
+            drive.download(wanted, into: MemoAudio.syncedAudioDirectory, root: root)
         }
     }
 
@@ -232,6 +287,7 @@ final class SyncCoordinator {
         pullTask?.cancel()
         let deviceID = state.deviceID
         state = SyncState(deviceID: deviceID, lastLocalChange: date, tombstones: [], wipedAt: date, appliedWipe: date)
+        AudioTombstoneLog.shared.reset()
         let marker = SyncEnvelope(deviceID: deviceID, deviceName: SyncDevice.model, savedAt: date, snapshot: .empty, wipedAt: date)
         if let root {
             let drive = self.drive
@@ -243,56 +299,65 @@ final class SyncCoordinator {
         // The eraser clears Application Support right after this call; write the state back afterwards.
         Task { @MainActor [weak self] in self?.state.save() }
     }
-
-    // MARK: Restore (R1–R3)
-
-    /// Every readable envelope, merged, plus how many audio files are still downloading.
-    nonisolated static func readBackup(drive: ICloudDrive) -> (root: URL?, merged: SyncEnvelope?) {
-        guard let root = drive.rootURL() else { return (nil, nil) }
-        return (root, SnapshotMerger.merge(drive.readEnvelopes(root: root)))
-    }
 }
 
-/// R1–R3 against the user's iCloud: what's there, then bring it (and its audio) back.
+/// R1–R3 against the user's iCloud: what's there (waiting for files that are still in the cloud), then
+/// bring it and its recordings back.
 final class ICloudBackupRestorer: BackupRestoring, @unchecked Sendable {
     private let drive = ICloudDrive()
     private let lock = NSLock()
     private var cancelled = false
+    /// The last read, so R1's restore doesn't wait for the same downloads twice.
+    private var lastRead: (read: BackupRead, root: URL?)?
 
     func availability() async -> BackupAvailability {
+        await availability(progress: { _ in })
+    }
+
+    func availability(progress: @escaping @Sendable (Double) -> Void) async -> BackupAvailability {
+        lock.withLock { cancelled = false }
+        return await read(progress: progress).read.availability
+    }
+
+    private func read(progress: @escaping @Sendable (Double) -> Void) async -> (read: BackupRead, root: URL?) {
         let drive = self.drive
         return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let (root, merged) = SyncCoordinator.readBackup(drive: drive)
-                guard root != nil else { return continuation.resume(returning: .nothing(.iCloudUnavailable)) }
-                guard let merged, merged.snapshot.goal != nil || !merged.snapshot.days.isEmpty else {
-                    return continuation.resume(returning: .nothing(.empty))
-                }
-                continuation.resume(returning: .available(BackupSummary(snapshot: merged.snapshot, savedAt: merged.savedAt, deviceName: merged.deviceName)))
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let source = ICloudEnvelopeSource(drive: drive)
+                let read = BackupReader().read(from: source, isCancelled: { self?.isCancelled ?? true }, progress: progress)
+                let result = (read: read, root: source.rootURL)
+                self?.lock.withLock { self?.lastRead = result }
+                continuation.resume(returning: result)
             }
         }
     }
 
     func restore(progress: @escaping @Sendable (Double) -> Void) async throws -> CompassSnapshot {
         lock.withLock { cancelled = false }
+        let cached = lock.withLock { () -> (read: BackupRead, root: URL?)? in
+            defer { lastRead = nil }
+            return lastRead
+        }
+        let found: (read: BackupRead, root: URL?)
+        if let cached { found = cached } else { found = await read { p in progress(0.3 * p) } }
+        guard found.read.available, let root = found.root else { throw RestoreError.iCloudUnavailable }
+        guard let merged = found.read.merged, !merged.snapshot.isBlank else { throw RestoreError.nothingToRestore }
+        progress(0.3)
+        if isCancelled { throw RestoreError.cancelled }
+
         let drive = self.drive
-        let snapshot: CompassSnapshot = try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                progress(0.1)
-                let (root, merged) = SyncCoordinator.readBackup(drive: drive)
-                guard let root else { return continuation.resume(throwing: RestoreError.iCloudUnavailable) }
-                guard let merged, merged.snapshot.goal != nil || !merged.snapshot.days.isEmpty else {
-                    return continuation.resume(throwing: RestoreError.nothingToRestore)
-                }
-                progress(0.3)
-                if self?.isCancelled == true { return continuation.resume(throwing: RestoreError.cancelled) }
-                drive.download(audioInto: MemoAudio.syncedAudioDirectory, root: root) { p in progress(0.3 + 0.7 * p) }
-                if self?.isCancelled == true { return continuation.resume(throwing: RestoreError.cancelled) }
-                progress(1)
-                continuation.resume(returning: merged.snapshot)
+        let wanted = AudioSyncPlan.toDownload(remote: drive.audioNames(root: root), local: MemoAudio.allNames(),
+                                              referenced: merged.snapshot.referencedAudioFiles, tombstones: merged.audioTombstones)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                // Placeholders keep downloading; sync copies them in when they land.
+                drive.download(wanted, into: MemoAudio.syncedAudioDirectory, root: root) { p in progress(0.3 + 0.7 * p) }
+                continuation.resume()
             }
         }
-        return snapshot
+        if isCancelled { throw RestoreError.cancelled }
+        progress(1)
+        return merged.snapshot
     }
 
     func cancel() { lock.withLock { cancelled = true } }

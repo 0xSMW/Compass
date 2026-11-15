@@ -24,6 +24,9 @@ final class AppModel {
     var calendar: Calendar
     /// Present when launched with `-screen`; carries transient state (live words, selected day).
     private(set) var fixture: ScreenFixture?
+    /// The store file couldn't be read at launch (damaged, or from a newer Compass). It was copied aside;
+    /// `StoreProblemAlert` tells the user. Set by the live path only.
+    var storeProblem: StoreProblem? = nil
     let launch: LaunchOptions
 
     /// Screen stack; the last element is on screen.
@@ -58,7 +61,9 @@ final class AppModel {
         } else {
             fixture = nil
             let fileStore = SharedStorage.makeStore()
-            let loaded = (try? fileStore.load()) ?? .empty
+            // Never reads an unreadable or newer file as empty and overwrites it: it is copied aside first.
+            let (loaded, problem) = fileStore.loadRecovering()
+            storeProblem = problem
             snapshot = loaded
             conditions = .normal
             calendar = SharedStorage.calendar(for: loaded.settings)
@@ -151,6 +156,9 @@ final class AppModel {
     /// - `.local`: this device changed it, so sync pushes it as this device's change.
     /// - `.remote`: a merge from other devices; sync already knows, so it is not told again.
     func commit(_ next: CompassSnapshot, origin: SnapshotOrigin = .local) {
+        // Local edits get per-item `updatedAt` and this device's id on new recordings, so sync merges
+        // item by item (LiveServices+Sync.swift, CompassCore `LocalEdits`).
+        let next = origin == .local ? LocalEdits.stamp(next, since: snapshot, at: now, device: deviceIdentity) : next
         guard next != snapshot else { return }
         snapshot = next
         save(origin: origin)
@@ -158,7 +166,7 @@ final class AppModel {
 
     private func save(origin: SnapshotOrigin) {
         try? store.save(snapshot)
-        if origin == .local { effects.didChangeLocally() }
+        if origin != .remote { effects.didChangeLocally() }
         effects.reloadWidgets()
     }
 
@@ -233,6 +241,8 @@ final class AppModel {
 enum SnapshotOrigin: Equatable {
     case local
     case remote
+    /// R2: a backup brought in on this device. Synced like a local change, but not stamped as made here.
+    case restored
 }
 
 /// Side effects of a save. `.live` reloads the widget and tells iCloud sync; tests pass spies.
