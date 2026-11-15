@@ -97,7 +97,7 @@ public final class JSONFileStore: Store, Sendable {
     public let url: URL
     private let lock = NSLock()
     /// Set by `loadRecovering` when the file on disk is from a newer schema: saves are refused.
-    private var blockedBy: Int?
+    private let blockedBy = Mutex<Int?>(nil)
 
     public init(url: URL) {
         self.url = url
@@ -140,7 +140,7 @@ public final class JSONFileStore: Store, Sendable {
             return (try load(), nil)
         } catch StoreError.newerSchema(let version) {
             let copy = quarantine(label: "newer-schema", now: now)
-            lock.withLock { blockedBy = version }
+            blockedBy.withLock { $0 = version }
             return (.empty, StoreProblem(kind: .newerSchema(version), quarantinedCopy: copy))
         } catch {
             let copy = quarantine(label: "unreadable", now: now)
@@ -176,7 +176,7 @@ public final class JSONFileStore: Store, Sendable {
 
     public func save(_ snapshot: CompassSnapshot) throws {
         lock.lock(); defer { lock.unlock() }
-        if let blockedBy { throw StoreError.newerSchema(blockedBy) }
+        if let blocked = blockedBy.withLock({ $0 }) { throw StoreError.newerSchema(blocked) }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let data = try Self.encoder().encode(snapshot)
         try data.write(to: url, options: .atomic)
@@ -185,7 +185,7 @@ public final class JSONFileStore: Store, Sendable {
     /// Remove the file (H2 Delete everything). Refused for a newer-schema file.
     public func deleteAll() throws {
         lock.lock(); defer { lock.unlock() }
-        if let blockedBy { throw StoreError.newerSchema(blockedBy) }
+        if let blocked = blockedBy.withLock({ $0 }) { throw StoreError.newerSchema(blocked) }
         if FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)
         }
