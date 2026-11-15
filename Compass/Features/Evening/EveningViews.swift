@@ -18,7 +18,7 @@ struct EveningQuestionView: View {
             RitualSubject(icon: subject.icon, text: subject.text).region(.subject)
 
             Text(hasStep ? "Did you do it?" : "Did you move toward it today?")
-                .compassFont(.title)
+                .ritualFont(.title)
                 .fixedSize(horizontal: false, vertical: true)
                 .region(.focal)
 
@@ -47,7 +47,7 @@ struct EveningDoneEarlierView: View {
             RitualSubject(icon: subject.icon, text: subject.text).region(.subject)
 
             Text(ReflectionRules.question(outcome: .moved, kind: .doneEarlier))
-                .compassFont(.title)
+                .ritualFont(.title)
                 .fixedSize(horizontal: false, vertical: true)
                 .region(.focal)
 
@@ -91,7 +91,7 @@ struct EveningReflectView: View {
                 typing
             } else if let problem = session.micProblem {
                 Text(question)
-                    .compassFont(.title)
+                    .ritualFont(.title)
                     .fixedSize(horizontal: false, vertical: true)
                     .region(.focal)
                 TypeInsteadDock(reason: problem) {
@@ -132,7 +132,7 @@ struct EveningReflectView: View {
     private var typing: some View {
         VStack(alignment: .leading, spacing: Space.s) {
             Text(question)
-                .compassFont(.title)
+                .ritualFont(.title)
                 .foregroundStyle(.ink2)
                 .fixedSize(horizontal: false, vertical: true)
             UnderlineField(prompt: "Type it here", text: $session.draft, style: .live, focused: $focused)
@@ -206,7 +206,7 @@ struct EveningSavedView: View {
         let open = expanded && showsTranscript
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
-                .compassFont(.title)
+                .ritualFont(.title)
                 .fixedSize(horizontal: false, vertical: true)
                 .contentTransition(.opacity)
                 .animation(Motion.animation(Motion.turnTaking, reduced: reduced), value: title)
@@ -289,7 +289,7 @@ struct EveningSavedView: View {
 
 // MARK: - Saved-state pieces
 
-/// kit.css `.lr` "Transcript ⌄" — collapsed in #A1A1A6, open in ink with ⌃.
+/// kit.css `.lr` "Transcript ⌄" in ink; the chevron greys once open (⌃).
 struct TranscriptRow: View {
     @Binding var expanded: Bool
     @Environment(\.dynamicTypeSize) private var dts
@@ -299,10 +299,10 @@ struct TranscriptRow: View {
             HStack(spacing: Space.s) {
                 Text("Transcript")
                     .compassFont(.body)
-                    .foregroundStyle(expanded ? Color.ink : Color.ink2)
+                    .foregroundStyle(.ink)
                 Spacer(minLength: 0)
                 Icon(expanded ? .up : .down, size: dts.isAccessibilitySize ? IconSize.m : IconSize.s)
-                    .foregroundStyle(.ink2)
+                    .foregroundStyle(expanded ? Color.ink2 : Color.ink)
             }
             .frame(minHeight: 56)
             .overlay(alignment: .top) { Rectangle().fill(Color.line).frame(height: 1) }

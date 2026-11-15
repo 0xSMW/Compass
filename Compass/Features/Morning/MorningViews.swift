@@ -18,7 +18,7 @@ struct MorningCenterView: View {
 
             VStack(alignment: .leading, spacing: Space.m) {
                 Text(model.goal?.text ?? "")
-                    .compassFont(.display)
+                    .ritualFont(.display)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(MorningSession.Purpose.intention.question)
                     .compassFont(.heading)
@@ -116,7 +116,7 @@ struct MorningPlanView: View {
             VStack(alignment: .leading, spacing: Space.s) {
                 if let idea {
                     Text(idea.title)
-                        .compassFont(.title)
+                        .ritualFont(.title)
                         .fixedSize(horizontal: false, vertical: true)
                     let part = model.part(idea.partID)
                     HStack(alignment: .top, spacing: Space.xs) {
@@ -192,7 +192,7 @@ struct MorningNameStepView: View {
             }
 
             Text(MorningSession.Purpose.step.question)
-                .compassFont(.title)
+                .ritualFont(.title)
                 .fixedSize(horizontal: false, vertical: true)
                 .region(.focal)
 
@@ -294,7 +294,7 @@ struct MorningWhyView: View {
 
             VStack(alignment: .leading, spacing: Space.s) {
                 Text(MorningSession.Purpose.why.question)
-                    .compassFont(.title)
+                    .ritualFont(.title)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("You’ll hear your answer on hard days.")
                     .compassFont(.body)

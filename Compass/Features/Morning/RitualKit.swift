@@ -53,13 +53,24 @@ struct RitualVoiceDock<Side: View>: View {
     let onMic: () -> Void
     @ViewBuilder var side: Side
 
+    @Environment(\.dynamicTypeSize) private var dts
+
     var body: some View {
         HStack(spacing: 0) {
-            CircleButton(.kb, label: keyboardLabel, action: onKeyboard)
+            // kit.css `.c56`; the keyboard glyph is 28 at AX (B8), the circle keeps its size.
+            Button(action: onKeyboard) {
+                Icon(.kb, size: dts.isAccessibilitySize ? IconSize.m : IconSize.i)
+                    .foregroundStyle(.ink2)
+                    .frame(width: ControlSize.secondary, height: ControlSize.secondary)
+                    .overlay(Circle().strokeBorder(Color.line, lineWidth: 1))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(PressableStyle())
+            .accessibilityLabel(keyboardLabel)
             Spacer(minLength: 0)
             MicButton(mode: micMode, label: micLabel, action: onMic)
             Spacer(minLength: 0)
-            side.frame(width: 56, height: 56)
+            ZStack { Color.clear; side }.frame(width: 56, height: 56)
         }
         .frame(height: ControlSize.voice)
     }
@@ -103,7 +114,7 @@ struct ListeningFocal: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s) {
             Text(question)
-                .compassFont(.title)
+                .ritualFont(.title)
                 .foregroundStyle(.ink2)
                 .fixedSize(horizontal: false, vertical: true)
             TranscriptScroll(settled: settled, pending: pending)
@@ -276,6 +287,31 @@ struct AboveKeyboardAction: View {
                 KeyboardPlaceholder().region(.custom(top: 508, bottom: 844, inset: 0))
             }
         }
+    }
+}
+
+/// `compassFont` keeps the spec's line height only when it is taller than Inter Tight's natural line.
+/// Display (44/48, 56/60 at AX5) and title (34/40, 48/52) are tighter, so ritual text would grow a few
+/// points per line and drift off the boards. This applies the negative leading too.
+private struct RitualTightFontModifier: ViewModifier {
+    @Environment(\.dynamicTypeSize) private var dts
+    let style: CompassType
+
+    func body(content: Content) -> some View {
+        let size = style.size(for: dts)
+        let leading = style.lineHeight(for: dts) - style.uiFont(for: dts).lineHeight
+        content
+            .font(style.font(for: dts))
+            .tracking(style.spec.tracking * size)
+            .lineSpacing(leading)
+            .padding(.vertical, leading / 2)
+    }
+}
+
+extension View {
+    /// Display / title with the board's exact line boxes (see `RitualTightFontModifier`).
+    func ritualFont(_ style: CompassType) -> some View {
+        modifier(RitualTightFontModifier(style: style))
     }
 }
 
