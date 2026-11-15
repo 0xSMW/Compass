@@ -83,13 +83,16 @@ struct TodayScaffold<Header: View, Notes: View, Card: View, Dock: View, Overlay:
             VStack(spacing: Space.m) {
                 ScrollViewReader { reader in
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 0) {
-                            header
+                        VStack(spacing: 0) {
+                            VStack(alignment: .leading, spacing: 0) {
+                                header
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, Space.inset)
+                            .padding(.vertical, Space.m)
+                            // After the bottom padding, so "scrolled to end" clears the notes row by 24 (C11b).
                             Color.clear.frame(height: 0).id("todayHeaderEnd")
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, Space.inset)
-                        .padding(.vertical, Space.m)
                     }
                     .scrollIndicators(.hidden)
                     .scrollBounceBehavior(.basedOnSize)
