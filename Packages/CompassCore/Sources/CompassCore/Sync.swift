@@ -174,7 +174,8 @@ extension Step {
 ///   (that device ended it itself: it is in its past goals, not merely demoted there by a merge). A goal
 ///   created on a device that never saw the current one (onboarding on a second device, two offline
 ///   replacements) never replaces it: the earlier goal stays current and the newcomer is kept as a replaced
-///   past goal marked `demotedByMerge`. That device's settings don't win either.
+///   past goal marked `demotedByMerge`. That device's settings don't win either. If every current goal was
+///   ended elsewhere, the newest goal a merge demoted and nobody ended comes back as current.
 /// - **Tombstones** remove days whose content is older than the deletion.
 /// - **`wipedAt`** is a generation boundary: everything created before the newest wipe is dropped from
 ///   every envelope, however late that envelope was saved. Things created after it are kept.
@@ -312,6 +313,9 @@ public enum SnapshotMerger {
     /// - Two or more candidates (neither device knew the other's): the earliest-created stays current; each
     ///   newcomer becomes a replaced past goal marked `demotedByMerge`, and its side is reported as `demoted`.
     ///   The winner comes back as current even if the picked copy was a demoted one.
+    /// - **No candidate** (every side's current goal was retired elsewhere): the newest goal a merge demoted
+    ///   and nobody retired comes back as current (`orphan`). Without it every device could settle on no
+    ///   current goal while a goal nobody ended sits in past goals.
     static func mergeGoals(newer: CompassSnapshot, older: CompassSnapshot) -> (current: Goal?, past: [Goal], demoted: Side?) {
         var versions: [UUID: Goal] = [:]
         // A past goal holding `.active` (never written by this app) is read as replaced, so status alone
@@ -333,7 +337,7 @@ public enum SnapshotMerger {
         let candidates = Set([newer.goal?.id, older.goal?.id].compactMap { $0 }).subtracting(retired)
             .compactMap { versions[$0] }
             .sorted { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }
-        var current = candidates.first
+        var current = candidates.first ?? orphan(in: versions, retired: retired)
         if var winner = current, winner.demotedByMerge == true {
             // The picked copy was one a merge had demoted; it is current again.
             winner.demotedByMerge = nil
@@ -365,6 +369,16 @@ public enum SnapshotMerger {
             ($0.endedAt ?? $0.createdAt, $0.id.uuidString) > ($1.endedAt ?? $1.createdAt, $1.id.uuidString)
         }
         return (current, pastList, demoted)
+    }
+
+    /// No side holds a current goal anyone may keep (each was ended by another device), but a merge demoted
+    /// a goal that no user ended: the newest such goal comes back as current, so a goal nobody ended always
+    /// has a holder. The newest, because every goal it was demoted below has since been ended; it is the
+    /// last goal a user chose. Never a retired goal (one some device ended itself).
+    static func orphan(in versions: [UUID: Goal], retired: Set<UUID>) -> Goal? {
+        versions.values
+            .filter { $0.demotedByMerge == true && !retired.contains($0.id) }
+            .max { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }
     }
 
     /// Merge one day changed on two devices.
@@ -465,7 +479,10 @@ extension CompassSnapshot {
 
     /// Nothing the user made: no goal, and no day with content. Days that only remember a morning skip
     /// or deletions (kept after a wipe, `keepingOnly`) don't count: there is nothing to show or restore.
-    public var isBlank: Bool { goal == nil && pastGoals.isEmpty && !days.contains(where: \.hasContent) }
+    public var isBlank: Bool { !hasGoals && !days.contains(where: \.hasContent) }
+
+    /// A current goal or any past goal.
+    public var hasGoals: Bool { goal != nil || !pastGoals.isEmpty }
 }
 
 extension Settings {

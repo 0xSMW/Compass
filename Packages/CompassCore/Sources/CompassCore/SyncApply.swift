@@ -14,7 +14,7 @@ public struct SyncApplyInput: Sendable {
     public var isOnboarding: Bool
     /// A goal this device created in onboarding before it had seen the user's iCloud data (A1 "Start a
     /// new goal", or Begin tapped before the backup check finished). It must win over the backup's goal.
-    /// It guards only the first pass that reads another device's envelope, and expires after
+    /// It guards sync passes until one promotes it or reads another device's goals, and expires after
     /// `freshGoalLifetime` (see `SyncApply`).
     public var freshGoalID: UUID?
     /// The time of this pass, for the fresh goal's expiry. nil skips the age check.
@@ -70,10 +70,12 @@ public struct SyncApplyPlan: Equatable, Sendable {
 /// 4. **A fresh goal demoted by the merge** (onboarding finished here before the backup arrived) → put it back
 ///    as current with the backup's goal in past goals, as if the backup had been merged first; this device's
 ///    settings come back too. Adopted as a local change, so the result travels and every device agrees.
-///    The marker (`freshGoalID`) lasts until the first pass that reads another device's envelope, or
-///    `freshGoalLifetime` after the goal was made, whichever comes first. After that the merge alone keeps
-///    the result: the backup's goal is ended by this device, and an old device that demoted the fresh goal
-///    first only marked it `demotedByMerge`, which never outvotes the device holding it as current.
+///    The marker (`freshGoalID`) lasts until the first pass that promotes or reads another device's
+///    envelope holding a goal (current or past), or `freshGoalLifetime` after the goal was made, whichever
+///    comes first; a goal-less envelope (an install that hasn't onboarded) doesn't use it up. After that
+///    the merge alone keeps the result: the backup's goal is ended by this device, and an old device that
+///    demoted the fresh goal first only marked it `demotedByMerge`, which never outvotes the device holding
+///    it as current.
 /// 5. **Otherwise** → adopt the merge when it differs from the model, else keep.
 ///
 /// In every case this device's own settings (`Settings.DeviceLocal`: reminders switch, input, time-zone pin)
@@ -102,12 +104,17 @@ public enum SyncApply {
         var source = SyncApplyPlan.Source.merge
         if let freshID = input.freshGoalID {
             if let fresh = before.goal, fresh.id == freshID, !isExpired(fresh, now: input.now) {
-                if let promoted = promoting(fresh, settings: before.settings, in: next) {
+                let promoted = promoting(fresh, settings: before.settings, in: next)
+                if let promoted {
                     next = promoted
                     source = .localChange
                 }
-                // Another device's envelope has now been read: this pass settled it either way.
-                if others.contains(where: \.isReadable) { plan.freshGoalID = nil }
+                // Settled once this pass promoted, or read another device's goals (current or past) and
+                // found nothing to promote over. An envelope with no goals (an install still onboarding, or
+                // never onboarded) says nothing about the backup, so the marker waits for the next pass.
+                if promoted != nil || others.contains(where: { $0.isReadable && $0.snapshot.hasGoals }) {
+                    plan.freshGoalID = nil
+                }
             } else {
                 // Expired, or no longer this device's current goal (replaced, ended): nothing to guard.
                 plan.freshGoalID = nil

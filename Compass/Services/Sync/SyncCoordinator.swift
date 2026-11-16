@@ -25,8 +25,8 @@ struct SyncState: Codable, Equatable {
     /// Newest wipe this device has already carried out.
     var appliedWipe: Date?
     /// A first goal onboarding made here before any backup was merged; it wins over the backup's goal
-    /// (`SyncApplyInput.freshGoalID`). Cleared after the first pass that reads another device's envelope,
-    /// or seven days after the goal was made.
+    /// (`SyncApplyInput.freshGoalID`). Cleared after the first pass that promotes it or reads another
+    /// device's goals, or seven days after the goal was made.
     var freshGoalID: UUID?
 
     static var url: URL {

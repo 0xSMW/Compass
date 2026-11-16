@@ -120,10 +120,21 @@ never adopted as a local edit, so it can't record notes and steps as deleted.
   new device has put it back on top, the old phone's demotion doesn't outvote the promotion, and both
   devices settle on the fresh goal (tested for every order of pushes and reads, `SyncRound3Tests`).
   Setting a new goal on a device clears the marker on its past goals (it moved on knowingly).
-- **The fresh-goal marker expires.** `freshGoalID` guards only the first sync pass that reads another
-  device's envelope (whatever it holds), and lapses seven days after the goal was made
-  (`SyncApply.freshGoalLifetime`), whichever comes first. On a single-device account an old device that
-  shows up months later is therefore merged by the ordinary rule (the earlier goal stays current).
+- **A goal nobody ended always has a holder.** If every device's current goal was retired elsewhere
+  (two new devices beside an old one, or offline goal changes on two devices), the newest goal marked
+  `demotedByMerge` that no device retired comes back as current (`SnapshotMerger.orphan`), instead of
+  every device settling on no current goal. `SyncRound4Tests` fuzzes two and three devices (push, full
+  and partial pulls, set goal, achieve, delete everything) and checks that every run settles, converges,
+  loses no goal, and has a current goal whenever any goal was not ended by a user.
+- **The fresh-goal marker expires.** `freshGoalID` guards sync passes until one promotes the fresh goal
+  or reads another device's envelope holding a goal (current or past), and lapses seven days after the
+  goal was made (`SyncApply.freshGoalLifetime`), whichever comes first. An envelope with no goals (an
+  install that hasn't onboarded, which still writes one) doesn't use it up, so the old phone's file
+  arriving one pass later still loses to the fresh goal. On a single-device account an old device that
+  shows up months later is merged by the ordinary rule (the earlier goal stays current).
+- **Envelope format.** `SyncEnvelope.currentFormat` is 2 and every reader accepts formats up to its own.
+  No build has shipped, so the `demotedByMerge` rules didn't bump it; bump the format whenever merge
+  semantics change after release.
 
 ## Platform services (live path only)
 

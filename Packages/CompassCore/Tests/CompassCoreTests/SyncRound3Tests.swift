@@ -293,15 +293,25 @@ final class SyncRound3Tests: XCTestCase {
                                                   step: Step(title: "s", createdAt: d(7).addingTimeInterval(-86400)))])
     }
 
-    /// The first pass that reads another device's envelope settles the marker, whatever it holds.
-    func testFreshGoalMarkerEndsWithTheFirstOtherEnvelope() throws {
+    /// The first pass that promotes, or reads another device's goals, settles the marker; an envelope
+    /// without goals doesn't (review round 4, S2).
+    func testFreshGoalMarkerEndsWithTheFirstOtherEnvelopeHoldingGoals() throws {
         let fresh = CompassSnapshot(goal: newGoal)
-        // Another device's envelope without goals (still onboarding there): the marker is used up.
+        // Another device's envelope without goals (still onboarding there): the marker stays.
         let blank = try XCTUnwrap(SyncApply.plan(SyncApplyInput(local: envelope("B", savedAt: d(9), fresh),
                                                                 remote: [envelope("C", savedAt: d(8), .empty)],
                                                                 freshGoalID: newGoal.id, now: d(9, 1))))
-        XCTAssertNil(blank.freshGoalID)
-        // With the backup in that first pass, it promotes and is used up too.
+        XCTAssertEqual(blank.freshGoalID, newGoal.id)
+        XCTAssertEqual(blank.action, .keep)
+        // An envelope holding only a past goal (ended there) settles it: nothing to promote over.
+        var ended = oldGoal
+        ended.status = .achieved
+        ended.endedAt = d(7)
+        let pastOnly = try XCTUnwrap(SyncApply.plan(SyncApplyInput(local: envelope("B", savedAt: d(9), fresh),
+                                                                   remote: [envelope("C", savedAt: d(8), CompassSnapshot(pastGoals: [ended]))],
+                                                                   freshGoalID: newGoal.id, now: d(9, 1))))
+        XCTAssertNil(pastOnly.freshGoalID)
+        // With the backup in that first pass, it promotes and is used up.
         let promoted = try XCTUnwrap(SyncApply.plan(SyncApplyInput(local: envelope("B", savedAt: d(9), fresh),
                                                                    remote: [envelope("A", savedAt: d(8), backup())],
                                                                    freshGoalID: newGoal.id, now: d(9, 1))))
