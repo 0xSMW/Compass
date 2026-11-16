@@ -222,7 +222,7 @@ struct MorningTypingView: View {
     @State private var text = ""
     @State private var partID: UUID?
     @State private var pickingPart = false
-    @FocusState private var focused: Bool
+    @State private var focused = false
 
     private var purpose: MorningSession.Purpose { session.purpose ?? .step }
     private var isFixture: Bool { model.fixture != nil }

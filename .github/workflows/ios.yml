@@ -14,7 +14,7 @@ on:
 # run to finish. Screenshot commits rebase before pushing; README.txt names the
 # commit that produced the current PNGs. Only a push to a branch other than the
 # default one commits PNGs back (to that same branch, github.ref_name), from the
-# `screenshots` job: the only job with write access. Pull requests and the
+# `screenshots` job: the only job with write access. Pull requests, tags and the
 # default branch build and test read-only.
 
 permissions:
@@ -23,7 +23,8 @@ permissions:
 env:
   XCODE_APP: /Applications/Xcode_26.6.app
   # Screenshots are published for pushes to any branch except the default one.
-  PUBLISH_SCREENSHOTS: ${{ github.event_name == 'push' && github.ref_name != github.event.repository.default_branch }}
+  # (A tag push is not a branch: `ref_name` would be the tag.)
+  PUBLISH_SCREENSHOTS: ${{ github.event_name == 'push' && github.ref_type == 'branch' && github.ref_name != github.event.repository.default_branch }}
 
 jobs:
   core:
@@ -115,6 +116,11 @@ jobs:
             echo "Microphone usage string claims audio stays on the phone, but recordings sync to iCloud"; exit 1
           fi
 
+      # The Release job checks these markers are gone; here they must be in the Debug build, or that check
+      # would prove nothing.
+      - name: Test-harness markers present in the Debug build
+        run: scripts/check_harness_strings.sh present "$(find build/DerivedData/Build/Products -maxdepth 2 -name Compass.app | head -1)"
+
       - name: Run app unit tests (CompassTests)
         id: unit
         run: |
@@ -149,8 +155,8 @@ jobs:
             > build/test.log 2>&1
           STATUS=$?
           grep -E "Test Case|error:|failed|passed|TEST" build/test.log | tail -80
-          COUNT=$(ls build/screens-raw | wc -l | tr -d ' ')
-          echo "Screenshots: $COUNT"
+          COUNT=$(ls build/screens-raw/*.png 2>/dev/null | wc -l | tr -d ' ')
+          echo "Screenshots: $COUNT (+ $(ls build/screens-raw/extra 2>/dev/null | wc -l | tr -d ' ') extra)"
           if [ -z "${TEST_RUNNER_SCREENS}" ] && [ "$COUNT" -lt 66 ] && [ "$STATUS" = "0" ]; then echo "Expected 66 screenshots"; STATUS=1; fi
           echo "status=$STATUS" >> "$GITHUB_OUTPUT"
 
@@ -192,6 +198,9 @@ jobs:
           echo "iPhone SE: $SE on $RUNTIME"
           xcrun simctl boot "$SE"; xcrun simctl bootstatus "$SE" -b
           xcrun simctl status_bar "$SE" override --time "9:41" --batteryState charged --batteryLevel 100 || true
+          # A fresh simulator posts "Ready for Apple Intelligence" shortly after its first boot; let it come and
+          # go before the shots (the test also swipes away any banner still over the screen).
+          sleep 45
           xcrun simctl ui "$SE" appearance dark || true
           xcodebuild test-without-building \
             -project Compass.xcodeproj -scheme Compass \
@@ -219,6 +228,12 @@ jobs:
           for f in "${PNGS[@]}"; do
             sips -z 844 390 "$f" --out "build/publish/ios/$(basename "$f")" > /dev/null
           done
+          # States no board draws (A1 restore question, H1 Reminders row), at Large and AX5.
+          EXTRA_PNGS=(build/screens-raw/extra/*.png)
+          if [ ${#EXTRA_PNGS[@]} -gt 0 ]; then
+            mkdir -p build/publish/ios/extra
+            for f in "${EXTRA_PNGS[@]}"; do sips -z 844 390 "$f" --out "build/publish/ios/extra/$(basename "$f")" > /dev/null; done
+          fi
           # Small-screen keyboard pass (iPhone SE), at 375x667 pt.
           SE_PNGS=(build/screens-se/*.png)
           if [ ${#SE_PNGS[@]} -gt 0 ]; then
@@ -228,7 +243,7 @@ jobs:
           echo "Simulator: ${{ steps.sim.outputs.name }}" > build/publish/ios/README.txt
           echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> build/publish/ios/README.txt
           echo "Commit: ${{ github.sha }}" >> build/publish/ios/README.txt
-          ls build/publish/ios | wc -l
+          ls build/publish/ios/*.png | wc -l
 
       - name: Upload screenshots for publishing
         if: always() && steps.sim.outcome == 'success' && env.PUBLISH_SCREENSHOTS == 'true'
@@ -273,12 +288,45 @@ jobs:
           fi
           exit $FAIL
 
+  # Release configuration, unsigned, for the simulator, stripped like a shipped app: it must build, and the
+  # -screen / -tapthrough harness (fixtures, fakes, the movable clock and its control) must not be in it.
+  release:
+    name: Release build without the test harness
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s "$XCODE_APP"
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Build Release (simulator, unsigned)
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild build \
+            -project Compass.xcodeproj -scheme Compass -configuration Release \
+            -sdk iphonesimulator -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath build/Release \
+            CODE_SIGNING_ALLOWED=NO DEPLOYMENT_POSTPROCESSING=YES \
+            | tee build/release.log | grep -E "error:|BUILD|\*\*" || true
+          grep -q "BUILD SUCCEEDED" build/release.log || { grep -E "error:" -A3 build/release.log | head -200; exit 1; }
+
+      - name: No test-harness strings in the Release binary
+        run: scripts/check_harness_strings.sh absent build/Release/Build/Products/Release-iphonesimulator/Compass.app
+
   # Commits the PNGs back to the pushed branch (never on pull requests or the default branch). The only
   # job with write access; it runs no project code.
   screenshots:
     name: Publish screenshots to the branch
     needs: app
-    if: always() && needs.app.result != 'cancelled' && github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
+    if: always() && needs.app.result != 'cancelled' && github.event_name == 'push' && github.ref_type == 'branch' && github.ref_name != github.event.repository.default_branch
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -302,7 +350,7 @@ jobs:
           set -euo pipefail
           if [ ! -f build/publish/ios/README.txt ]; then echo "No screenshots to publish"; exit 0; fi
           mkdir -p renders/ios
-          cp build/publish/ios/* renders/ios/
+          cp -R build/publish/ios/. renders/ios/
           if [ -d build/publish/ios-se ]; then mkdir -p renders/ios-se; cp build/publish/ios-se/* renders/ios-se/; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

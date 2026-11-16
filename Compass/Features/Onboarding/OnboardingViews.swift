@@ -195,7 +195,7 @@ struct OnboardingReviewView: View {
     let id: ScreenID
 
     private var draft: OnboardingDraft { model.onboardingDraft }
-    @FocusState private var focused: Bool
+    @State private var focused = false
     @State private var editingRequested = false
 
     /// Launched straight onto A4k (screenshots): draw the keyboard state without a real keyboard.
@@ -265,7 +265,7 @@ struct OnboardingPartsView: View {
     @State private var editingPartID: UUID?
     @State private var partTitle = ""
     @State private var partSymbol: PartSymbol = .flag
-    @FocusState private var titleFocused: Bool
+    @State private var titleFocused = false
 
     var body: some View {
         let draft = model.onboardingDraft

@@ -62,13 +62,17 @@ enum CompassType: CaseIterable {
         var mono: Bool = false
         /// Weight at accessibility sizes, when the boards change it (durations: `mono axC` is 400).
         var axWeight: Weight? = nil
+        /// Points the glyphs sit above the centred line box. Chrome snaps the boards' baselines to whole
+        /// pixels; for live (24/32 in Inter Tight Medium) that lands 1pt higher than centring does, on
+        /// every line of A3, B2, C5, D3, D3L and D4.
+        var raise: CGFloat = 0
     }
 
     var spec: Spec {
         switch self {
         case .display: Spec(size: 44, lineHeight: 48, weight: .semibold, tracking: -0.03, axSize: 56, axLineHeight: 60)
         case .title: Spec(size: 34, lineHeight: 40, weight: .semibold, tracking: -0.025, axSize: 48, axLineHeight: 52)
-        case .live: Spec(size: 24, lineHeight: 32, weight: .medium, tracking: -0.01, axSize: 34, axLineHeight: 40)
+        case .live: Spec(size: 24, lineHeight: 32, weight: .medium, tracking: -0.01, axSize: 34, axLineHeight: 40, raise: 1)
         case .heading: Spec(size: 22, lineHeight: 28, weight: .medium, tracking: -0.005, axSize: 30, axLineHeight: 36)
         case .body: Spec(size: 17, lineHeight: 24, weight: .regular, tracking: 0, axSize: 26, axLineHeight: 32)
         case .caption: Spec(size: 15, lineHeight: 20, weight: .regular, tracking: 0, axSize: 22, axLineHeight: 28)
@@ -122,6 +126,12 @@ enum CompassType: CaseIterable {
     func fontName(_ weight: Weight?, dts: DynamicTypeSize = .large) -> String {
         let w = weight ?? (dts.isAccessibilitySize ? spec.axWeight : nil) ?? spec.weight
         return spec.mono ? w.plexMono : w.interTight
+    }
+
+    /// `.baselineOffset` for a UIKit line box of `lineHeight` set in `font`: UIKit puts a line box's slack
+    /// above the glyphs; CSS splits it evenly (plus the style's `raise`).
+    func baselineOffset(font: UIFont, lineHeight: CGFloat) -> CGFloat {
+        (lineHeight - font.lineHeight) / 2 + spec.raise
     }
 
     /// Letter spacing in points at this size.

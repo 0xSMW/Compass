@@ -139,7 +139,10 @@ struct ListRow<Accessory: View>: View {
             }
             CompassText(title, color: tint).frame(maxWidth: .infinity, alignment: .leading)
             if let value {
+                // Flush right in its frame: the label's width is rounded up to a whole point, and the board's
+                // value (`margin-left: auto`) ends on the inset (H1 "07:00" spans 316–364).
                 CompassText(value, style: valueStyle, color: .ink2).lineLimit(1).fixedSize()
+                    .multilineTextAlignment(.trailing)
             }
             accessory
         }
@@ -243,14 +246,14 @@ struct UnderlineField: View {
     var style: CompassType = .title
     /// Visible lines: `1...1` is a one-line field (Return submits); beyond the upper bound it scrolls.
     var lines: ClosedRange<Int> = 1...6
-    var focused: FocusState<Bool>.Binding? = nil
+    var focused: Binding<Bool>? = nil
     /// Draw the focused underline without real focus (screenshots of keyboard states).
     var showsFocus: Bool = false
     var label: String? = nil
     var returnKey: UIReturnKeyType = .done
     var onSubmit: (() -> Void)? = nil
 
-    @FocusState private var internalFocus: Bool
+    @State private var internalFocus = false
 
     var body: some View {
         let isFocused = showsFocus || (focused?.wrappedValue ?? internalFocus)
@@ -269,7 +272,7 @@ struct BoxedField: View {
     @Binding var text: String
     var lines: ClosedRange<Int> = 2...4
     var label: String
-    var focused: FocusState<Bool>.Binding? = nil
+    var focused: Binding<Bool>? = nil
 
     var body: some View {
         CompassTextEditor(text: $text, prompt: prompt, style: .body, lines: lines, focused: focused, label: label)

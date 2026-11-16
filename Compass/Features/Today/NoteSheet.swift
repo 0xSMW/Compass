@@ -15,7 +15,7 @@ struct NoteDetailSheet: View {
 
     @State private var editing = false
     @State private var draft = ""
-    @FocusState private var focused: Bool
+    @State private var focused = false
     private var playback: VoicePlayback { .shared }
 
     private var audioFile: String? {

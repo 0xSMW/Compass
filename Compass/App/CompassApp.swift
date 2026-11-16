@@ -20,27 +20,6 @@ struct CompassApp: App {
     }
 }
 
-/// `-tapthrough` only: a small control on the left edge (clear of the status bar and the nav row) the UI
-/// test taps to move the clock to 21:05, so the evening comes in the way the boundary timer brings it on
-/// a phone. Its value counts the taps, so a failing test can tell a missed tap from a screen that stayed.
-private struct TapThroughClockControl: View {
-    @Environment(AppModel.self) private var model
-    @State private var taps = 0
-
-    var body: some View {
-        Button {
-            taps += 1
-            model.advanceTapThroughClock(hour: 21, minute: 5)
-        } label: {
-            Color.white.opacity(0.05).frame(width: 24, height: 24)
-        }
-        .accessibilityLabel("Move the clock to the evening")
-        .accessibilityValue("\(taps)")
-        .accessibilityIdentifier("tapthrough-evening")
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-    }
-}
-
 /// Renders the current ScreenID. Turn-taking cross-fades in place (200 ms; cut with Reduce Motion).
 struct RootView: View {
     @Environment(AppModel.self) private var model
@@ -55,7 +34,9 @@ struct RootView: View {
                 .transition(.opacity)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("screen-\(model.current.rawValue)")
-            if model.launch.tapThrough { TapThroughClockControl() }
+            #if DEBUG
+            if model.launch.tapThrough { TapThroughClockControl() } // DebugHarness.swift
+            #endif
         }
         .animation(Motion.animation(Motion.turnTaking, reduced: reduced), value: model.current)
         .environment(\.motionReduced, reduced)

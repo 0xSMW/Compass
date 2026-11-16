@@ -39,7 +39,7 @@ struct TodayView: View {
     @State private var showsRecordingBlock = false
     @State private var draft = ""
     @State private var configured = false
-    @FocusState private var fieldFocused: Bool
+    @State private var fieldFocused = false
 
     private var isFixture: Bool { model.fixture != nil }
 

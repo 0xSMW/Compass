@@ -8,7 +8,7 @@ struct TodayNoteField: View {
     var prompt: String = "Note"
     var label: String = "Note"
     var saveLabel: String = "Save note"
-    var focus: FocusState<Bool>.Binding
+    var focus: Binding<Bool>
     let onSave: () -> Void
 
     var body: some View {

@@ -35,6 +35,8 @@ final class SmallScreenKeyboardTests: XCTestCase {
                 XCTFail("\(id.rawValue): accessibility marker screen-\(id.rawValue) not found")
             }
             Thread.sleep(forTimeInterval: 0.6)
+            // A fresh SE simulator posts "Ready for Apple Intelligence" after its first boot.
+            SystemBanners.dismiss()
             let shot = XCUIScreen.main.screenshot()
             let attachment = XCTAttachment(screenshot: shot)
             attachment.name = "\(id.rawValue) small"

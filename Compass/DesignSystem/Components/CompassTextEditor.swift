@@ -8,12 +8,17 @@ import UIKit
 ///
 /// `lines` sets the visible lines (`1...1` = one line; Return submits). Beyond the upper bound the field
 /// scrolls inside. Return never inserts a newline: it calls `onSubmit`, or ends editing.
+///
+/// `focused` is a plain `Binding<Bool>` (a `@State` in the screen), not a `FocusState`: SwiftUI can't
+/// focus a UITextView, so an unattached `FocusState` read back as false right after a tap and dropped the
+/// keyboard under the first keystroke. The field writes the binding when editing begins and ends; the
+/// screen sets it to bring the keyboard up or take it away.
 struct CompassTextEditor: View {
     @Binding var text: String
     var prompt: String
     var style: CompassType = .body
     var lines: ClosedRange<Int> = 1...6
-    var focused: FocusState<Bool>.Binding?
+    var focused: Binding<Bool>?
     var label: String
     var returnKey: UIReturnKeyType = .done
     var onSubmit: (() -> Void)?
@@ -36,7 +41,7 @@ private struct EditorView: UIViewRepresentable {
     @Binding var text: String
     let style: CompassType
     let lines: ClosedRange<Int>
-    let focus: FocusState<Bool>.Binding?
+    let focus: Binding<Bool>?
     let label: String
     let returnKey: UIReturnKeyType
     let onSubmit: (() -> Void)?
@@ -45,25 +50,19 @@ private struct EditorView: UIViewRepresentable {
         var parent: EditorView
         /// The focus binding as `updateUIView` last saw it (only a change to false resigns).
         var lastSeenFocus = false
-        private var beganEditingAt: Date?
         init(_ parent: EditorView) { self.parent = parent }
-
-        /// Editing began under a second ago: a `false` read back now is SwiftUI's, not the screen's.
-        var justBeganEditing: Bool {
-            beganEditingAt.map { Date().timeIntervalSince($0) < 1 } ?? false
-        }
 
         func textViewDidChange(_ textView: UITextView) {
             parent.text = textView.text
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
-            beganEditingAt = Date()
+            lastSeenFocus = true
             if let focus = parent.focus, !focus.wrappedValue { focus.wrappedValue = true }
         }
 
         func textViewDidEndEditing(_ textView: UITextView) {
-            beganEditingAt = nil
+            lastSeenFocus = false
             if let focus = parent.focus, focus.wrappedValue { focus.wrappedValue = false }
         }
 
@@ -106,11 +105,8 @@ private struct EditorView: UIViewRepresentable {
         view.textContainer.maximumNumberOfLines = lines.upperBound == 1 ? 1 : 0
         view.textContainer.lineBreakMode = lines.upperBound == 1 ? .byTruncatingTail : .byWordWrapping
         view.accessibilityLabel = label
-        // `true` brings the keyboard up; a change to `false` takes it away. Only a change counts, and not
-        // in the moment after editing began: the FocusState isn't attached to a SwiftUI-focusable view
-        // (this is a UITextView), so SwiftUI can read it back as false right after the user taps in, and
-        // resigning on any `false` dropped the keyboard under the first keystroke (found by the
-        // tap-through UI test).
+        // `true` brings the keyboard up; a change to `false` takes it away. Only a change counts: a field
+        // the user tapped into has already set the binding to true (`textViewDidBeginEditing`).
         if let focus {
             let wants = focus.wrappedValue
             let coordinator = context.coordinator
@@ -118,7 +114,7 @@ private struct EditorView: UIViewRepresentable {
             coordinator.lastSeenFocus = wants
             if wants, !view.isFirstResponder {
                 DispatchQueue.main.async { if view.window != nil { view.becomeFirstResponder() } }
-            } else if !wants, was, view.isFirstResponder, !coordinator.justBeganEditing {
+            } else if !wants, was, view.isFirstResponder {
                 DispatchQueue.main.async { view.resignFirstResponder() }
             }
         }
@@ -148,7 +144,7 @@ private struct EditorView: UIViewRepresentable {
             .font: font,
             .foregroundColor: UIColor(Color.ink),
             .paragraphStyle: paragraph,
-            .baselineOffset: (lineHeight - font.lineHeight) / 2,
+            .baselineOffset: style.baselineOffset(font: font, lineHeight: lineHeight),
         ]
         return attributes.merging(style.trackingAttributes(for: dts)) { $1 }
     }

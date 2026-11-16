@@ -130,9 +130,11 @@ struct StepCard: View {
         case .empty(_, let label):
             CompassText(label, style: .caption, color: .ink3)
         case .justDone:
-            HStack(spacing: Space.xs) {
+            // today.html C4: `.lab` gap 8, then the link's own `padding: 0 8px`, so "Undo" starts 16 after
+            // "Done" (x 99). "Done" reports its width rounded up to a whole point, so the gap gives 1 back.
+            HStack(spacing: Space.xs - 1) {
                 CompassText("Done", style: .caption).lineLimit(1).fixedSize()
-                LinkButton("Undo", tone: .ink, action: onUndo)
+                LinkButton("Undo", tone: .ink, padding: Space.xs, action: onUndo)
             }
             .accessibilityElement(children: .contain)
         case .open, .done:

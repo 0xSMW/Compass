@@ -28,7 +28,7 @@ struct YourGoalView: View {
     @State private var partSheet: PartSheet?
     @State private var partTitle = ""
     @State private var confirmAchieved = false
-    @FocusState private var goalFocused: Bool
+    @State private var goalFocused = false
 
     struct PartSheet: Identifiable {
         var id: UUID
@@ -193,7 +193,7 @@ private struct PartEditor: View {
     @Binding var title: String
     let onRemove: (() -> Void)?
     let onSubmit: () -> Void
-    @FocusState private var focused: Bool
+    @State private var focused = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.m) {

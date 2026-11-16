@@ -193,7 +193,7 @@ private struct CompassLabel: UIViewRepresentable {
         default: paragraph.alignment = env.layoutDirection == .rightToLeft ? .right : .left
         }
         // UIKit puts a line box's slack above the glyphs; CSS splits it evenly.
-        let baselineOffset = (lineHeight - font.lineHeight) / 2
+        let baselineOffset = style.baselineOffset(font: font, lineHeight: lineHeight)
         let result = NSMutableAttributedString()
         for run in runs {
             var attributes: [NSAttributedString.Key: Any] = [

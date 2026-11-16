@@ -186,8 +186,14 @@ never adopted as a local edit, so it can't record notes and steps as deleted.
   `.stepTitle`, `.noteText`, `.reflectionSummary`, `.longStepTitle`, `.pitchStepTitle`, …
 - Launch args: `-screen <ID>` loads the fixture into `AppModel` (in-memory store, fake services, fixed
   clock) and shows that screen; `-ax5` forces Dynamic Type AX5 (automatic for A8, B8, C11, C11b, D7, D8,
-  E6); `-uitest` forces reduced motion. Without `-screen`, the app loads the JSON store and opens on
-  `ScreenID.entry(for: model.phase, today:)`.
+  E6); `-uitest` forces reduced motion; `-variant restore-choice|reminders-off` (with `-screen A1`/`H1`)
+  draws a state no board shows, for the screenshot extras. Without `-screen`, the app loads the JSON store
+  and opens on `ScreenID.entry(for: model.phase, today:)`.
+- The harness is **Debug only**: `LaunchOptions.parse()` returns the defaults in Release, and
+  `LaunchHarness` (fixture and fake wiring), `MovableClock` and `TapThroughClockControl`
+  (`App/DebugHarness.swift`) are compiled out. The `release` CI job builds Release (simulator, unsigned,
+  stripped) and fails if `scripts/check_harness_strings.sh` finds their markers; the `app` job checks the
+  same markers are in the Debug build, so the check can't pass vacuously.
 - `DayEngine` rules: no goal and no history → onboarding; an achieved/ended goal (or history without a
   goal) → `goalEnded`, Today's frame with "Set the next goal" (never A1); ≥30 quiet days → F3; 3–29 →
   F2; 1–2 → smaller suggested step (F1 frame); ≥ evening time (21:00) → D1 / D2 / D2b until reflected;
@@ -287,7 +293,7 @@ Counts toward, E4 → part / delete) swap its content; Cancel goes one level bac
 
 `.github/workflows/ios.yml` runs on every push, on pull requests and on manual dispatch (optional `screens`
 input like `C3,C4`). The workflow is read-only; only the `screenshots` job has `contents: write`, and it runs
-only for a push to a branch other than the default one, committing the PNGs back to that branch
+only for a push to a branch (not a tag) other than the default one, committing the PNGs back to that branch
 (`github.ref_name`). Any concurrency warning fails the run (fix it or `@preconcurrency import`; every
 `@unchecked Sendable` carries a one-line justification). `TapThroughTests` (launch arg `-tapthrough`: the live
 flow from A1 on fakes, an in-memory store and a movable clock) drives A1 → A7 → B1 → B4/B5 → C3 + a typed
@@ -296,7 +302,10 @@ note → 21:05 → D1 → D5 and fails on any broken hop:
 2. `app` (macos-26, Xcode 26.6): `xcodegen generate`, build app + widget + UI tests on the iPhone 16e
    simulator (iOS 26.2, 390×844 pt; falls back to 17e), run `CompassTests` (unit), run `ScreenshotTests`, scale each PNG to
    390×844 with `sips`, commit `renders/ios/<ID>.png` (+ `README.txt` with run URL) back to the branch
-   with `[skip ci]`.
+   with `[skip ci]`. `ScreenshotTests.testZ_Extras` adds `renders/ios/extra/` (A1's restore question and
+   H1's Reminders row, at Large and AX5) and checks their controls are on screen. The tap-through test
+   and the iPhone SE keyboard pass (`renders/ios-se/`) run in the same job.
+3. `release` (macos-26): Release build without the test harness (above).
 
 Last green run: https://github.com/0xSMW/Compass/actions/runs/43740739724 (66/66 screenshots).
 `renders/ios/README.txt` names the run and commit that produced the current PNGs.

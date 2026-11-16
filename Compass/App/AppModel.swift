@@ -72,8 +72,8 @@ final class AppModel {
     let transcriber: SpeechTranscriber
     let cloud: CloudAssist
     @ObservationIgnored private let clock: () -> Date
-    /// The tap-through UI test's clock (`-tapthrough` only).
-    @ObservationIgnored private var tapThroughClock: MovableClock?
+    /// Moves the tap-through UI test's clock (`-tapthrough` only, Debug builds; DebugHarness.swift).
+    @ObservationIgnored private(set) var moveHarnessClock: ((Date) -> Void)?
     /// What happens after every save (widget reload, sync notification). Spies replace it in tests.
     @ObservationIgnored let effects: SnapshotEffects
 
@@ -87,36 +87,28 @@ final class AppModel {
         historySelection = HistorySelection()
         system = SystemServices()
         effects = launch.screen == nil && !launch.tapThrough ? .live : .none
-        if launch.tapThrough {
-            // UI tap-through (`-tapthrough`): the live flow from A1 on an empty in-memory store, with the
-            // fakes, the fixtures' calendar and a clock the test moves (`advanceTapThroughClock`). No
-            // fixture, so every screen behaves as on a phone; nothing touches iCloud, the store file,
-            // permissions or notifications.
-            fixture = nil
-            snapshot = .empty
-            conditions = .normal
-            calendar = Fixtures.calendar
-            let movable = MovableClock(Fixtures.date(Fixtures.todayKey, 8))
-            tapThroughClock = movable
-            clock = { movable.now }
-            store = InMemoryStore(.empty)
-            recorder = FakeAudioRecorder()
-            transcriber = FakeSpeechTranscriber()
-            cloud = FakeCloudAssist(isEnabled: true)
-            path = [.a1]
-        } else if let id = launch.screen {
-            let f = Fixtures.fixture(for: id)
-            fixture = f
-            snapshot = f.snapshot
-            conditions = f.conditions
-            calendar = f.calendar
-            let fixedNow = f.now
-            clock = { fixedNow }
-            store = InMemoryStore(f.snapshot)
-            recorder = FakeAudioRecorder(permission: f.conditions.microphone, storageFull: f.conditions.storageFull)
-            transcriber = FakeSpeechTranscriber(permission: f.conditions.speech, fails: f.conditions.transcriptionFails)
-            cloud = FakeCloudAssist(isEnabled: f.snapshot.settings.cloudAssist, isOnline: f.conditions.online)
-            path = [id]
+        #if DEBUG
+        let harness = LaunchHarness.setup(for: launch)
+        #else
+        let harness: HarnessSetup? = nil
+        #endif
+        if let harness {
+            // `-screen` / `-tapthrough` (Debug only): fixtures or an empty in-memory store, the fakes and
+            // a fixed or movable clock. Release builds never get here (DebugHarness.swift).
+            fixture = harness.fixture
+            snapshot = harness.snapshot
+            conditions = harness.conditions
+            calendar = harness.calendar
+            clock = harness.clock
+            moveHarnessClock = harness.moveClock
+            store = harness.store
+            recorder = harness.recorder
+            transcriber = harness.transcriber
+            cloud = harness.cloud
+            path = harness.path
+            #if DEBUG
+            LaunchHarness.prepare(self)
+            #endif
         } else {
             fixture = nil
             let fileStore = SharedStorage.makeStore()
@@ -287,15 +279,6 @@ final class AppModel {
         if next != snapshot { commit(next) }
     }
 
-    /// `-tapthrough` only: move the clock to `hour:minute` today and judge the screen, as the boundary
-    /// timer would on a phone.
-    func advanceTapThroughClock(hour: Int, minute: Int) {
-        guard let tapThroughClock else { return }
-        if entryCheckedAt == nil { entryCheckedAt = now }
-        tapThroughClock.now = todayKey.date(in: calendar, hour: hour, minute: minute)
-        refreshEntryForClock()
-    }
-
     func updateToday(_ body: (inout Day) -> Void) {
         let key = todayKey
         mutate { $0.updateDay(key, body) }
@@ -372,12 +355,6 @@ final class AppModel {
         effects.reloadWidgets()
         reset(to: .a1)
     }
-}
-
-/// A clock the tap-through UI test moves (`AppModel.advanceTapThroughClock`).
-final class MovableClock {
-    var now: Date
-    init(_ now: Date) { self.now = now }
 }
 
 /// Where a snapshot change came from (see `AppModel.commit`).

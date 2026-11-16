@@ -72,7 +72,7 @@ struct EveningReflectView: View {
     let id: ScreenID
 
     private var session: EveningSession { model.eveningSession }
-    @FocusState private var focused: Bool
+    @State private var focused = false
     private var capture: VoiceCapture { model.voice }
 
     private var outcome: ReflectionOutcome { session.outcome ?? (id == .d4 ? .notToday : .moved) }
@@ -166,7 +166,7 @@ struct EveningSavedView: View {
     @State private var expanded: Bool
     @State private var summaryDraft = ""
     @State private var pickingPart = false
-    @FocusState private var focused: Bool
+    @State private var focused = false
     private var playback: VoicePlayback { .shared }
 
     init(id: ScreenID) {
