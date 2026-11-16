@@ -220,6 +220,14 @@ public struct StoreProblem: Hashable, Sendable {
     }
 }
 
+/// What `JSONFileStore.loadAtLaunch` read: the snapshot (or `.empty` and the problem), and the file's stamp
+/// taken before the read, so it never describes a later write than the one read.
+public struct LaunchLoad: Sendable {
+    public var snapshot: CompassSnapshot
+    public var problem: StoreProblem?
+    public var stamp: StoreStamp?
+}
+
 /// JSON file store. A missing file loads as `.empty`. Writes are atomic, and reads and writes are
 /// coordinated (`NSFileCoordinator`) because the widget's process reads and writes the same file.
 public final class JSONFileStore: Store, Sendable {
@@ -398,6 +406,22 @@ public final class JSONFileStore: Store, Sendable {
             let copy = quarantine(label: "unreadable", now: now)
             return (.empty, StoreProblem(kind: .corrupt, quarantinedCopy: copy))
         }
+    }
+
+    /// The app's launch read: `loadRecovering`, with the file's stamp read before it. The stamp seeds
+    /// `SaveQueue` (and `lastSavedAt`) as "what memory holds". Read after the file, a widget write landing
+    /// between the two reads would be taken for the one memory holds: becoming active would not read it and
+    /// the first save would overwrite it. Read before, that write changes the stamp and is taken in.
+    public func loadAtLaunch(now: Date = Date()) -> LaunchLoad {
+        loadAtLaunch(now: now, afterLoad: {})
+    }
+
+    /// `loadAtLaunch`, with `afterLoad` run right after the file is read (tests: another process writes there).
+    func loadAtLaunch(now: Date, afterLoad: () -> Void) -> LaunchLoad {
+        let stamp = self.stamp
+        let (snapshot, problem) = loadRecovering(now: now)
+        afterLoad()
+        return LaunchLoad(snapshot: snapshot, problem: problem, stamp: stamp)
     }
 
     /// Copy the store file next to itself under a new name. Returns the copy, or nil if nothing was copied.

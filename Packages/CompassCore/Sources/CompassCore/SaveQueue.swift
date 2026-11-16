@@ -21,7 +21,8 @@ import Synchronization
 /// - **Becoming active** (`retryOrCheck`): writes again after a failed write, else reads the file if another
 ///   process changed it.
 /// - **Waiting.** `waitUntilIdle` blocks until everything queued so far is done (tests, the app ending);
-///   `whenIdle` calls back instead (a background task while the app goes to the background).
+///   `whenIdle` calls back instead. `setActivity` reports each change between idle and busy, which holds a
+///   background task while the app is not active (`SaveBackgroundGuard`).
 public final class SaveQueue: Sendable {
     public let store: Store
     private let queue: DispatchQueue
@@ -29,6 +30,7 @@ public final class SaveQueue: Sendable {
     private let worker: Mutex<Worker>
     private let outcomes = Mutex<[SaveOutcome]>([])
     private let notify = Mutex<(@Sendable () -> Void)?>(nil)
+    private let activity = Mutex<(@Sendable (Bool) -> Void)?>(nil)
 
     private struct Pending: Sendable {
         /// The newest snapshot to write; anything queued before it is covered by it.
@@ -80,6 +82,14 @@ public final class SaveQueue: Sendable {
         notify.withLock { $0 = body }
     }
 
+    /// Called with true on the queuing thread, once the change is queued, each time the queue goes from idle
+    /// to busy, and with false on the worker each time it goes idle again (after the last outcome is posted
+    /// and the last work after writes has run). Calls from the two threads can arrive in either order, so
+    /// check `isIdle` rather than counting them.
+    public func setActivity(_ body: @escaping @Sendable (_ busy: Bool) -> Void) {
+        activity.withLock { $0 = body }
+    }
+
     // MARK: Queueing
 
     /// Write `snapshot` (in order, after everything queued before). Returns its ticket.
@@ -119,7 +129,10 @@ public final class SaveQueue: Sendable {
             p.running = true
             return (p.lastTicket, true)
         }
-        if start { queue.async { self.run() } }
+        if start {
+            queue.async { self.run() }
+            activity.withLock { $0 }?(true)
+        }
         return ticket
     }
 
@@ -199,7 +212,10 @@ public final class SaveQueue: Sendable {
                 p.discarded = false
                 return batch
             }
-            guard let batch else { return }
+            guard let batch else {
+                activity.withLock { $0 }?(false)
+                return
+            }
             process(batch)
         }
     }

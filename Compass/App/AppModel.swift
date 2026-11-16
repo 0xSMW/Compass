@@ -119,17 +119,19 @@ final class AppModel {
             fixture = nil
             let fileStore = SharedStorage.makeStore()
             // Never reads an unreadable or newer file as empty and overwrites it: it is copied aside first.
-            let (loaded, problem) = fileStore.loadRecovering()
-            storeProblem = problem
+            // The stamp is read before the file, so a widget write in between is seen as the widget's.
+            let read = fileStore.loadAtLaunch()
+            let loaded = read.snapshot
+            storeProblem = read.problem
             snapshot = loaded
-            lastSavedAt = fileStore.modifiedAt
+            lastSavedAt = read.stamp?.modifiedAt
             AudioTombstoneLog.shared.noteReferenced(loaded.referencedAudioFiles)
             conditions = .normal
             calendar = SharedStorage.calendar(for: loaded.settings)
             clock = { Date() }
             store = fileStore
             // The stamp read at launch: until another process writes, saves never decode the file again.
-            saves = SaveQueue(store: fileStore, knownStamp: fileStore.stamp)
+            saves = SaveQueue(store: fileStore, knownStamp: read.stamp)
             let live = LiveVoiceServices.make() // LiveServices+Voice.swift
             recorder = live.recorder
             transcriber = live.transcriber

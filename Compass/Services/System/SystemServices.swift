@@ -24,6 +24,8 @@ final class SystemServices {
     /// Fires at the next noon / evening time / midnight (or shortly after an answer that was in progress).
     @ObservationIgnored private var entryTimer: Task<Void, Never>?
     @ObservationIgnored private var started = false
+    /// Keeps the app running while the model's save queue has work and the app is not active.
+    @ObservationIgnored private var saveTasks: SaveBackgroundGuard?
     @ObservationIgnored private let defaults = UserDefaults.standard
 
     private enum Key {
@@ -56,9 +58,11 @@ final class SystemServices {
         observers.append(center.addObserver(forName: UIApplication.significantTimeChangeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.deviceClockChanged() }
         })
-        // Store writes run on the model's save worker: let them finish before iOS suspends or ends the app.
+        // Store writes run on the model's save worker: let them finish before iOS suspends the app, whether
+        // they were queued before it left the foreground or while it is in the background.
+        saveTasks = Self.saveBackgroundGuard(for: model.saves)
         observers.append(center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.finishSavesInBackground() }
+            MainActor.assumeIsolated { self?.saveTasks?.check() }
         })
         observers.append(center.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.model?.flushSaves() }
@@ -105,12 +109,19 @@ final class SystemServices {
         scheduleReminders()
     }
 
-    /// Going to the background: writes still queued (the store, then sync's state) finish under a background
-    /// task, so a suspended or ended app loses nothing it showed.
-    private func finishSavesInBackground() {
-        guard let model, !model.saves.isIdle else { return }
-        let task = SaveBackgroundTask(name: "Compass save")
-        model.saves.whenIdle { Task { @MainActor in task.end() } }
+    /// While the save queue has work (the store, then sync's state) and the app is not active, one background
+    /// task runs until the queue is idle or iOS's time runs out: begun when the app enters the background with
+    /// writes queued, or when a write is queued while it is in the background (an evening summary, a sync
+    /// pull, a notification action). The rules are CompassCore's `SaveBackgroundGuard`.
+    private static func saveBackgroundGuard(for saves: SaveQueue) -> SaveBackgroundGuard {
+        SaveBackgroundGuard(
+            queue: saves,
+            isActive: { UIApplication.shared.applicationState == .active },
+            begin: { expired in
+                let id = UIApplication.shared.beginBackgroundTask(withName: "Compass save") { expired() }
+                return id == .invalid ? nil : id.rawValue
+            },
+            end: { id in UIApplication.shared.endBackgroundTask(UIBackgroundTaskIdentifier(rawValue: id)) })
     }
 
     /// The widget completes steps in its own process; take its change in (`AppModel.reloadFromStore`).
@@ -254,21 +265,5 @@ enum RecordingBlock: Equatable {
         if conditions.microphone == .denied { self = .microphoneOff; return }
         if conditions.storageFull { self = .storageFull; return }
         return nil
-    }
-}
-
-/// A background task assertion, ended once (when the work is done or iOS's time runs out).
-@MainActor
-private final class SaveBackgroundTask {
-    private var id: UIBackgroundTaskIdentifier = .invalid
-
-    init(name: String) {
-        id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in self?.end() }
-    }
-
-    func end() {
-        guard id != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(id)
-        id = .invalid
     }
 }

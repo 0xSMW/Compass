@@ -15,6 +15,8 @@ Packages/CompassCore/           Pure Swift, Linux-buildable. `swift test` runs h
     History.swift               DayMark (moved/missed/empty), HistoryWeek, HistoryBuilder, GoalMarker
     Store.swift                 Store protocol, InMemoryStore, JSONFileStore (schema check, quarantine)
     SaveQueue.swift             SaveQueue (the app's store writes off the main actor), WipeLedger
+    SaveBackgroundGuard.swift   SaveBackgroundGuard: one background task while the save queue has work
+                                and the app isn't active
     Sync.swift                  SyncEnvelope, SnapshotMerger (per-item updatedAt, wipe generations, E5)
     SyncLocal.swift             DeviceIdentity (E5 labels), LocalEdits (stamping), AudioSyncPlan
     SyncApply.swift             SyncApply.plan (the coordinator's decision), StoreReload, widget merge,
@@ -118,16 +120,27 @@ encodes memory and replaces the file without reading it. Only the app and its wi
 App Group container is local; other devices' copies are separate envelope files in iCloud Drive), every
 write is atomic and coordinated, and an atomic replace gives a new file number and modification date, so
 the widget's write always changes the stamp, even within the same second. The stamp read at launch seeds
-it, so a launch that reads the file never decodes it again until the widget writes.
+it, so a launch that reads the file never decodes it again until the widget writes. That stamp is read
+before the file (`JSONFileStore.loadAtLaunch`, which also gives `lastSavedAt`): a widget write landing
+between the two reads then changes the stamp and is taken in on becoming active or by the first save,
+instead of being taken for what memory holds and overwritten.
 
 **Ordering around the queue.** Sync writes `sync-state.json` on the same worker
 (`SaveQueue.afterWrites`, below), so state writes stay in order behind the store writes queued before
 them and never block the main actor. Delete everything drops writes not yet started and waits for the one
 in progress (`SaveQueue.discardPendingWrites` / `replacingContents`, a short wait on the main actor for a
 rare action) before the eraser and `deleteEverything` remove the file, so no queued write puts it back.
-Going to the background starts a background task that ends once the queue is idle (`SystemServices`,
-`SaveQueue.whenIdle`), and `willTerminate` waits for it, so nothing the app showed is lost when iOS
-suspends or ends it. The launch read stays synchronous.
+While the queue has work and the app is not active, one background task keeps the app running
+(`SaveBackgroundGuard`, CompassCore, wired to UIKit in `SystemServices`). It begins when the app enters
+the background with writes queued, or when the queue goes from idle to busy while the app is not active
+(`SaveQueue.setActivity`): an evening summary or transcript arriving, a sync pull, a notification action.
+It ends when the queue reports idle and still is idle on the main actor, or when iOS's time runs out (the
+expiration handler ends it). Only one is held at a time, each is ended exactly once, and none begins while
+the app is active. `willTerminate` waits for the queue. A write is never half-done on disk (each replaces
+the file atomically), so what can be lost is bounded: if the app crashes, or iOS ends it after the
+background time ran out, the commits made since the last finished write are lost (on a crash, at most
+one write's duration), and a merge among them is pulled again at the next launch. The launch read stays
+synchronous.
 
 ## Sync (iCloud)
 

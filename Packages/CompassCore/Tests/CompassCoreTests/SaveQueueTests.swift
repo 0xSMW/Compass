@@ -272,6 +272,75 @@ final class SaveQueueTests: XCTestCase {
         XCTAssertEqual(drained(queue).map(\.write), [.succeeded, .succeeded])
     }
 
+    // MARK: Launch
+
+    /// The widget completes the step right after the app's launch read: the stamp the queue starts from was
+    /// read before the file, so becoming active reads the widget's write and the first save keeps it.
+    func testALaunchReadSeesAWidgetWriteThatLandsRightAfterIt() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("SaveQueueTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("Compass/compass.json")
+        let app = JSONFileStore(url: url), widget = JSONFileStore(url: url)
+        try app.save(version(1))
+        let completed = Fixtures.date(key, 15)
+        let read = app.loadAtLaunch(now: Date(), afterLoad: { _ = try? widget.setStepDone(true, on: self.key, at: completed) })
+        XCTAssertNil(read.problem)
+        XCTAssertFalse(read.snapshot.day(key)?.step?.isDone ?? true, "read before the widget's write")
+        let queue = SaveQueue(store: app, knownStamp: read.stamp)
+
+        // Becoming active.
+        queue.retryOrCheck(memory: read.snapshot)
+        queue.waitUntilIdle()
+        var memory = read.snapshot
+        let outcomes = drained(queue)
+        XCTAssertEqual(outcomes.count, 1, "the widget's write is not taken for the one memory holds")
+        if let file = outcomes.first?.fileChanges { memory = memory.takingWidgetChanges(from: file) }
+        XCTAssertEqual(memory.day(key)?.step?.completedAt, completed)
+
+        // The first save.
+        memory.updateDay(key) { $0.notes.append(Note(text: "after launch", createdAt: Fixtures.date(self.key, 16))) }
+        queue.enqueue(memory)
+        queue.waitUntilIdle()
+        let stored = try app.load()
+        XCTAssertEqual(noteCount(stored), 2)
+        XCTAssertEqual(stored.day(key)?.step?.completedAt, completed, "the first save kept the widget's completion")
+    }
+
+    /// The same write, with no becoming-active check before the first save: that save reads it and keeps it.
+    func testTheFirstSaveKeepsAWidgetWriteThatLandsRightAfterTheLaunchRead() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("SaveQueueTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("Compass/compass.json")
+        let app = JSONFileStore(url: url), widget = JSONFileStore(url: url)
+        try app.save(version(1))
+        let completed = Fixtures.date(key, 15)
+        let read = app.loadAtLaunch(now: Date(), afterLoad: { _ = try? widget.setStepDone(true, on: self.key, at: completed) })
+        let queue = SaveQueue(store: app, knownStamp: read.stamp)
+        var memory = read.snapshot
+        memory.updateDay(key) { $0.notes.append(Note(text: "after launch", createdAt: Fixtures.date(self.key, 16))) }
+        queue.enqueue(memory)
+        queue.waitUntilIdle()
+        let stored = try app.load()
+        XCTAssertEqual(noteCount(stored), 2)
+        XCTAssertEqual(stored.day(key)?.step?.completedAt, completed)
+        XCTAssertEqual(drained(queue).first?.fileChanges?.day(key)?.step?.completedAt, completed, "reported to the owner")
+    }
+
+    /// A missing file at launch: no stamp, and a file the widget creates right after the read is taken in.
+    func testALaunchReadOfAMissingFileTakesAFileWrittenRightAfterIt() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("SaveQueueTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("Compass/compass.json")
+        let app = JSONFileStore(url: url), widget = JSONFileStore(url: url)
+        let read = app.loadAtLaunch(now: Date(), afterLoad: { try? widget.save(self.version(3)) })
+        XCTAssertNil(read.stamp)
+        XCTAssertEqual(read.snapshot, .empty)
+        let queue = SaveQueue(store: app, knownStamp: read.stamp)
+        queue.retryOrCheck(memory: read.snapshot)
+        queue.waitUntilIdle()
+        XCTAssertEqual(drained(queue).count, 1, "read: the file is not the one memory holds")
+    }
+
     // MARK: Sync's wipe record
 
     /// The sync state records a new wipe only after the store write holding the filtered snapshot went
@@ -338,6 +407,32 @@ final class SaveQueueTests: XCTestCase {
         queue.waitUntilIdle()
         XCTAssertEqual(noteCount(try store.load()), 5)
         XCTAssertEqual(told.withLock { $0 }, true)
+    }
+
+    // MARK: Activity
+
+    /// `setActivity`: true once when the queue goes from idle to busy (on the queuing thread), false once
+    /// when it is idle again (on the worker, before `waitUntilIdle` returns).
+    func testActivityIsReportedOncePerBusySpell() throws {
+        let store = GatedStore(version(0))
+        let queue = SaveQueue(store: store, knownStamp: nil)
+        let events = Mutex<[Bool]>([])
+        queue.setActivity { busy in events.withLock { $0.append(busy) } }
+        store.holdNextWrite()
+        queue.enqueue(version(1))
+        XCTAssertEqual(events.withLock { $0 }, [true], "reported before enqueue returns")
+        store.waitUntilAWriteIsHeld()
+        queue.enqueue(version(2))
+        queue.afterWrites { _ in }
+        queue.retryOrCheck(memory: version(2))
+        XCTAssertEqual(events.withLock { $0 }, [true], "already busy")
+        store.release()
+        queue.waitUntilIdle()
+        XCTAssertEqual(events.withLock { $0 }, [true, false])
+        XCTAssertTrue(queue.isIdle)
+        queue.afterWrites { _ in }
+        queue.waitUntilIdle()
+        XCTAssertEqual(events.withLock { $0 }, [true, false, true, false], "work after writes counts as work")
     }
 
     // MARK: Flushing
