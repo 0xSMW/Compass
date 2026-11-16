@@ -119,7 +119,10 @@ never adopted as a local edit, so it can't record notes and steps as deleted.
   current goal that no device retired. So if the old phone merges the new device's fresh goal before the
   new device has put it back on top, the old phone's demotion doesn't outvote the promotion, and both
   devices settle on the fresh goal (tested for every order of pushes and reads, `SyncRound3Tests`).
-  Setting a new goal on a device clears the marker on its past goals (it moved on knowingly).
+  Setting a new goal on a device clears the marker on its past goals (it moved on knowingly) and dates
+  the end of each replaced one at the new goal's `createdAt`, so its `endedAt` comes from this device's
+  clock rather than the clock of the device the merge copied it from. An achieved goal keeps its
+  achievement time, and a goal a user ended never carries the marker.
 - **A goal nobody ended always has a holder.** If every device's current goal was retired elsewhere
   (two new devices beside an old one, or offline goal changes on two devices), the newest goal marked
   `demotedByMerge` that no device retired comes back as current (`SnapshotMerger.orphan`), instead of
@@ -139,10 +142,24 @@ never adopted as a local edit, so it can't record notes and steps as deleted.
   the merged current goal and has the fresh goal in its past goals, unmarked, ended no later than that
   current goal was made (`replacedKnowingly`, both times from that device's clock): the user replaced or
   achieved the fresh goal there and set this one, so it stands even when a slow clock dates it before the
-  fresh goal. A device that ended the fresh goal only by promoting its own never matches (its current
-  goal is then newer than the fresh one), so two new devices beside an old one still settle on the newest
-  fresh goal (`testR9_twoNewDevicesBesideAnOldOneKeepACurrentGoal`). `SyncRound5Tests` holds the named
-  cases.
+  fresh goal. That holds too when the device first received the fresh goal through a merge, because
+  setting the new goal restamps the fresh goal's end with the same clock (above; `SyncRound6Tests`). A
+  device that ended the fresh goal only by promoting its own never matches (its current goal is then
+  newer than the fresh one), so two new devices beside an old one still settle on the newest fresh goal
+  (`testR9_twoNewDevicesBesideAnOldOneKeepACurrentGoal`). `SyncRound5Tests` and `SyncRound6Tests` hold
+  the named cases.
+- **Known limit: a clock stepping backwards.** If one device's clock steps backwards between two of its
+  own goal changes (it ends the fresh goal, then its clock is set back before the user sets the next
+  goal), the stored times look the same as a promotion `replacedKnowingly` must allow, and no timestamp
+  rule can tell the two apart. The fresh goal then comes back on top, and the devices can settle with no
+  current goal (nothing is lost; the user sets a goal again). A review fuzz with clocks up to 30 minutes
+  apart that sometimes jump hit this in about 12 of 60,000 runs. Telling them apart would take recording
+  which device ended a goal.
+- **Merging is order-independent but not associative.** The same set of envelopes merges to the same
+  snapshot in any order. Merging pairwise in a different grouping can give a different result: merging
+  two arbitrary envelopes first and then the rest differed from merging all of them at once in 3,795 of
+  40,000 random cases. Devices never rely on grouping: each pass merges the full set of envelopes it can
+  read (its own and every other device's), and every device-level fuzz settles with all devices agreeing.
 - **The fresh-goal marker expires.** `freshGoalID` guards sync passes until one promotes the fresh goal
   or reads another device's envelope holding a goal (current or past), and lapses seven days after the
   goal was made (`SyncApply.freshGoalLifetime`), whichever comes first. An envelope with no goals (an

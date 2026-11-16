@@ -75,11 +75,18 @@ public enum LocalEdits {
         }
         s.goal = s.goal.map(stampGoal)
         // Setting a new goal here moves on from every past goal knowingly, including ones a merge demoted:
-        // from now on they count as ended by this device (`Goal.demotedByMerge`).
-        let setNewGoal = new.goal != nil && new.goal?.id != old.goal?.id
+        // from now on they count as ended by this device (`Goal.demotedByMerge`), at the new goal's
+        // `createdAt`. The merge dated a demoted goal's end with another device's clock; restamping it with
+        // this one keeps `SyncApply.replacedKnowingly` comparing two times from the same clock. Only a
+        // replaced goal is restamped: an achieved one keeps its achievement time, and a goal a user ended
+        // never carries the marker.
+        let newGoal = new.goal?.id == old.goal?.id ? nil : new.goal
         s.pastGoals = s.pastGoals.map { g in
             var g = g
-            if setNewGoal, g.demotedByMerge == true { g.demotedByMerge = nil }
+            if let newGoal, g.demotedByMerge == true {
+                g.demotedByMerge = nil
+                if g.status == .replaced { g.endedAt = newGoal.createdAt }
+            }
             return stampGoal(g)
         }
 
