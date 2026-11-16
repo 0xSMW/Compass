@@ -164,7 +164,9 @@ final class SyncIntegrityTests: XCTestCase {
         edited.updateDay(sat) { $0.step?.completedAt = at(15) }
         edited.settings.cloudAssist = false
         let stamped = LocalEdits.stamp(edited, since: base, at: at(15, 1), device: phone)
-        XCTAssertEqual(stamped.day(sat)?.step?.updatedAt, at(15, 1))
+        // Completing stamps only the completion (N2): `updatedAt` is for title, part and size edits.
+        XCTAssertEqual(stamped.day(sat)?.step?.completionChangedAt, at(15, 1))
+        XCTAssertNil(stamped.day(sat)?.step?.updatedAt, "a completion alone leaves the edit stamp alone")
         XCTAssertNil(stamped.day(sat)?.notes.first?.updatedAt, "untouched note keeps no stamp")
         XCTAssertNil(stamped.goal?.updatedAt)
         XCTAssertEqual(stamped.settings.updatedAt, at(15, 1))
@@ -172,8 +174,17 @@ final class SyncIntegrityTests: XCTestCase {
 
         // An edit that stamped itself (the widget) keeps its own time.
         var widget = base
-        widget.updateDay(sat) { $0.step?.completedAt = at(14); $0.step?.updatedAt = at(14) }
-        XCTAssertEqual(LocalEdits.stamp(widget, since: base, at: at(15), device: phone).day(sat)?.step?.updatedAt, at(14))
+        widget.updateDay(sat) { $0.step?.completedAt = at(14); $0.step?.completionChangedAt = at(14) }
+        let fromWidget = LocalEdits.stamp(widget, since: base, at: at(15), device: phone).day(sat)?.step
+        XCTAssertEqual(fromWidget?.completionChangedAt, at(14))
+        XCTAssertNil(fromWidget?.updatedAt)
+
+        // A title edit stamps `updatedAt`; done together with a completion, both stamps move.
+        var both = base
+        both.updateDay(sat) { $0.step?.title = "Call Sam"; $0.step?.completedAt = at(15) }
+        let bothStamped = LocalEdits.stamp(both, since: base, at: at(15, 2), device: phone).day(sat)?.step
+        XCTAssertEqual(bothStamped?.updatedAt, at(15, 2))
+        XCTAssertEqual(bothStamped?.completionChangedAt, at(15, 2))
     }
 
     func testLocalEditsPutThisDeviceOnNewRecordingsOnly() {

@@ -10,8 +10,26 @@ public protocol Store: AnyObject, Sendable {
     /// change and the app's save never interleave.
     @discardableResult
     func update(_ body: (inout CompassSnapshot) throws -> Void) throws -> CompassSnapshot
+    /// The app's save as one step (`JSONFileStore`: one coordinated write). `body` gets what is stored now
+    /// and when it last changed on disk, and leaves what to write. With `replacingUnreadable`, a damaged
+    /// file (`StoreError.corrupt`, already copied aside at launch) reads as `.empty` and is replaced; a
+    /// newer-schema file still throws. The result carries the modification date right after the write,
+    /// read in the same step, so another process's write can't slip in between.
+    func update(replacingUnreadable: Bool, _ body: (inout CompassSnapshot, _ storedModifiedAt: Date?) throws -> Void) throws -> StoreWrite
     /// When the stored data last changed on disk (nil: unknown, or nothing stored).
     var modifiedAt: Date? { get }
+}
+
+/// What `Store.update(replacingUnreadable:_:)` wrote.
+public struct StoreWrite: Equatable, Sendable {
+    public var snapshot: CompassSnapshot
+    /// The store's modification date right after the write.
+    public var modifiedAt: Date?
+
+    public init(snapshot: CompassSnapshot, modifiedAt: Date?) {
+        self.snapshot = snapshot
+        self.modifiedAt = modifiedAt
+    }
 }
 
 extension Store {
@@ -24,17 +42,30 @@ extension Store {
         return snapshot
     }
 
+    public func update(replacingUnreadable: Bool, _ body: (inout CompassSnapshot, Date?) throws -> Void) throws -> StoreWrite {
+        let before = modifiedAt
+        var snapshot: CompassSnapshot
+        do {
+            snapshot = try load()
+        } catch StoreError.corrupt where replacingUnreadable {
+            snapshot = .empty
+        }
+        try body(&snapshot, before)
+        try save(snapshot)
+        return StoreWrite(snapshot: snapshot, modifiedAt: modifiedAt)
+    }
+
     public var modifiedAt: Date? { nil }
 
-    /// Mark the step for `key` done (or undo). No-op if there is no step. Stamps the step so sync keeps
-    /// this change over an older copy on another device (the widget calls this from its own process).
+    /// Mark the step for `key` done (or undo). No-op if there is no step. Stamps the completion
+    /// (`completionChangedAt`, not `updatedAt`) so sync keeps this change over an older copy on another
+    /// device without undoing a title edit made there (the widget calls this from its own process).
     @discardableResult
     public func setStepDone(_ done: Bool, on key: DayKey, at date: Date) throws -> CompassSnapshot {
         try update { snap in
             snap.updateDay(key) { day in
                 guard day.step != nil else { return }
                 day.step?.completedAt = done ? date : nil
-                day.step?.updatedAt = date
                 day.step?.completionChangedAt = date
             }
         }
@@ -150,53 +181,73 @@ public final class JSONFileStore: Store, Sendable {
     /// `StoreError.corrupt` for one that doesn't decode.
     public func load() throws -> CompassSnapshot {
         lock.lock(); defer { lock.unlock() }
-        return try coordinated(writing: false) { try readFile() }
+        return try coordinated(.reading) { try readFile(at: $0) }
     }
 
     /// Load, change and save under one coordinated write, so another process can't write in between.
     @discardableResult
     public func update(_ body: (inout CompassSnapshot) throws -> Void) throws -> CompassSnapshot {
+        try update(replacingUnreadable: false) { snapshot, _ in try body(&snapshot) }.snapshot
+    }
+
+    public func update(replacingUnreadable: Bool, _ body: (inout CompassSnapshot, Date?) throws -> Void) throws -> StoreWrite {
         lock.lock(); defer { lock.unlock() }
         if let blocked = blockedBy.withLock({ $0 }) { throw StoreError.newerSchema(blocked) }
-        return try coordinated(writing: true) {
-            var snapshot = try readFile()
-            try body(&snapshot)
-            try writeFile(snapshot)
-            return snapshot
+        return try coordinated(.writing) { file in
+            let before = Self.modificationDate(of: file)
+            var snapshot: CompassSnapshot
+            do {
+                snapshot = try readFile(at: file)
+            } catch StoreError.corrupt where replacingUnreadable {
+                snapshot = .empty
+            }
+            try body(&snapshot, before)
+            try writeFile(snapshot, to: file)
+            return StoreWrite(snapshot: snapshot, modifiedAt: Self.modificationDate(of: file))
         }
     }
 
-    public var modifiedAt: Date? {
-        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+    public var modifiedAt: Date? { Self.modificationDate(of: url) }
+
+    private static func modificationDate(of file: URL) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date
     }
 
-    /// Runs `body` while holding file coordination for the store (other processes wait). On platforms
-    /// without `NSFileCoordinator` (Linux tests) the in-process lock is all there is.
-    private func coordinated<T>(writing: Bool, _ body: () throws -> T) throws -> T {
+    private enum Access { case reading, writing, deleting }
+
+    /// Runs `body` while holding file coordination for the store (other processes wait), with the URL the
+    /// coordinator hands back (the one to use inside the block). On platforms without `NSFileCoordinator`
+    /// (Linux tests) the in-process lock is all there is.
+    private func coordinated<T>(_ access: Access, _ body: (URL) throws -> T) throws -> T {
         #if canImport(Darwin)
         let coordinator = NSFileCoordinator(filePresenter: nil)
         var coordinationError: NSError?
         var result: Result<T, Error>?
-        if writing {
-            coordinator.coordinate(writingItemAt: url, options: .forMerging, error: &coordinationError) { _ in
-                result = Result { try body() }
+        switch access {
+        case .reading:
+            coordinator.coordinate(readingItemAt: url, options: [], error: &coordinationError) { file in
+                result = Result { try body(file) }
             }
-        } else {
-            coordinator.coordinate(readingItemAt: url, options: [], error: &coordinationError) { _ in
-                result = Result { try body() }
+        case .writing:
+            coordinator.coordinate(writingItemAt: url, options: .forMerging, error: &coordinationError) { file in
+                result = Result { try body(file) }
+            }
+        case .deleting:
+            coordinator.coordinate(writingItemAt: url, options: .forDeleting, error: &coordinationError) { file in
+                result = Result { try body(file) }
             }
         }
         if let coordinationError { throw coordinationError }
         guard let result else { throw CocoaError(.fileWriteUnknown) }
         return try result.get()
         #else
-        return try body()
+        return try body(url)
         #endif
     }
 
-    private func readFile() throws -> CompassSnapshot {
-        guard FileManager.default.fileExists(atPath: url.path) else { return .empty }
-        let data = try Data(contentsOf: url)
+    private func readFile(at file: URL) throws -> CompassSnapshot {
+        guard FileManager.default.fileExists(atPath: file.path) else { return .empty }
+        let data = try Data(contentsOf: file)
         if let version = CompassSnapshot.schemaVersion(of: data), version > CompassSnapshot.currentSchema {
             throw StoreError.newerSchema(version)
         }
@@ -227,8 +278,13 @@ public final class JSONFileStore: Store, Sendable {
     @discardableResult
     public func quarantine(label: String, now: Date = Date()) -> URL? {
         lock.lock(); defer { lock.unlock() }
+        // A coordinated read, so the widget can't be halfway through writing the file being copied.
+        return try? coordinated(.reading) { file in copyAside(file, label: label, now: now) }
+    }
+
+    private func copyAside(_ file: URL, label: String, now: Date) -> URL? {
         let fm = FileManager.default
-        guard fm.fileExists(atPath: url.path) else { return nil }
+        guard fm.fileExists(atPath: file.path) else { return nil }
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.timeZone = TimeZone(identifier: "UTC")
@@ -240,7 +296,7 @@ public final class JSONFileStore: Store, Sendable {
             let target = dir.appendingPathComponent(name)
             if fm.fileExists(atPath: target.path) { continue }
             do {
-                try fm.copyItem(at: url, to: target)
+                try fm.copyItem(at: file, to: target)
                 return target
             } catch {
                 return nil
@@ -252,21 +308,23 @@ public final class JSONFileStore: Store, Sendable {
     public func save(_ snapshot: CompassSnapshot) throws {
         lock.lock(); defer { lock.unlock() }
         if let blocked = blockedBy.withLock({ $0 }) { throw StoreError.newerSchema(blocked) }
-        try coordinated(writing: true) { try writeFile(snapshot) }
+        try coordinated(.writing) { try writeFile(snapshot, to: $0) }
     }
 
-    private func writeFile(_ snapshot: CompassSnapshot) throws {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    private func writeFile(_ snapshot: CompassSnapshot, to file: URL) throws {
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         let data = try Self.encoder().encode(snapshot)
-        try data.write(to: url, options: .atomic)
+        try data.write(to: file, options: .atomic)
     }
 
-    /// Remove the file (H2 Delete everything). Refused for a newer-schema file.
+    /// Remove the file (H2 Delete everything), coordinated like every write. Refused for a newer-schema file.
     public func deleteAll() throws {
         lock.lock(); defer { lock.unlock() }
         if let blocked = blockedBy.withLock({ $0 }) { throw StoreError.newerSchema(blocked) }
-        if FileManager.default.fileExists(atPath: url.path) {
-            try FileManager.default.removeItem(at: url)
+        try coordinated(.deleting) { file in
+            if FileManager.default.fileExists(atPath: file.path) {
+                try FileManager.default.removeItem(at: file)
+            }
         }
     }
 }

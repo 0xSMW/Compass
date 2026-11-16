@@ -74,7 +74,14 @@ public enum LocalEdits {
             return g
         }
         s.goal = s.goal.map(stampGoal)
-        s.pastGoals = s.pastGoals.map(stampGoal)
+        // Setting a new goal here moves on from every past goal knowingly, including ones a merge demoted:
+        // from now on they count as ended by this device (`Goal.demotedByMerge`).
+        let setNewGoal = new.goal != nil && new.goal?.id != old.goal?.id
+        s.pastGoals = s.pastGoals.map { g in
+            var g = g
+            if setNewGoal, g.demotedByMerge == true { g.demotedByMerge = nil }
+            return stampGoal(g)
+        }
 
         let oldDays = Dictionary(old.days.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
         s.days = s.days.map { day in
@@ -88,11 +95,16 @@ public enum LocalEdits {
             if let i = d.intention, let b = before.intention, i.createdAt == b.createdAt, changed(i, b, \.updatedAt) {
                 d.intention?.updatedAt = now
             }
-            if let st = d.step, let b = before.step, st.id == b.id, changed(st, b, \.updatedAt) {
-                d.step?.updatedAt = now
+            if let st = d.step, let b = before.step, st.id == b.id {
+                // Completing or undoing stamps only the completion, so a title or part edit made elsewhere
+                // (even earlier) still wins on `updatedAt`; any other change stamps `updatedAt`.
                 if st.completedAt != b.completedAt, st.completionChangedAt == b.completionChangedAt {
                     d.step?.completionChangedAt = now
                 }
+                var stContent = st, bContent = b
+                stContent.completedAt = nil; stContent.completionChangedAt = nil
+                bContent.completedAt = nil; bContent.completionChangedAt = nil
+                if changed(stContent, bContent, \.updatedAt) { d.step?.updatedAt = now }
             }
             if d.morningSkipped, !before.morningSkipped, d.morningSkippedAt == nil { d.morningSkippedAt = now }
             var gone = Set(before.notes.map(\.id)).subtracting(d.notes.map(\.id))

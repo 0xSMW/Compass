@@ -70,10 +70,13 @@ snapshot refers to are uploaded or downloaded.
 A save that fails (full disk) sets `model.saveFailed`: Today's notes row says so in I4's words
 (`SystemSaveNotice`), memory keeps everything, and the save is retried on the next change and when the
 app becomes active. The store file is shared with the widget's process: `JSONFileStore` coordinates
-reads and writes (`NSFileCoordinator`) and the widget changes it with one coordinated
-read-modify-write (`Store.update`). The app looks at the file only when its modification date is newer
-than the app's last successful save (`StoreReload.shouldRead`), never while a save has failed, and then
-takes in only what the widget can change (a step's completion, `takingWidgetChanges`). A stale file is
+reads, writes, the launch-time copy of an unreadable file and Delete everything (`NSFileCoordinator`,
+always on the URL the coordinator hands back). The widget changes it with one coordinated
+read-modify-write (`Store.update`), and so does the app's save (`AppModel.writeToStore`:
+`store.update(replacingUnreadable:)`, which also returns the modification date read under the same
+coordination). Inside that step the app takes the file's changes only when its modification date is
+newer than the app's last successful save (`StoreReload.shouldRead`), never while a save has failed, and
+then only what the widget can change (a step's completion, `takingWidgetChanges`). A stale file is
 never adopted as a local edit, so it can't record notes and steps as deleted.
 
 ## Sync (iCloud)
@@ -83,7 +86,11 @@ never adopted as a local edit, so it can't record notes and steps as deleted.
 
 - **Per item.** Each note, step, reflection, intention and goal carries `updatedAt`; the later version
   wins whichever envelope was saved later. A step's completion merges on its own stamp
-  (`completionChangedAt`), so a title or part edit made later elsewhere never reopens it.
+  (`completionChangedAt`), so a title or part edit made later elsewhere never reopens it. Completing or
+  undoing (in the app, `LocalEdits`, or the widget, `Store.setStepDone`) stamps only
+  `completionChangedAt` and leaves `updatedAt` alone, so a completion never undoes a title edit made
+  elsewhere either. Where one "last touched" time is needed (against a day or item tombstone),
+  `Step.lastTouched` is the later of the two.
 - **Settings.** The rhythm and the cloud-help switch sync, each on its own stamp (`rhythmUpdatedAt`,
   `cloudAssistUpdatedAt`). The reminders switch, the input preference and the I3 time-zone pin are
   `Settings.DeviceLocal`: they stay in the local store (so screens and the widget read them as before),
@@ -93,7 +100,9 @@ never adopted as a local edit, so it can't record notes and steps as deleted.
   discarded take never travelled) and are dropped after 90 days.
 - **Delete everything** is a generation boundary (`wipedAt`): every envelope keeps only what was created
   after it (`keepingOnly(createdSince:)`). A day that only holds a morning skip made after the wipe
-  (`morningSkippedAt`, or the day's date for older data) or only deletions made after it is kept.
+  (`morningSkippedAt`, or the day's date for older data) or only deletions made after it is kept. Such a
+  snapshot still counts as blank (`isBlank`: no goal and no day with an intention, step, note or evening
+  entry): a remote wipe erases it, and the entry screen is Welcome, not a goal-less Today.
 - **`SyncApply.plan`** turns what was read into one action: erase (a remote wipe with nothing made here
   since), adopt the survivors and reopen the entry screen (a remote wipe with local survivors), adopt
   the merge (staying on any onboarding screen), put a fresh goal back on top (below), or keep.
@@ -103,6 +112,18 @@ never adopted as a local edit, so it can't record notes and steps as deleted.
   every merge). If onboarding finishes first, its goal is marked (`SyncState.freshGoalID`) and the merge
   that would demote it instead ends the backup's goal and keeps the new one and its settings, as if the
   backup had been merged first. The history stays in both orders.
+- **Two current goals.** When a merge meets two current goals that neither device knew about, the
+  earlier-created one stays current and the newcomer becomes a past goal marked `demotedByMerge`. That
+  marker means "a merge put it there, nobody ended it": only a goal a device ended itself (in its past
+  goals without the marker) is retired for good, and the candidates for current are every device's
+  current goal that no device retired. So if the old phone merges the new device's fresh goal before the
+  new device has put it back on top, the old phone's demotion doesn't outvote the promotion, and both
+  devices settle on the fresh goal (tested for every order of pushes and reads, `SyncRound3Tests`).
+  Setting a new goal on a device clears the marker on its past goals (it moved on knowingly).
+- **The fresh-goal marker expires.** `freshGoalID` guards only the first sync pass that reads another
+  device's envelope (whatever it holds), and lapses seven days after the goal was made
+  (`SyncApply.freshGoalLifetime`), whichever comes first. On a single-device account an old device that
+  shows up months later is therefore merged by the ordinary rule (the earlier goal stays current).
 
 ## Platform services (live path only)
 

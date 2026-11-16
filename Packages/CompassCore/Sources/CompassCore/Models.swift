@@ -49,6 +49,12 @@ public struct Goal: Identifiable, Codable, Hashable, Sendable {
     /// Last edit on the device that made it (sync picks the newer version of the same goal). nil in
     /// data saved before per-item sync stamps; `createdAt` stands in.
     public var updatedAt: Date?
+    /// true: a sync merge, not the user, moved this goal to past goals (two goals made on devices that
+    /// hadn't seen each other; the earlier one stays current). Such a past goal doesn't count as "this
+    /// device knew it and ended it", so it never outvotes a device that still holds it as current. Cleared
+    /// when it comes back as current, and when this device sets a new goal (it has then moved on knowingly).
+    /// nil otherwise and in older data.
+    public var demotedByMerge: Bool?
 
     public init(
         id: UUID = UUID(),
@@ -59,7 +65,8 @@ public struct Goal: Identifiable, Codable, Hashable, Sendable {
         endedAt: Date? = nil,
         why: Note? = nil,
         whyAsked: Bool = false,
-        updatedAt: Date? = nil
+        updatedAt: Date? = nil,
+        demotedByMerge: Bool? = nil
     ) {
         self.id = id
         self.text = text
@@ -70,6 +77,7 @@ public struct Goal: Identifiable, Codable, Hashable, Sendable {
         self.why = why
         self.whyAsked = whyAsked
         self.updatedAt = updatedAt
+        self.demotedByMerge = demotedByMerge
     }
 
     public var activeParts: [GoalPart] { parts.filter { !$0.isArchived } }
@@ -147,8 +155,9 @@ public struct Step: Identifiable, Codable, Hashable, Sendable {
     public var completedAt: Date?
     public var size: StepSize
     public var source: StepSource
-    /// Last change (completing, undoing, editing). Sync keeps the newer version of the same step, so a
-    /// completion on one device is not undone by another device's unrelated save. nil in older data.
+    /// Last edit of the title, part or size. Completing or undoing doesn't touch it (that is
+    /// `completionChangedAt`), so a later completion elsewhere never undoes a title edit. nil in older data,
+    /// where completing did set it.
     public var updatedAt: Date?
     /// Last time `completedAt` changed (completed or undone). Sync merges the completion on this stamp
     /// alone, so a title or part edit made later on another device doesn't undo it. nil in older data.

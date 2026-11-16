@@ -7,8 +7,9 @@ import Foundation
 // MARK: - History
 
 extension CompassSnapshot {
-    /// Anything to keep: a goal (in any state), a past goal or a day. Without it the app is new (A1).
-    public var hasHistory: Bool { goal != nil || !pastGoals.isEmpty || !days.isEmpty }
+    /// Anything to keep: a goal (in any state), a past goal or a day with content (`isBlank`). Without it
+    /// the app is new (A1).
+    public var hasHistory: Bool { !isBlank }
 
     /// The current goal is still being worked toward.
     public var hasActiveGoal: Bool { goal?.status == .active }

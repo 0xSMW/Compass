@@ -171,7 +171,7 @@ final class SyncApplyTests: XCTestCase {
     }
 
     /// No other device yet (iCloud still downloading): keep guarding the fresh goal.
-    func testFreshGoalMarkerIsKeptUntilAnotherDevicesGoalsAreSeen() throws {
+    func testFreshGoalMarkerIsKeptUntilAnotherDevicesEnvelopeIsSeen() throws {
         let fresh = freshSnapshot()
         let id = try XCTUnwrap(fresh.goal?.id)
         let alone = try XCTUnwrap(SyncApply.plan(SyncApplyInput(local: envelope("B", savedAt: d(9), fresh), remote: [], freshGoalID: id)))

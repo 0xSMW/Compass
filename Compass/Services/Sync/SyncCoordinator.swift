@@ -25,7 +25,8 @@ struct SyncState: Codable, Equatable {
     /// Newest wipe this device has already carried out.
     var appliedWipe: Date?
     /// A first goal onboarding made here before any backup was merged; it wins over the backup's goal
-    /// (`SyncApplyInput.freshGoalID`). Cleared once settled.
+    /// (`SyncApplyInput.freshGoalID`). Cleared after the first pass that reads another device's envelope,
+    /// or seven days after the goal was made.
     var freshGoalID: UUID?
 
     static var url: URL {
@@ -212,7 +213,8 @@ final class SyncCoordinator {
     private func apply(_ remote: [SyncEnvelope]) {
         guard let model, let local = envelope() else { return }
         let input = SyncApplyInput(local: local, remote: remote, appliedWipe: state.appliedWipe,
-                                   isOnboarding: model.current.flow == .onboarding, freshGoalID: state.freshGoalID)
+                                   isOnboarding: model.current.flow == .onboarding, freshGoalID: state.freshGoalID,
+                                   now: Date())
         guard let plan = SyncApply.plan(input) else { return }
         let before = model.snapshot
         let merged = plan.merged

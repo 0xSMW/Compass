@@ -120,19 +120,36 @@ final class RestoreRouting {
     var choosing = false
     /// The user chose to restore (A1's question or link, R3's Try again). R1 restores only then.
     var restoreChosen = false
+    /// Bumped by `reset`, so a check that started before it can't bring the old answer back.
+    private var generation = 0
 
     /// A1: look for a backup in the background (it may take a while on a new phone).
     func checkForBackup(_ model: AppModel) {
         guard model.fixture == nil, !checking, !backupFound else { return }
         checking = true
         let backup = model.backupRestorer
+        let started = generation
         Task { @MainActor in
-            if case .available(let found) = await backup.availability() {
+            let availability = await backup.availability()
+            guard self.generation == started else { return }
+            if case .available(let found) = availability {
                 self.backupFound = true
                 self.foundSummary = found
             }
             self.checking = false
         }
+    }
+
+    /// Forget what A1 found and chose (N4): after Delete everything the backup is gone, and once "Start a
+    /// new goal" has been chosen the question is answered. The next A1 looks again.
+    func reset() {
+        generation += 1
+        checking = false
+        backupFound = false
+        foundSummary = nil
+        choosing = false
+        restoreChosen = false
+        nothingReason = .empty
     }
 
     /// A1 "Begin": with a backup in iCloud (or its data already synced in), ask once; otherwise onboard.
@@ -156,11 +173,11 @@ final class RestoreRouting {
     /// "Start a new goal": onboard; the backup is merged meanwhile and the new goal is set on top of it,
     /// so its goal becomes a past goal and the history stays (`onboardingFinish`, `SyncApply`).
     func chooseNewGoal(_ model: AppModel) {
-        choosing = false
-        restoreChosen = false
         model.onboardingDraft.reset()
         LiveSync.pullNow()
         model.go(.a2)
+        // Answered: back on A1, Begin asks again only if the backup has been merged in by then.
+        reset()
     }
 }
 

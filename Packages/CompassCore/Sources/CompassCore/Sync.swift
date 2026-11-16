@@ -107,7 +107,16 @@ public struct SyncEnvelope: Codable, Hashable, Sendable {
 /// When an item last changed, for picking between two versions of the same item. Older data has no
 /// `updatedAt`; its creation (or completion / ending) stands in.
 extension Step {
-    public var versionTime: Date { updatedAt ?? max(createdAt, completedAt ?? createdAt) }
+    /// The title, part and size version. Completing doesn't count once it has its own stamp
+    /// (`completionChangedAt`); in older data, where completing set `updatedAt`, the completion stands in.
+    public var versionTime: Date {
+        if let updatedAt { return updatedAt }
+        return completionChangedAt == nil ? max(createdAt, completedAt ?? createdAt) : createdAt
+    }
+
+    /// The last time anything about the step changed, its completion included: what a deletion
+    /// (a day or item tombstone) is weighed against.
+    public var lastTouched: Date { max(versionTime, completionTime) }
 }
 
 extension Note {
@@ -124,6 +133,12 @@ extension Reflection {
 
 extension Goal {
     public var versionTime: Date { updatedAt ?? max(createdAt, endedAt ?? createdAt) }
+}
+
+extension Goal {
+    /// The user ended it (achieved, or replaced by a goal set on that device). A copy a merge demoted
+    /// (`demotedByMerge`) is not ended by anyone.
+    public var isEndedByUser: Bool { status != .active && demotedByMerge != true }
 }
 
 extension Settings {
@@ -156,9 +171,10 @@ extension Step {
 ///   `mergeCandidates`; only the summary asks. Two from the same device are a redo: the later one stands.
 ///   Resolving turns the losing reflections into notes, so both recordings stay.
 /// - **Goals** merge by id; an ended goal stays ended. A goal is replaced only by a device that knew it
-///   (it is in that device's past goals). A goal created on a device that never saw the current one
-///   (onboarding on a second device, two offline replacements) never replaces it: the earlier goal stays
-///   current and the newcomer is kept as a replaced past goal. That device's settings don't win either.
+///   (that device ended it itself: it is in its past goals, not merely demoted there by a merge). A goal
+///   created on a device that never saw the current one (onboarding on a second device, two offline
+///   replacements) never replaces it: the earlier goal stays current and the newcomer is kept as a replaced
+///   past goal marked `demotedByMerge`. That device's settings don't win either.
 /// - **Tombstones** remove days whose content is older than the deletion.
 /// - **`wipedAt`** is a generation boundary: everything created before the newest wipe is dropped from
 ///   every envelope, however late that envelope was saved. Things created after it are kept.
@@ -267,11 +283,12 @@ public enum SnapshotMerger {
 
     enum Side { case newer, older }
 
-    /// Two versions of one goal (`a` from the newer envelope): an ended version wins over an active one
-    /// (ending happens after editing); otherwise the later `versionTime`. Parts and the B7 answer merge
-    /// field-wise so neither device's addition is lost.
+    /// Two versions of one goal (`a` from the newer envelope): a version the user ended wins over an active
+    /// one (ending happens after editing); otherwise the later `versionTime`. A copy a merge demoted counts
+    /// as active here (nobody ended it; `mergeGoals` decides its status again). Parts and the B7 answer
+    /// merge field-wise so neither device's addition is lost.
     static func pickGoal(_ a: Goal, _ b: Goal) -> Goal {
-        let aEnded = a.status != .active, bEnded = b.status != .active
+        let aEnded = a.isEndedByUser, bEnded = b.isEndedByUser
         let winner: Goal, loser: Goal
         if aEnded != bEnded {
             (winner, loser) = aEnded ? (a, b) : (b, a)
@@ -286,32 +303,63 @@ public enum SnapshotMerger {
         return g
     }
 
-    /// Goals merge by id. A goal either side has ended (in past goals) stays ended. A current goal is
-    /// replaced only through past goals (the replacing device knew it). Two current goals where neither
-    /// device knew the other's: the earlier-created one stays current; the newcomer is kept as a replaced
-    /// past goal and its side is reported as `demoted`.
+    /// Goals merge by id; the picked version (`pickGoal`) carries the content.
+    /// - **Retired:** a goal either side ended itself (in its past goals, not marked `demotedByMerge`) stays
+    ///   ended: that device knew it and moved on.
+    /// - **Candidates** for current: every side's current goal that no side retired. A copy some merge
+    ///   demoted doesn't disqualify it, so a device that put a fresh goal back on top (`SyncApply`) isn't
+    ///   outvoted by an old device that merged the fresh goal first and demoted it.
+    /// - Two or more candidates (neither device knew the other's): the earliest-created stays current; each
+    ///   newcomer becomes a replaced past goal marked `demotedByMerge`, and its side is reported as `demoted`.
+    ///   The winner comes back as current even if the picked copy was a demoted one.
     static func mergeGoals(newer: CompassSnapshot, older: CompassSnapshot) -> (current: Goal?, past: [Goal], demoted: Side?) {
         var versions: [UUID: Goal] = [:]
-        for g in older.pastGoals + [older.goal].compactMap({ $0 }) {
+        // A past goal holding `.active` (never written by this app) is read as replaced, so status alone
+        // tells an ended copy from a live one.
+        func normalizedPast(_ g: Goal) -> Goal {
+            var g = g
+            if g.status == .active, g.demotedByMerge != true { g.status = .replaced; g.endedAt = g.endedAt ?? g.versionTime }
+            return g
+        }
+        for g in older.pastGoals.map(normalizedPast) + [older.goal].compactMap({ $0 }) {
             versions[g.id] = versions[g.id].map { pickGoal($0, g) } ?? g
         }
-        for g in newer.pastGoals + [newer.goal].compactMap({ $0 }) {
+        for g in newer.pastGoals.map(normalizedPast) + [newer.goal].compactMap({ $0 }) {
             versions[g.id] = versions[g.id].map { pickGoal(g, $0) } ?? g
         }
 
+        let retired = Set((newer.pastGoals + older.pastGoals).filter { $0.demotedByMerge != true }.map(\.id))
         var pastIDs = Set(newer.pastGoals.map(\.id)).union(older.pastGoals.map(\.id))
-        let candidates = Set([newer.goal?.id, older.goal?.id].compactMap { $0 }).subtracting(pastIDs)
+        let candidates = Set([newer.goal?.id, older.goal?.id].compactMap { $0 }).subtracting(retired)
             .compactMap { versions[$0] }
             .sorted { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }
-        let current = candidates.first
+        var current = candidates.first
+        if var winner = current, winner.demotedByMerge == true {
+            // The picked copy was one a merge had demoted; it is current again.
+            winner.demotedByMerge = nil
+            if winner.status == .replaced { winner.status = .active; winner.endedAt = nil }
+            current = winner
+        }
+        if let current {
+            versions[current.id] = current
+            pastIDs.remove(current.id)
+        }
         var demoted: Side?
         for loser in candidates.dropFirst() {
             var ended = loser
             if ended.status == .active { ended.status = .replaced }
             ended.endedAt = ended.endedAt ?? loser.versionTime
+            ended.demotedByMerge = true
             versions[loser.id] = ended
             pastIDs.insert(loser.id)
             demoted = newer.goal?.id == loser.id ? .newer : .older
+        }
+        for id in retired {
+            // Ended by a user somewhere: no merge marker survives on it.
+            guard var g = versions[id], g.demotedByMerge == true else { continue }
+            g.demotedByMerge = nil
+            if g.status == .active { g.status = .replaced; g.endedAt = g.endedAt ?? g.versionTime }
+            versions[id] = g
         }
         let pastList = pastIDs.compactMap { versions[$0] }.sorted {
             ($0.endedAt ?? $0.createdAt, $0.id.uuidString) > ($1.endedAt ?? $1.createdAt, $1.id.uuidString)
@@ -351,7 +399,7 @@ public enum SnapshotMerger {
         if !removed.isEmpty {
             d.removedItems = removed.map { ItemTombstone(id: $0.key, deletedAt: $0.value) }.sorted { $0.id.uuidString < $1.id.uuidString }
             d.notes.removeAll { note in removed[note.id].map { note.versionTime <= $0 } ?? false }
-            if let s = d.step, let gone = removed[s.id], s.versionTime <= gone { d.step = nil }
+            if let s = d.step, let gone = removed[s.id], s.lastTouched <= gone { d.step = nil }
         }
 
         d.morningSkipped = n.morningSkipped || o.morningSkipped
@@ -415,8 +463,9 @@ extension CompassSnapshot {
         return s
     }
 
-    /// Nothing the user made: no goal, no days.
-    public var isBlank: Bool { goal == nil && pastGoals.isEmpty && days.isEmpty }
+    /// Nothing the user made: no goal, and no day with content. Days that only remember a morning skip
+    /// or deletions (kept after a wipe, `keepingOnly`) don't count: there is nothing to show or restore.
+    public var isBlank: Bool { goal == nil && pastGoals.isEmpty && !days.contains(where: \.hasContent) }
 }
 
 extension Settings {
@@ -452,6 +501,9 @@ extension Day {
 // MARK: - Day conflict helpers (E5)
 
 extension Day {
+    /// Something the user wrote or recorded: an intention, a step, a note or an evening entry.
+    public var hasContent: Bool { intention != nil || step != nil || !notes.isEmpty || !reflectionVersions.isEmpty }
+
     /// E5: the same day's evening entry was recorded on two devices and is waiting for a choice.
     public var hasConflict: Bool { !(mergeCandidates ?? []).isEmpty }
 
@@ -464,7 +516,7 @@ extension Day {
     public var lastModified: Date? {
         var dates: [Date] = []
         if let i = intention { dates.append(i.versionTime) }
-        if let s = step { dates.append(s.versionTime) }
+        if let s = step { dates.append(s.lastTouched) }
         dates += notes.map(\.versionTime)
         dates += reflectionVersions.map(\.versionTime)
         return dates.max()

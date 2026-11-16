@@ -14,15 +14,20 @@ public struct SyncApplyInput: Sendable {
     public var isOnboarding: Bool
     /// A goal this device created in onboarding before it had seen the user's iCloud data (A1 "Start a
     /// new goal", or Begin tapped before the backup check finished). It must win over the backup's goal.
+    /// It guards only the first pass that reads another device's envelope, and expires after
+    /// `freshGoalLifetime` (see `SyncApply`).
     public var freshGoalID: UUID?
+    /// The time of this pass, for the fresh goal's expiry. nil skips the age check.
+    public var now: Date?
 
     public init(local: SyncEnvelope, remote: [SyncEnvelope], appliedWipe: Date? = nil, isOnboarding: Bool = false,
-                freshGoalID: UUID? = nil) {
+                freshGoalID: UUID? = nil, now: Date? = nil) {
         self.local = local
         self.remote = remote
         self.appliedWipe = appliedWipe
         self.isOnboarding = isOnboarding
         self.freshGoalID = freshGoalID
+        self.now = now
     }
 }
 
@@ -65,6 +70,10 @@ public struct SyncApplyPlan: Equatable, Sendable {
 /// 4. **A fresh goal demoted by the merge** (onboarding finished here before the backup arrived) → put it back
 ///    as current with the backup's goal in past goals, as if the backup had been merged first; this device's
 ///    settings come back too. Adopted as a local change, so the result travels and every device agrees.
+///    The marker (`freshGoalID`) lasts until the first pass that reads another device's envelope, or
+///    `freshGoalLifetime` after the goal was made, whichever comes first. After that the merge alone keeps
+///    the result: the backup's goal is ended by this device, and an old device that demoted the fresh goal
+///    first only marked it `demotedByMerge`, which never outvotes the device holding it as current.
 /// 5. **Otherwise** → adopt the merge when it differs from the model, else keep.
 ///
 /// In every case this device's own settings (`Settings.DeviceLocal`: reminders switch, input, time-zone pin)
@@ -81,6 +90,7 @@ public enum SyncApply {
 
         var plan = SyncApplyPlan(action: .keep, merged: merged, newWipe: newWipe, openEntry: false,
                                  freshGoalID: input.freshGoalID)
+        // Blank: no goal and no day with content (a skip made here after the wipe doesn't count).
         if lostLocalData && merged.snapshot.isBlank {
             plan.action = .eraseLocal
             plan.freshGoalID = nil
@@ -91,17 +101,15 @@ public enum SyncApply {
         next.settings = next.settings.keepingDeviceLocal(before.settings.deviceLocal)
         var source = SyncApplyPlan.Source.merge
         if let freshID = input.freshGoalID {
-            if let fresh = before.goal, fresh.id == freshID {
+            if let fresh = before.goal, fresh.id == freshID, !isExpired(fresh, now: input.now) {
                 if let promoted = promoting(fresh, settings: before.settings, in: next) {
                     next = promoted
                     source = .localChange
-                    plan.freshGoalID = nil
-                } else if next.goal?.id == freshID, others.contains(where: { $0.isReadable && $0.snapshot.hasGoals }) {
-                    // Another device's goals have been seen and the fresh goal stands: nothing left to guard.
-                    plan.freshGoalID = nil
                 }
+                // Another device's envelope has now been read: this pass settled it either way.
+                if others.contains(where: \.isReadable) { plan.freshGoalID = nil }
             } else {
-                // The fresh goal is no longer this device's current goal (replaced, ended): nothing to guard.
+                // Expired, or no longer this device's current goal (replaced, ended): nothing to guard.
                 plan.freshGoalID = nil
             }
         }
@@ -111,6 +119,15 @@ public enum SyncApply {
         return plan
     }
 
+    /// How long a fresh goal is guarded when no other device's envelope shows up (a single-device account):
+    /// an old device appearing months later doesn't see its goal ended by it.
+    public static let freshGoalLifetime: TimeInterval = 7 * 24 * 60 * 60
+
+    static func isExpired(_ fresh: Goal, now: Date?) -> Bool {
+        guard let now else { return false }
+        return now.timeIntervalSince(fresh.createdAt) > freshGoalLifetime
+    }
+
     /// The merge demoted `fresh` (an earlier goal from another device stays current, because this device
     /// never knew it). Returns the snapshot with `fresh` current again and the other goal ended as replaced,
     /// or nil when `fresh` wasn't demoted that way (e.g. another device replaced it with a later goal).
@@ -118,12 +135,15 @@ public enum SyncApply {
         guard let current = s.goal, current.id != fresh.id, current.createdAt <= fresh.createdAt,
               let demoted = s.pastGoals.first(where: { $0.id == fresh.id }) else { return nil }
         var out = s
+        // Ended by this device (as if it had set the fresh goal over it): not a merge's demotion.
         var ended = current
         if ended.status == .active { ended.status = .replaced }
         ended.endedAt = ended.endedAt ?? fresh.createdAt
+        ended.demotedByMerge = nil
         var promoted = demoted
         promoted.status = fresh.status
         promoted.endedAt = fresh.endedAt
+        promoted.demotedByMerge = nil
         out.goal = promoted
         out.pastGoals = ([ended] + s.pastGoals.filter { $0.id != fresh.id && $0.id != current.id }).sorted {
             ($0.endedAt ?? $0.createdAt, $0.id.uuidString) > ($1.endedAt ?? $1.createdAt, $1.id.uuidString)
@@ -131,11 +151,6 @@ public enum SyncApply {
         out.settings = SnapshotMerger.mergeSettings(settings, s.settings).keepingDeviceLocal(settings.deviceLocal)
         return out
     }
-}
-
-extension CompassSnapshot {
-    /// A current or past goal.
-    public var hasGoals: Bool { goal != nil || !pastGoals.isEmpty }
 }
 
 // MARK: - The store file and the widget
@@ -162,7 +177,6 @@ extension CompassSnapshot {
                   let ours = out.days[i].step, ours.id == theirs.id, theirs.completionTime > ours.completionTime else { continue }
             out.days[i].step?.completedAt = theirs.completedAt
             out.days[i].step?.completionChangedAt = theirs.completionChangedAt
-            out.days[i].step?.updatedAt = [ours.updatedAt, theirs.updatedAt].compactMap { $0 }.max()
         }
         return out
     }

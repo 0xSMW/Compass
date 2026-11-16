@@ -245,16 +245,25 @@ final class AppModel {
         AudioTombstoneLog.shared.noteReferenced(snapshot.referencedAudioFiles)
     }
 
-    /// Write the snapshot. A widget change that landed since the last write is taken in first, so the
-    /// app's save never overwrites it. A failure is remembered (`saveFailed`), never swallowed.
+    /// Write the snapshot as one coordinated read-modify-write (`Store.update`): a widget change that
+    /// landed since the last write is taken in inside the same step, so the app's save never overwrites
+    /// it and the widget can't write in between. An unreadable file (copied aside at launch) is replaced.
+    /// A failure is remembered (`saveFailed`), never swallowed.
     private func writeToStore() {
-        if !saveFailed, StoreReload.shouldRead(fileModifiedAt: store.modifiedAt, lastSavedAt: lastSavedAt, saveFailed: false),
-           let stored = try? store.load() {
-            snapshot = snapshot.takingWidgetChanges(from: stored)
-        }
+        let takeWidgetChanges = !saveFailed
+        let lastSaved = lastSavedAt
+        let memory = snapshot
         do {
-            try store.save(snapshot)
-            lastSavedAt = store.modifiedAt
+            let written = try store.update(replacingUnreadable: true) { stored, storedModifiedAt in
+                var next = memory
+                if takeWidgetChanges,
+                   StoreReload.shouldRead(fileModifiedAt: storedModifiedAt, lastSavedAt: lastSaved, saveFailed: false) {
+                    next = next.takingWidgetChanges(from: stored)
+                }
+                stored = next
+            }
+            if written.snapshot != snapshot { snapshot = written.snapshot }
+            lastSavedAt = written.modifiedAt
             if saveFailed { saveFailed = false }
         } catch {
             if !saveFailed { saveFailed = true }
@@ -351,10 +360,12 @@ final class AppModel {
     }
 
     /// Clear the snapshot here (H2 on this device, or a wipe from another device). The store file is
-    /// removed and the widget reloads. Sync is told separately (`LiveSync.wipeEverywhere`), never as
+    /// removed, A1's backup check starts over and the widget reloads. Sync is told separately (`LiveSync.wipeEverywhere`), never as
     /// an ordinary local change, so an empty snapshot is not pushed over the wipe marker.
     func deleteEverything() {
         snapshot = .empty
+        // A1 must not offer the backup that was just deleted (N4): it looks again.
+        restoreRouting.reset()
         if let fileStore = store as? JSONFileStore { try? fileStore.deleteAll() } else { try? store.save(.empty) }
         saveFailed = false
         lastSavedAt = store.modifiedAt

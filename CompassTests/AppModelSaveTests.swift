@@ -121,6 +121,31 @@ final class AppModelSaveTests: XCTestCase {
         XCTAssertEqual(spy.syncNotifications, 0)
     }
 
+    /// N4: A1's question never offers a backup that Delete everything just removed, and "Start a new
+    /// goal" answers it.
+    func testRestoreQuestionIsForgottenAfterDeleteEverythingAndStartingANewGoal() {
+        let (model, _) = TestModel.make(spy: EffectsSpy())
+        let routing = model.restoreRouting
+        func found() {
+            routing.backupFound = true
+            routing.foundSummary = BackupSummary(goalText: "Old goal.", steps: 212, memos: 186, goals: 1)
+            routing.choosing = true
+        }
+        found()
+        model.deleteEverything()
+        XCTAssertFalse(routing.backupFound)
+        XCTAssertNil(routing.foundSummary)
+        XCTAssertFalse(routing.choosing)
+
+        found()
+        routing.chooseNewGoal(model)
+        XCTAssertFalse(routing.backupFound)
+        XCTAssertNil(routing.foundSummary)
+        XCTAssertFalse(routing.choosing)
+        XCTAssertFalse(routing.restoreChosen)
+        XCTAssertEqual(model.current, .a2)
+    }
+
     // MARK: S3 · failed saves, the widget's writes
 
     /// A save that fails (full disk) is remembered and shown; becoming active retries it instead of

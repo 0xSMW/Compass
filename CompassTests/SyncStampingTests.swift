@@ -7,10 +7,14 @@ import CompassCore
 final class SyncStampingTests: XCTestCase {
     let now = Fixtures.date(Fixtures.todayKey, 14)
 
+    /// Completing stamps the completion only (N2): `updatedAt` stays for title and part edits, so a title
+    /// edit made on another device isn't lost to this later completion.
     func testCompletingTheStepStampsIt() {
         let (model, _) = TestModel.make(now: now, spy: EffectsSpy())
+        let editStamp = model.today?.step?.updatedAt
         model.setStepDone(true)
-        XCTAssertEqual(model.today?.step?.updatedAt, now)
+        XCTAssertEqual(model.today?.step?.completionChangedAt, now)
+        XCTAssertEqual(model.today?.step?.updatedAt, editStamp)
         XCTAssertNil(model.goal?.updatedAt, "untouched items stay unstamped")
     }
 
