@@ -185,6 +185,37 @@ public enum SyncApply {
     }
 }
 
+// MARK: - Recording a wipe on disk
+
+/// The wipe fields of the sync state file (`SyncState.wipedAt` and `appliedWipe`).
+///
+/// An envelope that carries a wipe is taken whole by every merge (`SnapshotMerger.applyingWipe`): its device
+/// carried the wipe out, so what it holds came after. On relaunch a device builds its envelope from two files,
+/// the store (snapshot) and the sync state (wipe). So the state file may only say a wipe was carried out once
+/// the store file holds the snapshot that carried it out. Otherwise a crash between the two writes, or a store
+/// write that fails (full disk) before the app ends, leaves the pre-wipe snapshot in an envelope that counts
+/// as exempt, and the merge brings the deleted data back to every device.
+///
+/// The coordinator therefore commits the filtered snapshot first and writes the state file after, with
+/// `toSave`: the wipe it holds in memory when the store write went through, else the one already on disk, so
+/// the next launch filters the stale store again. Memory keeps the new wipe either way: the model holds the
+/// filtered snapshot, and that is what its envelope pushes.
+public struct WipeRecord: Equatable, Sendable {
+    public var wipedAt: Date?
+    public var appliedWipe: Date?
+
+    public init(wipedAt: Date?, appliedWipe: Date?) {
+        self.wipedAt = wipedAt
+        self.appliedWipe = appliedWipe
+    }
+
+    /// What to write to the state file. `storeHoldsModel`: the store file holds the model's snapshot (the
+    /// last write went through, `AppModel.saveFailed` is false).
+    public static func toSave(inMemory: WipeRecord, onDisk: WipeRecord, storeHoldsModel: Bool) -> WipeRecord {
+        storeHoldsModel ? inMemory : onDisk
+    }
+}
+
 // MARK: - The store file and the widget
 
 /// When the app looks at the store file for changes another process (the widget) made.

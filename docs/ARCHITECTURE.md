@@ -63,7 +63,12 @@ tells sync (`.local` only) and reloads the widget timelines (`SnapshotEffects`, 
 
 `commit` stamps `.local` changes (`LocalEdits`): every changed item gets `updatedAt`, new notes and
 reflections get this install's `deviceID` and model. That is what sync merges on, item by item; restores
-commit as `.restored` (synced, not stamped). Deleting a recording goes through `VoiceStorage.delete`,
+commit as `.restored` (synced, not stamped). `commit` then keeps the snapshot exactly as the store file
+reads back (`JSONFileStore.asStored`): files hold dates in whole seconds, and sync compares this device's
+dates with every other device's decoded ones. An evening entry's `createdAt` is its identity (E5, and the
+id of the note a set-aside entry becomes), so an entry held as 21:00:00.7 here and read as 21:00:00
+everywhere else made a resolved conflict come back on both devices with the words kept twice
+(`SyncRound8Tests`). Deleting a recording goes through `VoiceStorage.delete`,
 which leaves an audio tombstone so the file leaves iCloud and every device. Only recordings the
 snapshot refers to are uploaded or downloaded.
 
@@ -115,9 +120,23 @@ never adopted as a local edit, so it can't record notes and steps as deleted.
   (`SyncEnvelope.wipeDate`, `CompassSnapshot.newestStamp`). With clocks that agree that is simply now.
   Otherwise a wipe dated by a slow clock would leave things another device stamped later, and they would
   come back from that device's envelope (X3), and a wipe dated before an earlier one would lose to it.
+  The date is a whole second, rounded up: every file holds it without fractions, so the wiping device
+  holds in memory the value the other devices read, and the exemption above holds for their envelopes
+  in the same process too (F1), whether the encoder truncates or rounds.
   The two rules only work together: a later stamp alone erases more of what a slow device makes next.
   `SyncRound4Tests` fuzzes wipes with clocks up to 30 minutes apart and checks that no goal set on a
   device that had carried out the newest wipe is lost and nothing the wiping device held survives.
+- **The state file never runs ahead of the store.** The exemption trusts the wipe an envelope carries, and
+  after a relaunch a device builds its envelope from two files: the store (snapshot) and
+  `sync-state.json` (wipe). When a merge carries out a new wipe the coordinator commits the filtered
+  snapshot first and writes the state after; if the store write failed (`saveFailed`) the state file
+  keeps the wipe it had (`WipeRecord.toSave`, every `SyncCoordinator.saveState`), so a crash or a failed
+  save never leaves the pre-wipe snapshot under a state that says the wipe was carried out (F2). Memory
+  keeps the new wipe: the model holds the filtered snapshot, and that is what it pushes. The next state
+  write after a successful save records it.
+- **This device's envelope as its file reads.** `SyncCoordinator.envelope()` builds the envelope
+  `asStored`, so its `savedAt`, tombstones and wipe compare with other devices' decoded ones on equal
+  terms (two saves in the same second order the same way on every device).
 - **`SyncApply.plan`** turns what was read into one action: erase (a remote wipe with nothing made here
   since), adopt the survivors and reopen the entry screen (a remote wipe with local survivors), adopt
   the merge (staying on any onboarding screen), put a fresh goal back on top (below), or keep.

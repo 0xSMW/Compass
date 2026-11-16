@@ -177,6 +177,16 @@ public final class JSONFileStore: Store, Sendable {
         return d
     }
 
+    /// `value` exactly as it reads back from a file written with `encoder()` (the store, a sync envelope,
+    /// the sync state): dates lose their fractions of a second. Whatever is compared with another device's
+    /// decoded data, or keyed by a date (an evening entry's `createdAt`), must be held in this form, or this
+    /// device sees 21:00:00.7 where every other device sees 21:00:00. Returns `value` unchanged if it
+    /// doesn't encode.
+    public static func asStored<T: Codable>(_ value: T) -> T {
+        guard let data = try? encoder().encode(value), let back = try? decoder().decode(T.self, from: data) else { return value }
+        return back
+    }
+
     /// Throws `StoreError.newerSchema` for a file from a newer Compass (never misread as empty) and
     /// `StoreError.corrupt` for one that doesn't decode.
     public func load() throws -> CompassSnapshot {

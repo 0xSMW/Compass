@@ -224,7 +224,10 @@ final class AppModel {
     func commit(_ next: CompassSnapshot, origin: SnapshotOrigin = .local) {
         // Local edits get per-item `updatedAt` and this device's id on new recordings, so sync merges
         // item by item (LiveServices+Sync.swift, CompassCore `LocalEdits`).
-        let next = origin == .local ? LocalEdits.stamp(next, since: snapshot, at: now, device: deviceIdentity) : next
+        let stamped = origin == .local ? LocalEdits.stamp(next, since: snapshot, at: now, device: deviceIdentity) : next
+        // Held exactly as the store file and every other device read it (dates in whole seconds): sync
+        // compares these dates with decoded ones, and an evening entry's `createdAt` is its identity (E5).
+        let next = JSONFileStore.asStored(stamped)
         guard next != snapshot else { return }
         snapshot = next
         save(origin: origin)

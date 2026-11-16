@@ -66,6 +66,9 @@ final class SyncCoordinator {
     private let drive = ICloudDrive()
     private let io = DispatchQueue(label: "app.compass.icloud", qos: .utility)
     private var state: SyncState
+    /// The wipe fields `sync-state.json` holds now. They lag `state` while the store file doesn't hold the
+    /// snapshot that carried a new wipe out (`saveState`, CompassCore `WipeRecord`).
+    private var wipeOnDisk: WipeRecord
     private var root: URL?
     private var query: NSMetadataQuery?
     private var pushTask: Task<Void, Never>?
@@ -76,14 +79,32 @@ final class SyncCoordinator {
 
     init(model: AppModel) {
         self.model = model
+        let loaded: SyncState
         if let saved = SyncState.load() {
-            state = saved
+            loaded = saved
         } else {
             var fresh = SyncState()
             if !model.snapshot.isBlank { fresh.lastLocalChange = Date() }
-            state = fresh
             fresh.save()
+            loaded = fresh
         }
+        state = loaded
+        wipeOnDisk = WipeRecord(wipedAt: loaded.wipedAt, appliedWipe: loaded.appliedWipe)
+    }
+
+    /// Write `sync-state.json`. A wipe this device carried out is recorded only once the store file holds
+    /// the snapshot that carried it out (`storeHoldsModel`, by default the model's last save went through):
+    /// until then the file keeps the wipe it had, so a relaunch over a stale store filters it again instead
+    /// of exempting pre-wipe data (CompassCore `WipeRecord`). Memory keeps the new wipe either way.
+    private func saveState(storeHoldsModel: Bool? = nil) {
+        let holds = storeHoldsModel ?? (model.map { !$0.saveFailed } ?? true)
+        let record = WipeRecord.toSave(inMemory: WipeRecord(wipedAt: state.wipedAt, appliedWipe: state.appliedWipe),
+                                       onDisk: wipeOnDisk, storeHoldsModel: holds)
+        var file = state
+        file.wipedAt = record.wipedAt
+        file.appliedWipe = record.appliedWipe
+        file.save()
+        wipeOnDisk = record
     }
 
     /// This install, for stamping items and labelling E5.
@@ -144,7 +165,7 @@ final class SyncCoordinator {
 
     func noteLocalChange() {
         state.lastLocalChange = Date()
-        state.save()
+        saveState()
         pushSoon()
     }
 
@@ -157,11 +178,13 @@ final class SyncCoordinator {
         }
     }
 
+    /// This device's envelope exactly as its file reads back (`asStored`: dates in whole seconds), so the
+    /// merge compares its `savedAt`, tombstones and wipe with other devices' decoded ones on equal terms.
     private func envelope() -> SyncEnvelope? {
         guard let model else { return nil }
-        return SyncEnvelope(deviceID: state.deviceID, deviceName: SyncDevice.model, savedAt: state.lastLocalChange,
-                            snapshot: model.snapshot, tombstones: state.tombstones, wipedAt: state.wipedAt,
-                            audioTombstones: AudioTombstoneLog.shared.all)
+        return JSONFileStore.asStored(SyncEnvelope(deviceID: state.deviceID, deviceName: SyncDevice.model, savedAt: state.lastLocalChange,
+                                                   snapshot: model.snapshot, tombstones: state.tombstones, wipedAt: state.wipedAt,
+                                                   audioTombstones: AudioTombstoneLog.shared.all))
     }
 
     func pushNow() {
@@ -230,17 +253,21 @@ final class SyncCoordinator {
             state.tombstones = []
             DataEraser.eraseLocalData()
             AudioTombstoneLog.shared.reset(keeping: merged.audioTombstones)
-            state.save()
+            // The eraser removed the store file: nothing from before the wipe is left on disk.
+            saveState(storeHoldsModel: true)
             model.deleteEverything()
             syncAudio(referencedBefore: before.referencedAudioFiles, merged: merged)
             return
         case .adopt(let snapshot, let source):
             AudioTombstoneLog.shared.adopt(merged.audioTombstones)
-            state.save()
             let phaseBefore = model.phase
             // `.merge` saves and reloads the widget without counting as this device's own change; a fresh
             // goal put back on top (`.localChange`) is this device's decision and is stamped and pushed.
             model.commit(snapshot, origin: source == .localChange ? .local : .remote)
+            // Only now, after the store write: a new wipe is recorded only if the filtered snapshot reached
+            // the disk (`saveFailed` false). Saving the state first left a window where a crash kept the
+            // pre-wipe store under a state that said the wipe was carried out.
+            saveState()
             // Today's phase changed elsewhere (morning done on the iPad): judge the screen again,
             // unless an answer is in progress (then once it ends). F2.
             model.system.mergeApplied(phaseBefore: phaseBefore)
@@ -248,7 +275,7 @@ final class SyncCoordinator {
             pushSoon()
         case .keep:
             AudioTombstoneLog.shared.adopt(merged.audioTombstones)
-            state.save()
+            saveState()
         }
         // Only what this device made after a wipe is left; open wherever that leads. A goal arriving
         // mid-onboarding never ends it: finishing sets the new goal on top (`onboardingFinish`).
@@ -264,7 +291,7 @@ final class SyncCoordinator {
     /// the next merges put it back on top of the backup's goal (`SyncApply`).
     func markFreshGoal(_ id: UUID) {
         state.freshGoalID = id
-        state.save()
+        saveState()
     }
 
     /// Read iCloud now (A1 "Start a new goal": bring the backup in while the user onboards).
@@ -320,8 +347,9 @@ final class SyncCoordinator {
                 try? drive.write(marker, root: root)
             }
         }
-        // The eraser clears Application Support right after this call; write the state back afterwards.
-        Task { @MainActor [weak self] in self?.state.save() }
+        // The eraser clears Application Support right after this call; write the state back afterwards
+        // (the store file is gone by then, so the wipe is recorded).
+        Task { @MainActor [weak self] in self?.saveState(storeHoldsModel: true) }
     }
 }
 

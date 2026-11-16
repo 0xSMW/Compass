@@ -533,11 +533,17 @@ extension SyncEnvelope {
     /// timestamp, so a slow clock (or a fast one on the device that made something) would otherwise date it
     /// before things it means to delete, and they would come back from another device's envelope; and a
     /// wipe dated before an earlier one would lose to it in every merge. With clocks that agree this is `now`.
+    ///
+    /// The result is a whole second, rounded up: files hold dates without fractions, so the wiping device
+    /// keeps in memory the same value every other device reads (`own >= wipedAt` in `applyingWipe` holds for
+    /// their envelopes in the same process), whether the encoder truncates or rounds. Up, so the wipe is
+    /// never dated before something it deletes.
     public func wipeDate(now: Date, knownWipe: Date? = nil) -> Date {
         var floor = [wipedAt, knownWipe].compactMap { $0 }
         if let newest = snapshot.newestStamp { floor.append(newest) }
         floor += tombstones.map(\.deletedAt) + audioTombstones.map(\.deletedAt)
-        return floor.map { $0.addingTimeInterval(1) }.reduce(now, max)
+        let date = floor.map { $0.addingTimeInterval(1) }.reduce(now, max)
+        return Date(timeIntervalSinceReferenceDate: date.timeIntervalSinceReferenceDate.rounded(.up))
     }
 }
 
