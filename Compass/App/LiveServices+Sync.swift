@@ -28,6 +28,9 @@ enum LiveSync {
 
     static func didChangeLocally() { coordinator?.noteLocalChange() }
 
+    /// A failed save went through on a retry (`AppModel.reloadFromStore`).
+    static func storeCaughtUp() { coordinator?.storeCaughtUp() }
+
     /// This install (its sync device id and model). Before sync has started, the saved id if any.
     static var deviceIdentity: DeviceIdentity {
         coordinator?.deviceIdentity

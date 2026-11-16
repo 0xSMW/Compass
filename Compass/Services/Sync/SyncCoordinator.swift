@@ -169,6 +169,13 @@ final class SyncCoordinator {
         pushSoon()
     }
 
+    /// The store file holds the model again after failed saves (a retry on becoming active went through):
+    /// write the state now, so a wipe held back while it didn't (`saveState`) is recorded before the next
+    /// change or merge, which a kill could otherwise beat.
+    func storeCaughtUp() {
+        saveState()
+    }
+
     private func pushSoon() {
         pushTask?.cancel()
         pushTask = Task { @MainActor [weak self] in
@@ -180,11 +187,13 @@ final class SyncCoordinator {
 
     /// This device's envelope exactly as its file reads back (`asStored`: dates in whole seconds), so the
     /// merge compares its `savedAt`, tombstones and wipe with other devices' decoded ones on equal terms.
+    /// The model's snapshot is already in that form (`AppModel.commit`), so only the rest makes the trip.
     private func envelope() -> SyncEnvelope? {
         guard let model else { return nil }
         return JSONFileStore.asStored(SyncEnvelope(deviceID: state.deviceID, deviceName: SyncDevice.model, savedAt: state.lastLocalChange,
                                                    snapshot: model.snapshot, tombstones: state.tombstones, wipedAt: state.wipedAt,
-                                                   audioTombstones: AudioTombstoneLog.shared.all))
+                                                   audioTombstones: AudioTombstoneLog.shared.all),
+                                      snapshotIsStored: true)
     }
 
     func pushNow() {

@@ -227,6 +227,25 @@ public enum StoreReload {
         guard let lastSavedAt else { return true }
         return fileModifiedAt > lastSavedAt
     }
+
+    /// What follows a failed save retried on becoming active (`AppModel.reloadFromStore`).
+    public struct RetryEffects: Equatable, Sendable {
+        /// The widget reads the store file, which now holds what was added.
+        public var reloadWidgets: Bool
+        /// Sync writes its state file again: a wipe it held back while the store didn't hold the snapshot
+        /// that carried it out (`WipeRecord.toSave`) is recorded now, not only at the next change or merge.
+        public var recordSyncState: Bool
+
+        public init(reloadWidgets: Bool, recordSyncState: Bool) {
+            self.reloadWidgets = reloadWidgets
+            self.recordSyncState = recordSyncState
+        }
+    }
+
+    /// Nothing follows a retry that failed again: the file is still older than memory.
+    public static func afterRetry(saveFailed: Bool) -> RetryEffects {
+        RetryEffects(reloadWidgets: !saveFailed, recordSyncState: !saveFailed)
+    }
 }
 
 extension CompassSnapshot {

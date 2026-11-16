@@ -187,6 +187,48 @@ public final class JSONFileStore: Store, Sendable {
         return back
     }
 
+    /// `asStored(new)` at the cost of what changed since `old`, which must already be in stored form (the
+    /// app's snapshot always is: it comes from a file, from an earlier call, or is `.empty` or a fixture).
+    /// A day equal to the day of `old` with the same key is already stored and is kept as it is; every other
+    /// day, and everything outside `days` (goal, past goals, settings, any field added later), goes through
+    /// one round trip together. A full round trip of a year of days takes tens of milliseconds; this takes
+    /// about one. Equal to `asStored(new)` (`StoredFormTests`).
+    public static func asStored(_ new: CompassSnapshot, against old: CompassSnapshot) -> CompassSnapshot {
+        var changed: [Int] = []
+        var oldByKey: [DayKey: Day]?
+        for (i, day) in new.days.enumerated() {
+            let before: Day?
+            if i < old.days.count, old.days[i].key == day.key {
+                before = old.days[i] // the usual case: same order, so no lookup
+            } else {
+                if oldByKey == nil { oldByKey = Dictionary(old.days.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first }) }
+                before = oldByKey?[day.key]
+            }
+            if before != day { changed.append(i) }
+        }
+        var rest = new
+        rest.days = changed.map { new.days[$0] }
+        let stored = asStored(rest)
+        // Decoding keeps the count and order of `days`; if `rest` didn't encode it came back unchanged,
+        // exactly as `asStored(new)` would return `new`.
+        var out = stored
+        out.days = new.days
+        for (j, i) in changed.enumerated() { out.days[i] = stored.days[j] }
+        return out
+    }
+
+    /// `asStored(envelope)` for an envelope whose snapshot is already in stored form (the app's snapshot
+    /// always is, see `asStored(_:against:)`): only the rest (`savedAt`, tombstones, the wipe, audio
+    /// tombstones) goes through a round trip; the snapshot is put back as it is. Equal to `asStored(envelope)`.
+    public static func asStored(_ envelope: SyncEnvelope, snapshotIsStored: Bool) -> SyncEnvelope {
+        guard snapshotIsStored else { return asStored(envelope) }
+        var rest = envelope
+        rest.snapshot = .empty
+        var out = asStored(rest)
+        out.snapshot = envelope.snapshot
+        return out
+    }
+
     /// Throws `StoreError.newerSchema` for a file from a newer Compass (never misread as empty) and
     /// `StoreError.corrupt` for one that doesn't decode.
     public func load() throws -> CompassSnapshot {

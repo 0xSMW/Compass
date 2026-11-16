@@ -68,13 +68,23 @@ reads back (`JSONFileStore.asStored`): files hold dates in whole seconds, and sy
 dates with every other device's decoded ones. An evening entry's `createdAt` is its identity (E5, and the
 id of the note a set-aside entry becomes), so an entry held as 21:00:00.7 here and read as 21:00:00
 everywhere else made a resolved conflict come back on both devices with the words kept twice
-(`SyncRound8Tests`). Deleting a recording goes through `VoiceStorage.delete`,
+(`SyncRound8Tests`). The round trip covers only what changed (`asStored(_:against:)`): days equal to the
+held snapshot's day under the same key are already in that form and are kept, the rest (changed days,
+goal, past goals, settings) goes through one encode and decode. A full round trip costs about as much
+as the store write itself and grows with the history (25 ms at a year of heavy days, 76 ms at three, on
+the main actor); this costs about a millisecond and gives the same snapshot (`StoredFormTests`, over
+every fixture and random edits with fractional dates). The test initializer converts the snapshot it is
+given, so the model never holds a date the file couldn't. Deleting a recording goes through `VoiceStorage.delete`,
 which leaves an audio tombstone so the file leaves iCloud and every device. Only recordings the
 snapshot refers to are uploaded or downloaded.
 
 A save that fails (full disk) sets `model.saveFailed`: Today's notes row says so in I4's words
 (`SystemSaveNotice`), memory keeps everything, and the save is retried on the next change and when the
-app becomes active. The store file is shared with the widget's process: `JSONFileStore` coordinates
+app becomes active. A retry on becoming active that goes through reloads the widget and tells sync
+(`SnapshotEffects.storeCaughtUp`, `StoreReload.afterRetry`), which writes its state at once so a wipe held
+back while the store didn't hold the snapshot (below) is recorded then, not at the next change or merge.
+The save runs on the main actor: `writeToStore` calls `store.update` synchronously (a coordinated read,
+decode, encode and atomic write; about 29 ms at a year of heavy days, 91 ms at three). The store file is shared with the widget's process: `JSONFileStore` coordinates
 reads, writes, the launch-time copy of an unreadable file and Delete everything (`NSFileCoordinator`,
 always on the URL the coordinator hands back). The widget changes it with one coordinated
 read-modify-write (`Store.update`), and so does the app's save (`AppModel.writeToStore`:
@@ -133,10 +143,13 @@ never adopted as a local edit, so it can't record notes and steps as deleted.
   keeps the wipe it had (`WipeRecord.toSave`, every `SyncCoordinator.saveState`), so a crash or a failed
   save never leaves the pre-wipe snapshot under a state that says the wipe was carried out (F2). Memory
   keeps the new wipe: the model holds the filtered snapshot, and that is what it pushes. The next state
-  write after a successful save records it.
+  write after a successful save records it: a local change, a merge, or a failed save that goes through
+  on a retry (`SyncCoordinator.storeCaughtUp`).
 - **This device's envelope as its file reads.** `SyncCoordinator.envelope()` builds the envelope
   `asStored`, so its `savedAt`, tombstones and wipe compare with other devices' decoded ones on equal
-  terms (two saves in the same second order the same way on every device).
+  terms (two saves in the same second order the same way on every device). The model's snapshot is
+  already in that form, so only the rest makes the round trip (`asStored(_:snapshotIsStored:)`); every
+  push and pull used to encode and decode the whole history again.
 - **`SyncApply.plan`** turns what was read into one action: erase (a remote wipe with nothing made here
   since), adopt the survivors and reopen the entry screen (a remote wipe with local survivors), adopt
   the merge (staying on any onboarding screen), put a fresh goal back on top (below), or keep.

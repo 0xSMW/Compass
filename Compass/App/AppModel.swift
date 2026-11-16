@@ -146,7 +146,8 @@ final class AppModel {
         historySelection = HistorySelection()
         system = SystemServices()
         fixture = nil
-        self.snapshot = snapshot
+        // In stored form like every other snapshot the model holds (`commit` relies on it).
+        self.snapshot = JSONFileStore.asStored(snapshot)
         self.conditions = conditions
         self.calendar = calendar
         clock = now
@@ -227,7 +228,8 @@ final class AppModel {
         let stamped = origin == .local ? LocalEdits.stamp(next, since: snapshot, at: now, device: deviceIdentity) : next
         // Held exactly as the store file and every other device read it (dates in whole seconds): sync
         // compares these dates with decoded ones, and an evening entry's `createdAt` is its identity (E5).
-        let next = JSONFileStore.asStored(stamped)
+        // Only what differs from `snapshot` (already in that form) makes the round trip.
+        let next = JSONFileStore.asStored(stamped, against: snapshot)
         guard next != snapshot else { return }
         snapshot = next
         save(origin: origin)
@@ -271,7 +273,10 @@ final class AppModel {
     func reloadFromStore() {
         if saveFailed {
             writeToStore()
-            if !saveFailed { effects.reloadWidgets() }
+            let after = StoreReload.afterRetry(saveFailed: saveFailed)
+            if after.reloadWidgets { effects.reloadWidgets() }
+            // The store holds memory again: sync records a wipe it held back while it didn't.
+            if after.recordSyncState { effects.storeCaughtUp() }
             return
         }
         guard StoreReload.shouldRead(fileModifiedAt: store.modifiedAt, lastSavedAt: lastSavedAt, saveFailed: saveFailed),
@@ -372,6 +377,8 @@ enum SnapshotOrigin: Equatable {
 struct SnapshotEffects: Sendable {
     var reloadWidgets: @MainActor @Sendable () -> Void
     var didChangeLocally: @MainActor @Sendable () -> Void
+    /// A failed save went through on a retry (`reloadFromStore`); sync writes its state again.
+    var storeCaughtUp: @MainActor @Sendable () -> Void = {}
 
     static let none = SnapshotEffects(reloadWidgets: {}, didChangeLocally: {})
 
@@ -381,6 +388,7 @@ struct SnapshotEffects: Sendable {
             WidgetCenter.shared.reloadTimelines(ofKind: SharedStorage.widgetKind)
             #endif
         },
-        didChangeLocally: { LiveSync.didChangeLocally() }
+        didChangeLocally: { LiveSync.didChangeLocally() },
+        storeCaughtUp: { LiveSync.storeCaughtUp() }
     )
 }

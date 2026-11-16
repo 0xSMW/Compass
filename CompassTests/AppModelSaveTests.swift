@@ -7,11 +7,13 @@ import CompassCore
 final class EffectsSpy {
     var widgetReloads = 0
     var syncNotifications = 0
+    var storeCatchUps = 0
 
     var effects: SnapshotEffects {
         SnapshotEffects(
             reloadWidgets: { [self] in widgetReloads += 1 },
-            didChangeLocally: { [self] in syncNotifications += 1 }
+            didChangeLocally: { [self] in syncNotifications += 1 },
+            storeCaughtUp: { [self] in storeCatchUps += 1 }
         )
     }
 }
@@ -171,6 +173,30 @@ final class AppModelSaveTests: XCTestCase {
         XCTAssertEqual(try store.load().day(Fixtures.todayKey)?.notes.count, 1)
     }
 
+    /// A retry that goes through tells sync, which records a wipe it held back while the store didn't
+    /// hold the snapshot (review 9, P2). A retry that fails again tells nobody.
+    func testARetriedSaveThatGoesThroughTellsSync() {
+        let spy = EffectsSpy()
+        let start = Fixtures.snapshot(today: Fixtures.today(notes: []))
+        let store = InMemoryStore(start)
+        let (model, _) = TestModel.make(snapshot: start, store: store, spy: spy)
+        store.failsSaving = true
+        model.addNote("typed while the disk was full")
+        model.reloadFromStore()
+        XCTAssertEqual(spy.storeCatchUps, 0)
+        let reloads = spy.widgetReloads
+
+        store.failsSaving = false
+        model.reloadFromStore()
+        XCTAssertFalse(model.saveFailed)
+        XCTAssertEqual(spy.storeCatchUps, 1)
+        XCTAssertEqual(spy.widgetReloads, reloads + 1)
+
+        // Nothing failed: becoming active again is not a catch-up.
+        model.reloadFromStore()
+        XCTAssertEqual(spy.storeCatchUps, 1)
+    }
+
     /// The widget completes the step in its own process; the app takes that in when it becomes active,
     /// and its own next save doesn't overwrite it.
     func testWidgetCompletionIsTakenInAndNeverOverwritten() throws {
@@ -236,6 +262,23 @@ final class StoreRoundTripTests: XCTestCase {
         XCTAssertEqual(reloaded, model.snapshot)
         XCTAssertEqual(reloaded.day(Fixtures.todayKey)?.notes.last?.text, "Ask Sam about Friday")
         XCTAssertNotNil(reloaded.day(Fixtures.todayKey)?.step?.completedAt)
+    }
+
+    /// The clock has fractions of a second; the file doesn't. The model holds what the file holds, so sync
+    /// compares its dates with other devices' on equal terms and an evening entry keeps its identity (E5).
+    func testTheModelHoldsWhatTheFileHoldsWhenTheClockHasFractionsOfASecond() throws {
+        let url = directory.appendingPathComponent("Compass/compass.json")
+        let spy = EffectsSpy()
+        let now = Fixtures.date(Fixtures.todayKey, 21).addingTimeInterval(0.7)
+        let (model, store) = TestModel.make(store: JSONFileStore(url: url), now: now, spy: spy)
+        model.addNote("Ask Sam about Friday")
+        XCTAssertEqual(model.snapshot, try store.load())
+        model.eveningSession.outcome = .moved
+        model.saveEveningTake(transcript: "Called Lena", recording: nil, transcriptionFailed: false)
+        XCTAssertEqual(model.snapshot, try store.load())
+        for date in [model.today?.reflection?.createdAt, model.today?.notes.last?.createdAt] {
+            XCTAssertEqual(try XCTUnwrap(date).timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1), 0)
+        }
     }
 
     func testDeleteEverythingRemovesTheFile() throws {
