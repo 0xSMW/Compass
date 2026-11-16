@@ -1,0 +1,89 @@
+import Foundation
+import CompassCore
+
+/// Recordings deleted on this device or reported deleted by another one
+/// (`Application Support/Compass/audio-tombstones.json`). `VoiceStorage.delete` records the deletion of
+/// every recording a saved snapshot used (E4 delete, evening redo; not discarded takes, which never
+/// travel); sync carries the list in this device's envelope, removes those files from iCloud and never
+/// copies them back. Entries older than 90 days are dropped (`AudioTombstone.retention`). Thread-safe: deletions happen on any queue.
+// @unchecked Sendable: every access to `entries` goes through `lock`.
+final class AudioTombstoneLog: @unchecked Sendable {
+    /// Shared on purpose: a lock-guarded mirror of one file on disk, written from any queue by
+    /// `VoiceStorage.delete`; it is device bookkeeping, not flow state.
+    static let shared = AudioTombstoneLog()
+
+    private let lock = NSLock()
+    private var entries: [String: Date]?
+    /// Recordings a saved snapshot has used during this run (`AppModel` reports each save). Only those can
+    /// have travelled, so only those get a tombstone; a discarded take never does.
+    private var referenced: Set<String> = []
+    private let url: URL
+
+    init(url: URL? = nil) {
+        self.url = url ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Compass/audio-tombstones.json")
+    }
+
+    /// Every tombstone younger than `AudioTombstone.retention`, sorted by name.
+    var all: [AudioTombstone] {
+        lock.withLock {
+            AudioTombstone.pruned(loaded().map { AudioTombstone(name: $0.key, deletedAt: $0.value) }, now: Date())
+                .sorted { $0.name < $1.name }
+        }
+    }
+
+    /// The snapshot just saved uses these recordings.
+    func noteReferenced(_ names: Set<String>) {
+        lock.withLock { referenced.formUnion(names) }
+    }
+
+    /// A recording was deleted here. Remembered only if a snapshot used it (it may be in iCloud).
+    func record(_ name: String, at date: Date = Date()) {
+        lock.withLock {
+            guard AudioTombstone.isNeeded(for: name, referenced: referenced) else { return }
+            var e = loaded()
+            e[name] = max(e[name] ?? date, date)
+            entries = e
+            persist(e)
+        }
+    }
+
+    /// Take in what the merge knows (other devices' deletions). Saves only when something is new.
+    func adopt(_ tombstones: [AudioTombstone]) {
+        lock.withLock {
+            var e = loaded()
+            var changed = false
+            for t in AudioTombstone.pruned(tombstones, now: Date()) where (e[t.name] ?? .distantPast) < t.deletedAt {
+                e[t.name] = t.deletedAt
+                changed = true
+            }
+            guard changed else { return }
+            entries = e
+            persist(e)
+        }
+    }
+
+    /// After a wipe: only deletions from after it matter.
+    func reset(keeping tombstones: [AudioTombstone] = []) {
+        lock.withLock {
+            let e = Dictionary(tombstones.map { ($0.name, $0.deletedAt) }, uniquingKeysWith: max)
+            entries = e
+            persist(e)
+        }
+    }
+
+    private func loaded() -> [String: Date] {
+        if let entries { return entries }
+        let list = (try? Data(contentsOf: url)).flatMap { try? JSONFileStore.decoder().decode([AudioTombstone].self, from: $0) } ?? []
+        let e = Dictionary(list.map { ($0.name, $0.deletedAt) }, uniquingKeysWith: max)
+        entries = e
+        return e
+    }
+
+    private func persist(_ e: [String: Date]) {
+        let list = AudioTombstone.pruned(e.map { AudioTombstone(name: $0.key, deletedAt: $0.value) }, now: Date())
+            .sorted { $0.name < $1.name }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let data = try? JSONFileStore.encoder().encode(list) { try? data.write(to: url, options: .atomic) }
+    }
+}

@@ -1,0 +1,137 @@
+<!--title: Compass v3 · System sheet-->
+<!--size: 1840x2520-->
+<style data-extra>
+.grid8{background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.045) 0 1px,transparent 1px 8px),repeating-linear-gradient(90deg,rgba(255,255,255,.045) 0 1px,transparent 1px 8px)}
+.band{position:absolute;left:0;right:0;box-sizing:border-box;display:flex;align-items:flex-start;justify-content:flex-end;padding:4px 8px;font-size:13px;line-height:16px;font-weight:500;color:#F4F4F2}
+.band.l{justify-content:flex-start}
+.b1{background:rgba(76,141,255,.16);border-top:1px solid rgba(76,141,255,.5);border-bottom:1px solid rgba(76,141,255,.5)}
+.b2{background:rgba(255,138,122,.14);border-top:1px solid rgba(255,138,122,.5);border-bottom:1px solid rgba(255,138,122,.5)}
+.b3{background:rgba(244,244,242,.08);border-top:1px solid rgba(244,244,242,.3);border-bottom:1px solid rgba(244,244,242,.3)}
+.hatch{background:repeating-linear-gradient(45deg,rgba(255,255,255,.07) 0 6px,transparent 6px 12px)}
+.vline{position:absolute;top:0;bottom:0;width:0;border-left:1px dashed rgba(255,138,122,.7)}
+.hline{position:absolute;left:0;right:0;height:0;border-top:1px dashed #F4F4F2}
+.tag{position:absolute;font-size:13px;line-height:16px;font-weight:500;color:#F4F4F2;background:#0B0B0C;padding:2px 6px;border-radius:4px}
+.sec{display:flex;flex-direction:column;gap:16px}
+.sec h2{margin:0;font-size:28px;line-height:32px;font-weight:600;letter-spacing:-0.02em}
+.trow{display:flex;align-items:baseline;gap:16px;border-top:1px solid #2A2A2D;padding:12px 0}
+.trow .meta{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:13px;line-height:16px;color:#A1A1A6;white-space:nowrap}
+.sw2{display:flex;align-items:center;gap:16px;border-top:1px solid #2A2A2D;padding:12px 0}
+.sw2 i{width:40px;height:40px;border-radius:12px;border:1px solid #3A3A3E;flex-shrink:0}
+.sw2 .meta{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:13px;color:#A1A1A6}
+.sp i{display:block;height:16px;background:#F4F4F2;border-radius:2px}
+.rule{border-top:1px solid #2A2A2D;padding:12px 0;font-size:15px;line-height:20px;color:#A1A1A6}
+.rule b{color:#F4F4F2;font-weight:600}
+</style>
+<div class="hd">
+<h1>System sheet · v3</h1>
+<p>Built in this order. First an 8pt base grid with 24pt insets and a 24pt container radius. Then safe areas and content regions, then grouping, then structure and controls, then the actual type sizes. Every screen on this page uses these tokens from one shared stylesheet. Spacing is 24 by default, 8–16 within a group, 32–48 between groups.</p>
+</div>
+
+<div class="strip">
+
+<div class="cell"><div class="cap"><b>1 · Grid, insets, safe areas</b><span>8pt grid · 24 insets · safe top 56 · safe bottom 792</span></div>
+<div class="ph grid8">
+<div class="band hatch l" style="top: 0; height: 56px; padding-top: 20px; padding-left: 24px">safe top 0–56</div>
+<div class="band hatch l" style="top: 792px; height: 52px; padding-left: 24px">safe bottom 792–844</div>
+<div class="vline" style="left: 24px"></div><div class="vline" style="left: 366px"></div>
+<div class="tag" style="top: 400px; left: 30px">24</div><div class="tag" style="top: 400px; left: 334px">24</div>
+<div style="position: absolute; top: 224px; left: 24px; right: 24px; height: 176px; border-radius: 24px; border: 1px solid #F4F4F2; display: flex; align-items: center; justify-content: center" class="caption">radius 24 · padding 24</div>
+<div class="tag" style="top: 560px; left: 120px">content width 342</div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>2 · Flow regions</b><span>Morning, Evening, Onboarding, History day</span></div>
+<div class="ph grid8">
+<div class="band b1" style="top: 56px; height: 48px">nav 56–104 · close/back left</div>
+<div class="band b3" style="top: 128px; height: 72px">subject 128 · up to 3 lines</div>
+<div class="band b2" style="top: 224px; height: 40px">focal 224</div>
+<div class="band b3" style="top: 280px; height: 312px">transcript / middle · scrolls inside, ends 592</div>
+<div class="band b1" style="top: 616px; height: 40px">wave 616–656</div>
+<div class="band b2" style="top: 664px; height: 96px">dock 664–760</div>
+<div class="hline" style="top: 712px"></div><div class="tag" style="top: 703px; left: 24px">primary line 712</div>
+<div class="band b3" style="top: 768px; height: 24px">labels / link to 792</div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>3 · Today regions</b><span>Header grows down; stack grows up; dock fixed</span></div>
+<div class="ph grid8">
+<div class="band b1" style="top: 56px; height: 48px">History · Settings</div>
+<div class="band b3" style="top: 128px; height: 160px">goal + intention · grows ↓</div>
+<div class="band b3" style="top: 412px; height: 44px">notes row · notices</div>
+<div class="band b2" style="top: 480px; height: 176px">step card · min 176 · grows ↑ · bottom 656</div>
+<div class="tag" style="top: 596px; left: 290px">control 604</div>
+<div class="band b1" style="top: 680px; height: 64px">keyboard + Note 680–744</div>
+<div class="hline" style="top: 712px"></div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>4 · Sheets and keyboard</b><span>Overlays keep the 712 line; the keyboard lifts the action</span></div>
+<div class="ph grid8">
+<div class="band b3" style="top: 128px; height: 80px">field at its normal anchor</div>
+<div class="band b2" style="top: 436px; height: 56px">action 436–492 · 16 above keys</div>
+<div class="band hatch" style="top: 508px; height: 336px; padding-top: 12px">keyboard 508–844</div>
+<div class="tag" style="top: 300px; left: 24px">sheets: radius 24 top · Save on 712 · Cancel 744–792</div>
+</div></div>
+
+</div>
+
+<div style="margin-top: 64px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 48px">
+
+<div class="sec"><h2>Type</h2>
+<div class="trow"><span class="display" style="font-size: 44px">Goal</span><span class="meta">Display 44/48 600 · AX 56</span></div>
+<div class="trow"><span class="title">Focal</span><span class="meta">Title 34/40 600 · AX 48</span></div>
+<div class="trow"><span class="live">Live words</span><span class="meta">Live 24/32 500 · AX 34</span></div>
+<div class="trow"><span class="heading">Step title</span><span class="meta">Heading 22/28 500 · AX 30</span></div>
+<div class="trow"><span class="body">Subject, list rows</span><span class="meta">Body 17/24 400 · AX 26</span></div>
+<div class="trow"><span class="caption ink2">Part, meta</span><span class="meta">Caption 15/20 400 · AX 22</span></div>
+<div class="trow"><span class="micro mono ink2">0:14 · 07:00</span><span class="meta">Micro 13/16 500 mono</span></div>
+<p class="caption ink3">Inter Tight for everything, IBM Plex Mono for times and durations only. Weight carries hierarchy, not colour.</p>
+</div>
+
+<div class="sec"><h2>Space, shape, controls</h2>
+<div class="sw2" style="gap: 24px"><span class="sp" style="display: flex; align-items: flex-end; gap: 8px"><i style="width: 8px"></i><i style="width: 16px"></i><i style="width: 24px"></i><i style="width: 32px"></i><i style="width: 48px"></i></span><span class="meta">8 · 16 · 24 · 32 · 48</span></div>
+<div class="rule"><b>24</b> default gap, insets, card padding</div>
+<div class="rule"><b>8–16</b> inside a group: icon to label, title to meta</div>
+<div class="rule"><b>32–48</b> between groups</div>
+<div class="rule"><b>Radius 24</b> cards, sheets, player, notices, widgets. <b>Pill</b> = height ÷ 2 (buttons 28, Note 32, chips 22). <b>12</b> tiles and fields.</div>
+<div class="rule"><b>Marks</b> (History only): moved = solid dot, missed = half-size grey dot, goal = ringed end marker. No streaks or scores anywhere.</div>
+<div class="rule"><b>44</b> minimum target · <b>56</b> keyboard, completion, secondary voice · <b>96</b> voice and answers</div>
+<div class="row" style="gap: 24px; padding-top: 8px"><span class="c56"><svg class="i"><use href="#kb"></use></svg></span><span class="c56 done"></span><span class="c56 done on"><svg class="i"><use href="#ok"></use></svg></span><span class="mic" style="width: 56px; height: 56px"><svg class="s"><use href="#play"></use></svg></span><span class="mic"><svg class="l"><use href="#mic"></use></svg></span></div>
+</div>
+
+<div class="sec"><h2>Colour</h2>
+<div class="sw2"><i style="background: #0B0B0C"></i><span class="body">Ground</span><span class="meta">#0B0B0C</span></div>
+<div class="sw2"><i style="background: #161618"></i><span class="body">Surface · cards, Note</span><span class="meta">#161618</span></div>
+<div class="sw2"><i style="background: #1C1C1F"></i><span class="body">Raised · sheets</span><span class="meta">#1C1C1F</span></div>
+<div class="sw2"><i style="background: #2A2A2D"></i><span class="body">Line</span><span class="meta">#2A2A2D</span></div>
+<div class="sw2"><i style="background: #6E6E74"></i><span class="body">Missed, dim words</span><span class="meta">3.8:1</span></div>
+<div class="sw2"><i style="background: #8A8A90"></i><span class="body">Tertiary text</span><span class="meta">5.7:1</span></div>
+<div class="sw2"><i style="background: #A1A1A6"></i><span class="body">Secondary text</span><span class="meta">7.6:1</span></div>
+<div class="sw2"><i style="background: #F4F4F2"></i><span class="body">Ink, primary fill</span><span class="meta">17.9:1</span></div>
+<div class="sw2"><i style="background: #FF8A7A"></i><span class="body">Destructive only</span><span class="meta">#FF8A7A</span></div>
+</div>
+
+<div class="sec"><h2>Anchor rules</h2>
+<div class="rule"><b>Same place, same job.</b> Close top-left on every morning and evening screen, back top-left everywhere else. History top-left and Settings top-right on Today. Keyboard bottom-left. Skip bottom-right.</div>
+<div class="rule"><b>One dock line.</b> Every bottom dock is centred on y 712: mic, answers, player, Note, Use this, Save, Continue. Today’s completion circle lives in the card, fixed at 604.</div>
+<div class="rule"><b>Text grows away from controls.</b> Headers and focal text grow down from 128 or 224. The Today card grows up from 656. Transcripts scroll inside their region.</div>
+<div class="rule"><b>Turn-taking slots.</b> Question → prompt → summary share 224. Mic → player share 712. Notes, live words and notices share the row above the card.</div>
+<div class="rule"><b>Planned reflow only.</b> Keyboard lifts the action to 436. Typed text goes where spoken words would appear; if that spot is under the keyboard (Today’s notes), the field rides on the keyboard. At the largest sizes, circles become full-width buttons. The Today header sits in a scroll region from 104 down to 24 above the notes row, with 24 padding at top and bottom. At rest the goal starts at 128 and is never clipped. Only once scrolled does the nav get a solid backdrop.</div>
+</div>
+
+</div>
+
+<div style="margin-top: 48px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 48px">
+<div class="sec"><h2>Motion and sound</h2>
+<div class="trow"><span class="body">Breath</span><span class="caption ink2" style="flex: 1">Center rings expand 4 s, settle 4 s</span><span class="meta">reduced: still</span></div>
+<div class="trow"><span class="body">Turn-taking</span><span class="caption ink2" style="flex: 1">Question, prompt and summary cross-fade in place</span><span class="meta">200 ms · reduced: cut</span></div>
+<div class="trow"><span class="body">Answer → record</span><span class="caption ink2" style="flex: 1">The tapped circle becomes the mic on the same line</span><span class="meta">240 ms · reduced: cut</span></div>
+<div class="trow"><span class="body">Complete</span><span class="caption ink2" style="flex: 1">Circle fills from centre, one dry click, light haptic</span><span class="meta">240 ms · reduced: instant</span></div>
+<div class="trow"><span class="body">Listening</span><span class="caption ink2" style="flex: 1">Waveform follows the voice; words land as said</span><span class="meta">live · reduced: level bar</span></div>
+<p class="caption ink3">One sound in the whole app: the completion click. It follows the silent switch.</p>
+</div>
+<div class="sec"><h2>Accessibility</h2>
+<div class="rule"><b>Dynamic Type to AX5.</b> Text reflows, controls keep their size and line, and choice circles become 72pt labelled buttons. Long headers scroll with 24 padding and start fully visible. Drawn on C11, C11b, B8, D7, D8, A8 and E6.</div>
+<div class="rule"><b>Every verb has two ways.</b> Voice or keyboard for planning, notes and reflection. Tap for completion, never voice.</div>
+<div class="rule"><b>Contrast.</b> All text ≥ 5.7:1 on ground. The missed mark (3.8:1) is a graphic, not text.</div>
+<div class="rule"><b>Screen readers.</b> Every icon button is labelled. Recording announces “Listening” and “Saved”. Completion announces “Done, undo available”.</div>
+<div class="rule"><b>No hidden gestures.</b> Every action on every screen is a visible control.</div>
+</div>
+</div>

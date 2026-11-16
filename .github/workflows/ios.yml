@@ -1,0 +1,369 @@
+name: iOS
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      screens:
+        description: "Comma-separated ScreenIDs to capture (empty = all 66)"
+        required: false
+        default: ""
+
+# No concurrency group: several agents push in parallel and each needs its own
+# run to finish. Screenshot commits rebase before pushing; README.txt names the
+# commit that produced the current PNGs. Only a push to a branch other than the
+# default one commits PNGs back (to that same branch, github.ref_name), from the
+# `screenshots` job: the only job with write access. Pull requests, tags and the
+# default branch build and test read-only.
+
+permissions:
+  contents: read
+
+env:
+  XCODE_APP: /Applications/Xcode_26.6.app
+  # Screenshots are published for pushes to any branch except the default one.
+  # (A tag push is not a branch: `ref_name` would be the tag.)
+  PUBLISH_SCREENSHOTS: ${{ github.event_name == 'push' && github.ref_type == 'branch' && github.ref_name != github.event.repository.default_branch }}
+
+jobs:
+  core:
+    name: CompassCore (Linux, swift test)
+    runs-on: ubuntu-latest
+    container: swift:6.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift test
+        working-directory: Packages/CompassCore
+        run: swift test
+
+  app:
+    name: App + widget build, UI screenshots (macOS 26, Xcode 26.6)
+    runs-on: macos-26
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "$XCODE_APP"
+          xcodebuild -version
+          xcrun simctl list runtimes
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Pick simulator (390x844 pt preferred)
+        id: sim
+        run: |
+          set -euo pipefail
+          # iPhone 16e (390x844 pt) ships with the iOS 26.2 runtime on this image; 17e is the fallback.
+          UDID=""
+          for NAME in "iPhone 16e" "iPhone 17e" "iPhone 17"; do
+            UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys
+          name=sys.argv[1]
+          d=json.load(sys.stdin)['devices']
+          c=[(rt,x['udid']) for rt,l in d.items() if 'iOS' in rt for x in l if x['name']==name]
+          c.sort(reverse=True)
+          print(c[0][1] if c else '')" "$NAME")
+            if [ -n "$UDID" ]; then echo "Using $NAME ($UDID)"; echo "name=$NAME" >> "$GITHUB_OUTPUT"; break; fi
+          done
+          if [ -z "$UDID" ]; then echo "No simulator found"; xcrun simctl list devices available; exit 1; fi
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl status_bar "$UDID" override --time "9:41" --dataNetwork wifi --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100 || true
+          xcrun simctl ui "$UDID" appearance dark || true
+
+      - name: Build app, widget and UI tests
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild build-for-testing \
+            -project Compass.xcodeproj -scheme Compass \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee build/build.log | grep -E "error:|warning: .*deprecated|BUILD|\*\*" || true
+          grep -q "TEST BUILD SUCCEEDED" build/build.log || { grep -E "error:" -A3 build/build.log | head -200; exit 1; }
+
+      # Gate: any concurrency warning fails the run (strict checking is `complete`, Swift 5 mode).
+      # Fix it, or `@preconcurrency import` the module it comes from; an `@unchecked Sendable` needs a
+      # one-line justification comment.
+      - name: Concurrency warnings (strict checking, Swift 5 mode)
+        id: warnings
+        if: always()
+        run: |
+          mkdir -p build && touch build/build.log
+          grep -E "warning: .*(Sendable|actor-isolated|main actor|data race|concurrency|isolation|Swift 6 language mode|preconcurrency)" build/build.log \
+            | sed -E 's#^.*/(Compass[^:]*|Shared[^:]*|Packages[^:]*):#\1:#' | sort -u > build/concurrency-warnings.txt || true
+          COUNT=$(wc -l < build/concurrency-warnings.txt | tr -d ' ')
+          echo "Unique concurrency warnings: $COUNT"
+          head -80 build/concurrency-warnings.txt
+          if [ "$COUNT" -gt 0 ]; then echo "::error::$COUNT concurrency warning(s); new warnings fail CI"; echo "status=1" >> "$GITHUB_OUTPUT"; else echo "status=0" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Check privacy manifest and usage strings in the app bundle
+        run: |
+          set -euo pipefail
+          APP=$(find build/DerivedData/Build/Products -maxdepth 2 -name Compass.app | head -1)
+          test -f "$APP/PrivacyInfo.xcprivacy" || { echo "PrivacyInfo.xcprivacy missing from $APP"; exit 1; }
+          plutil -lint "$APP/PrivacyInfo.xcprivacy"
+          if /usr/libexec/PlistBuddy -c "Print :NSMicrophoneUsageDescription" "$APP/Info.plist" | grep -q "stays on this iPhone"; then
+            echo "Microphone usage string claims audio stays on the phone, but recordings sync to iCloud"; exit 1
+          fi
+
+      # The Release job checks these markers are gone; here they must be in the Debug build, or that check
+      # would prove nothing.
+      - name: Test-harness markers present in the Debug build
+        run: scripts/check_harness_strings.sh present "$(find build/DerivedData/Build/Products -maxdepth 2 -name Compass.app | head -1)"
+
+      - name: Run app unit tests (CompassTests)
+        id: unit
+        run: |
+          set +e
+          xcodebuild test-without-building \
+            -project Compass.xcodeproj -scheme Compass \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build/DerivedData \
+            -resultBundlePath build/UnitTests.xcresult \
+            -only-testing:CompassTests \
+            > build/unit.log 2>&1
+          STATUS=$?
+          grep -E "Test Case|error:|failed|passed|Executed|TEST" build/unit.log | tail -80
+          if ! grep -q "Executed [1-9]" build/unit.log; then echo "No unit tests ran"; STATUS=1; fi
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+      - name: Run screenshot tests
+        id: tests
+        env:
+          TEST_RUNNER_SCREENSHOT_DIR: ${{ github.workspace }}/build/screens-raw
+          TEST_RUNNER_SCREENS: ${{ github.event.inputs.screens }}
+        run: |
+          set +e
+          mkdir -p build/screens-raw
+          xcodebuild test-without-building \
+            -project Compass.xcodeproj -scheme Compass \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build/DerivedData \
+            -resultBundlePath build/Screenshots.xcresult \
+            -only-testing:CompassUITests \
+            -skip-testing:CompassUITests/TapThroughTests \
+            > build/test.log 2>&1
+          STATUS=$?
+          grep -E "Test Case|error:|failed|passed|TEST" build/test.log | tail -80
+          COUNT=$(ls build/screens-raw/*.png 2>/dev/null | wc -l | tr -d ' ')
+          echo "Screenshots: $COUNT (+ $(ls build/screens-raw/extra 2>/dev/null | wc -l | tr -d ' ') extra)"
+          if [ -z "${TEST_RUNNER_SCREENS}" ] && [ "$COUNT" -lt 66 ] && [ "$STATUS" = "0" ]; then echo "Expected 66 screenshots"; STATUS=1; fi
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+      # One day through the live flow on the fakes (A1 → … → A7 → B1 → B4/B5 → C3 + note → D1 → D5).
+      - name: Tap-through UI test (live flow on fakes)
+        id: tapthrough
+        run: |
+          set +e
+          xcodebuild test-without-building \
+            -project Compass.xcodeproj -scheme Compass \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build/DerivedData \
+            -resultBundlePath build/TapThrough.xcresult \
+            -only-testing:CompassUITests/TapThroughTests \
+            > build/tapthrough.log 2>&1
+          STATUS=$?
+          grep -E "Test Case|error:|failed|passed|Executed|TEST" build/tapthrough.log | tail -40
+          if ! grep -q "Executed 1 test" build/tapthrough.log; then echo "The tap-through test did not run"; STATUS=1; fi
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+      - name: Small-screen keyboard pass (iPhone SE, 375x667)
+        id: small
+        env:
+          TEST_RUNNER_SMALL_SCREENS: A4k,B5,C10
+          TEST_RUNNER_SCREENSHOT_DIR: ${{ github.workspace }}/build/screens-se
+        run: |
+          set +e
+          mkdir -p build/screens-se
+          RUNTIME=$(xcrun simctl list devices -j | python3 -c "
+          import json,sys
+          u=sys.argv[1]
+          for rt,l in json.load(sys.stdin)['devices'].items():
+              if any(x['udid']==u for x in l): print(rt)" "${{ steps.sim.outputs.udid }}")
+          SE=""
+          for TYPE in com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation com.apple.CoreSimulator.SimDeviceType.iPhone-SE--2nd-generation-; do
+            SE=$(xcrun simctl create "Compass SE" "$TYPE" "$RUNTIME" 2>/dev/null) && break
+          done
+          if [ -z "$SE" ]; then echo "No iPhone SE simulator for $RUNTIME"; xcrun simctl list devicetypes | grep -i se; echo "status=1" >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo "iPhone SE: $SE on $RUNTIME"
+          xcrun simctl boot "$SE"; xcrun simctl bootstatus "$SE" -b
+          xcrun simctl status_bar "$SE" override --time "9:41" --batteryState charged --batteryLevel 100 || true
+          # A fresh simulator posts "Ready for Apple Intelligence" shortly after its first boot; let it come and
+          # go before the shots (the test also swipes away any banner still over the screen).
+          sleep 45
+          xcrun simctl ui "$SE" appearance dark || true
+          xcodebuild test-without-building \
+            -project Compass.xcodeproj -scheme Compass \
+            -destination "id=$SE" \
+            -derivedDataPath build/DerivedData \
+            -resultBundlePath build/SmallScreen.xcresult \
+            -only-testing:CompassUITests/SmallScreenKeyboardTests \
+            > build/small.log 2>&1
+          STATUS=$?
+          grep -E "Test Case|error:|failed|passed|skipped|TEST" build/small.log | tail -40
+          COUNT=$(ls build/screens-se | wc -l | tr -d ' ')
+          echo "Small-screen screenshots: $COUNT"
+          if [ "$COUNT" -lt 3 ] && [ "$STATUS" = "0" ]; then echo "Expected 3 small-screen screenshots"; STATUS=1; fi
+          xcrun simctl shutdown "$SE" || true
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+      - name: Normalise screenshots to 390x844
+        if: always() && steps.sim.outcome == 'success' && env.PUBLISH_SCREENSHOTS == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p build/publish/ios
+          shopt -s nullglob
+          PNGS=(build/screens-raw/*.png)
+          if [ ${#PNGS[@]} -eq 0 ]; then echo "No screenshots produced"; exit 0; fi
+          for f in "${PNGS[@]}"; do
+            sips -z 844 390 "$f" --out "build/publish/ios/$(basename "$f")" > /dev/null
+          done
+          # States no board draws (A1 restore question, H1 Reminders row), at Large and AX5.
+          EXTRA_PNGS=(build/screens-raw/extra/*.png)
+          if [ ${#EXTRA_PNGS[@]} -gt 0 ]; then
+            mkdir -p build/publish/ios/extra
+            for f in "${EXTRA_PNGS[@]}"; do sips -z 844 390 "$f" --out "build/publish/ios/extra/$(basename "$f")" > /dev/null; done
+          fi
+          # Small-screen keyboard pass (iPhone SE), at 375x667 pt.
+          SE_PNGS=(build/screens-se/*.png)
+          if [ ${#SE_PNGS[@]} -gt 0 ]; then
+            mkdir -p build/publish/ios-se
+            for f in "${SE_PNGS[@]}"; do sips -z 667 375 "$f" --out "build/publish/ios-se/$(basename "$f")" > /dev/null; done
+          fi
+          echo "Simulator: ${{ steps.sim.outputs.name }}" > build/publish/ios/README.txt
+          echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> build/publish/ios/README.txt
+          echo "Commit: ${{ github.sha }}" >> build/publish/ios/README.txt
+          ls build/publish/ios/*.png | wc -l
+
+      - name: Upload screenshots for publishing
+        if: always() && steps.sim.outcome == 'success' && env.PUBLISH_SCREENSHOTS == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: build/publish
+          if-no-files-found: ignore
+          retention-days: 3
+
+      - name: Upload logs and results
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-results
+          path: |
+            build/*.log
+            build/*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Fail if tests failed
+        if: always()
+        run: |
+          FAIL=0
+          if [ "${{ steps.unit.outputs.status }}" != "0" ]; then
+            echo "Unit tests failed"; grep -E "error:|failed" build/unit.log | head -60 || true; FAIL=1
+          fi
+          if [ "${{ steps.tests.outputs.status }}" != "0" ]; then
+            echo "Screenshot tests failed"; grep -E "error:|failed" build/test.log | head -60 || true; FAIL=1
+          fi
+          if [ "${{ steps.small.outputs.status }}" != "0" ]; then
+            echo "Small-screen keyboard pass failed"; grep -E "error:|failed" build/small.log | head -60 || true; FAIL=1
+          fi
+          if [ "${{ steps.tapthrough.outputs.status }}" != "0" ]; then
+            echo "Tap-through UI test failed"; grep -E "error:|failed" build/tapthrough.log | head -60 || true; FAIL=1
+          fi
+          if [ "${{ steps.warnings.outputs.status }}" != "0" ]; then
+            echo "Concurrency warnings:"; cat build/concurrency-warnings.txt || true; FAIL=1
+          fi
+          exit $FAIL
+
+  # Release configuration, unsigned, for the simulator, stripped like a shipped app: it must build, and the
+  # -screen / -tapthrough harness (fixtures, fakes, the movable clock and its control) must not be in it.
+  release:
+    name: Release build without the test harness
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s "$XCODE_APP"
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Build Release (simulator, unsigned)
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild build \
+            -project Compass.xcodeproj -scheme Compass -configuration Release \
+            -sdk iphonesimulator -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath build/Release \
+            CODE_SIGNING_ALLOWED=NO DEPLOYMENT_POSTPROCESSING=YES \
+            | tee build/release.log | grep -E "error:|BUILD|\*\*" || true
+          grep -q "BUILD SUCCEEDED" build/release.log || { grep -E "error:" -A3 build/release.log | head -200; exit 1; }
+
+      - name: No test-harness strings in the Release binary
+        run: scripts/check_harness_strings.sh absent build/Release/Build/Products/Release-iphonesimulator/Compass.app
+
+  # Commits the PNGs back to the pushed branch (never on pull requests or the default branch). The only
+  # job with write access; it runs no project code.
+  screenshots:
+    name: Publish screenshots to the branch
+    needs: app
+    if: always() && needs.app.result != 'cancelled' && github.event_name == 'push' && github.ref_type == 'branch' && github.ref_name != github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 50
+
+      - name: Download screenshots
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: screenshots
+          path: build/publish
+
+      - name: Commit screenshots
+        if: steps.download.outcome == 'success'
+        run: |
+          set -euo pipefail
+          if [ ! -f build/publish/ios/README.txt ]; then echo "No screenshots to publish"; exit 0; fi
+          mkdir -p renders/ios
+          cp -R build/publish/ios/. renders/ios/
+          if [ -d build/publish/ios-se ]; then mkdir -p renders/ios-se; cp build/publish/ios-se/* renders/ios-se/; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for i in 1 2 3 4; do git fetch --depth=50 origin "${GITHUB_REF_NAME}" && break; sleep $((i * 10)); done
+          latest=$(git log "origin/${GITHUB_REF_NAME}" --format=%H --invert-grep --grep='\[skip ci\]' -1)
+          if [ "$latest" != "${GITHUB_SHA}" ]; then echo "Newer code ($latest) is on the branch; its run publishes screenshots"; exit 0; fi
+          git add renders/ios
+          if [ -d renders/ios-se ]; then git add renders/ios-se; fi
+          if git diff --cached --quiet; then echo "No screenshot changes"; exit 0; fi
+          git commit -m "Update iOS screenshots from ${GITHUB_SHA::7} [skip ci]"
+          for i in 1 2 3 4; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            sleep $((i * 10))
+          done
+          # Network trouble publishing PNGs is not a test failure; the next run publishes them.
+          echo "::warning::Could not push screenshots"

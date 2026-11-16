@@ -1,0 +1,77 @@
+<!--title: Compass v3 · System states-->
+<!--size: 2708x1200-->
+<style data-extra>
+.wid{background:#1C1C1F;border-radius:24px;padding:16px;box-sizing:border-box;display:flex;flex-direction:column}
+.apps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px 24px}
+.apps i{height:64px;border-radius:16px;background:#1C1C1F}
+.ntf{background:rgba(44,44,48,.94);border-radius:24px;padding:16px;display:flex;gap:16px;align-items:flex-start}
+.appi{width:40px;height:40px;flex-shrink:0;border-radius:10px;background:#0B0B0C;border:1px solid #3A3A3E;display:flex;align-items:center;justify-content:center;box-sizing:border-box}
+.appi::after{content:"";width:16px;height:16px;box-sizing:border-box;border-radius:50%;border:3px solid #F4F4F2}
+</style>
+<div class="hd">
+<h1>I · System states</h1>
+<p>These states apply in every flow and appear in the place the user is already looking. Permission and storage problems replace the voice dock with “Type instead” on the same 712 line. Notices about the day (notifications off, a new time zone) take the notes row above the Today card, so the card itself never moves.</p>
+</div>
+
+<div class="strip">
+
+<div class="cell"><div class="cap"><b>I1 · Microphone off</b><span>Center keeps its text; the dock becomes Type instead</span></div>
+<div class="ph">
+<div class="nav"><button class="navb icon" aria-label="Not now"><svg class="i"><use href="#x"></use></svg></button></div>
+<div class="foc top" data-anchor="foc"><h1 class="display">Earn my first million, stay strong, keep close friends.</h1><p class="heading ink2" style="margin-top: 24px">Who will you be today?</p></div>
+<div class="mid" style="bottom: 184px"><div class="notice" style="align-items: center"><svg class="s ink2"><use href="#micoff"></use></svg><span>The microphone is off for Compass.</span></div></div>
+<div class="dockb"><button class="btn" data-anchor="ctrl"><svg class="s"><use href="#kb"></use></svg>Type instead</button></div>
+<div class="dockl"><button class="lnk">Turn on the microphone</button></div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>I2 · Notifications off</b><span>One notice in the notes row until dismissed</span></div>
+<div class="ph">
+<div class="nav"><button class="navb quiet">History</button><button class="navb icon quiet" aria-label="Settings"><svg class="i"><use href="#set"></use></svg></button></div>
+<div class="foc top" data-anchor="goal"><h1 class="title">Earn my first million, stay strong, keep close friends.</h1><p class="body ink2" style="margin-top: 16px">“Patient. Ship one thing.”</p></div>
+<div class="stack">
+<div class="notice" style="align-items: center; padding: 8px 8px 8px 16px"><svg class="s ink2"><use href="#bell"></use></svg><span style="flex: 1">07:00 and 21:00 can’t reach you.</span><button class="lnk ink" style="padding: 0 8px">Turn on</button><button class="ic44 bare" aria-label="Dismiss"><svg class="xs"><use href="#x"></use></svg></button></div>
+<div class="slot" data-anchor="slot"><p class="heading">Text Sam about Friday dinner</p><div class="bot"><span class="lab"><svg class="s"><use href="#fr"></use></svg>Keep close friends</span><button class="ic44 bare" aria-label="Step options"><svg class="s"><use href="#more"></use></svg></button><button class="c56 done" aria-label="Mark step done" data-anchor="ctrl"></button></div></div>
+</div>
+<div class="tdock"><button class="c56" aria-label="Type a note"><svg class="i"><use href="#kb"></use></svg></button><button class="pill"><svg class="i"><use href="#mic"></use></svg>Note</button></div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>I3 · New time zone</b><span>The day follows you; the old times are one tap away</span></div>
+<div class="ph">
+<div class="nav"><button class="navb quiet">History</button><button class="navb icon quiet" aria-label="Settings"><svg class="i"><use href="#set"></use></svg></button></div>
+<div class="foc top" data-anchor="goal"><h1 class="title">Earn my first million, stay strong, keep close friends.</h1><p class="body ink2" style="margin-top: 16px">“Patient. Ship one thing.”</p></div>
+<div class="stack">
+<div class="notice" style="flex-direction: column; gap: 8px"><span class="row" style="gap: 8px; align-items: flex-start"><svg class="s ink2"><use href="#globe"></use></svg><span>You’re in Tokyo. Today and your 07:00 and 21:00 now follow Tokyo time.</span></span><span class="row" style="gap: 8px; padding-left: 28px"><button class="lnk ink" style="padding: 0; height: 44px">OK</button><button class="lnk ink" style="padding: 0 0 0 16px; height: 44px">Keep Bangkok time</button></span></div>
+<div class="slot" data-anchor="slot"><p class="heading">Text Sam about Friday dinner</p><div class="bot"><span class="lab"><svg class="s"><use href="#fr"></use></svg>Keep close friends</span><button class="ic44 bare" aria-label="Step options"><svg class="s"><use href="#more"></use></svg></button><button class="c56 done" aria-label="Mark step done" data-anchor="ctrl"></button></div></div>
+</div>
+<div class="tdock"><button class="c56" aria-label="Type a note"><svg class="i"><use href="#kb"></use></svg></button><button class="pill"><svg class="i"><use href="#mic"></use></svg>Note</button></div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>I4 · Storage full</b><span>Recording can’t start; typing takes the 712 line</span></div>
+<div class="ph">
+<div class="nav"><button class="navb icon" aria-label="Close"><svg class="i"><use href="#x"></use></svg></button></div>
+<div class="ctx" data-anchor="ctx"><svg class="s"><use href="#fr"></use></svg><p class="body t">Text Sam about Friday dinner</p></div>
+<div class="foc" data-anchor="foc"><h1 class="title">What happened?</h1></div>
+<div class="mid" style="bottom: 184px"><div class="notice" style="align-items: flex-start"><svg class="s ink2"><use href="#disk"></use></svg><span>Your iPhone is full, so audio can’t be saved. Typing still works, and nothing you saved before is affected.</span></div></div>
+<div class="dockb"><button class="btn" data-anchor="ctrl"><svg class="s"><use href="#kb"></use></svg>Type instead</button></div>
+<div class="dockl"><button class="lnk">Manage storage</button></div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>I5 · Notifications</b><span>Morning shows the goal; evening shows the step</span></div>
+<div class="ph" style="background: #0E0E10">
+<div class="foc top" style="align-items: center; text-align: center"><p class="heading" style="color: #D6D6D8">Tuesday 10 November</p><p style="margin: 0; font-size: 96px; line-height: 96px; font-weight: 600; letter-spacing: -0.04em">7:00</p></div>
+<div class="stack" style="gap: 8px">
+<div class="ntf"><span class="appi"></span><span style="flex: 1; display: flex; flex-direction: column; gap: 4px" class="caption"><span class="row" style="justify-content: space-between"><b>Compass</b><span class="ink2">now</span></span><span style="color: #E6E6E8">Earn my first million, stay strong, keep close friends.</span></span></div>
+<div class="ntf" style="opacity: .8"><span class="appi"></span><span style="flex: 1; display: flex; flex-direction: column; gap: 4px" class="caption"><span class="row" style="justify-content: space-between"><b>Compass</b><span class="ink2">yesterday 21:00</span></span><span style="color: #E6E6E8">Pitch Ridgeline</span></span></div>
+</div>
+</div></div>
+
+<div class="cell"><div class="cap"><b>I6 · Widgets</b><span>Complete today’s step without opening the app</span></div>
+<div class="ph" style="background: #0E0E10">
+<div style="position: absolute; top: 72px; left: 24px; right: 24px; display: flex; flex-direction: column; gap: 24px">
+<div class="wid" style="height: 160px; gap: 8px"><span class="caption ink2">Earn my first million, stay strong, keep close friends.</span><div class="row" style="margin-top: auto; gap: 8px"><svg class="s"><use href="#fr"></use></svg><span class="body" style="flex: 1; font-weight: 500">Text Sam about Friday dinner</span><button class="c56 done" style="width: 44px; height: 44px" aria-label="Mark step done"></button></div></div>
+<div class="row" style="gap: 24px; align-items: stretch"><div class="wid" style="width: 160px; height: 160px; flex-shrink: 0; gap: 8px"><span class="body" style="font-weight: 500">Text Sam about Friday dinner</span><button class="c56 done" style="margin-top: auto; width: 44px; height: 44px" aria-label="Mark step done"></button></div><div class="apps" style="flex: 1; grid-template-columns: repeat(2, minmax(0, 1fr))" aria-hidden="true"><i></i><i></i><i></i><i></i></div></div>
+<div class="apps" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+</div>
+</div></div>
+
+</div>
