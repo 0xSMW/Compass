@@ -37,6 +37,7 @@ final class AppModelSaveTests: XCTestCase {
         let spy = EffectsSpy()
         let (model, store) = TestModel.make(spy: spy)
         model.setStepDone(true)
+        model.flushSaves()
         XCTAssertEqual(try store.load(), model.snapshot)
         XCTAssertNotNil(try store.load().day(Fixtures.todayKey)?.step?.completedAt)
         XCTAssertEqual(spy.widgetReloads, 1)
@@ -48,6 +49,7 @@ final class AppModelSaveTests: XCTestCase {
         let (model, store) = TestModel.make(spy: spy)
         let saves = (store as? InMemoryStore)?.saveCount
         model.mutate { _ in }
+        model.flushSaves()
         XCTAssertEqual((store as? InMemoryStore)?.saveCount, saves)
         XCTAssertEqual(spy.widgetReloads, 0)
         XCTAssertEqual(spy.syncNotifications, 0)
@@ -59,6 +61,7 @@ final class AppModelSaveTests: XCTestCase {
         var merged = model.snapshot
         merged.updateDay(Fixtures.todayKey) { $0.step = nil }
         model.commit(merged, origin: .remote)
+        model.flushSaves()
         XCTAssertNil(try store.load().day(Fixtures.todayKey)?.step)
         XCTAssertEqual(spy.widgetReloads, 1)
         XCTAssertEqual(spy.syncNotifications, 0)
@@ -69,11 +72,13 @@ final class AppModelSaveTests: XCTestCase {
         let (model, store) = TestModel.make(spy: spy)
         let yesterday = Fixtures.todayKey.adding(days: -1, calendar: Fixtures.calendar)
         model.saveHistoryEdit(yesterday, summary: "Called Lena.", moved: true, partID: nil)
+        model.flushSaves()
         XCTAssertEqual(try store.load().day(yesterday)?.reflection?.summary, "Called Lena.")
         XCTAssertEqual(spy.widgetReloads, 1)
         XCTAssertEqual(spy.syncNotifications, 1)
 
         model.deleteHistoryDay(yesterday)
+        model.flushSaves()
         XCTAssertNil(try store.load().day(yesterday))
         XCTAssertEqual(spy.widgetReloads, 2)
         XCTAssertGreaterThanOrEqual(spy.syncNotifications, 2)
@@ -83,10 +88,13 @@ final class AppModelSaveTests: XCTestCase {
         let spy = EffectsSpy()
         let (model, store) = TestModel.make(spy: spy)
         model.updateGoalText("Run a calm studio.")
+        model.flushSaves()
         XCTAssertEqual(try store.load().goal?.text, "Run a calm studio.")
         model.addGoalPart(title: "Health")
+        model.flushSaves()
         XCTAssertEqual(try store.load().goal?.parts.last?.title, "Health")
         model.markGoalAchieved()
+        model.flushSaves()
         XCTAssertEqual(try store.load().goal?.status, .achieved)
         XCTAssertEqual(spy.widgetReloads, 3)
         XCTAssertEqual(spy.syncNotifications, 3)
@@ -96,6 +104,7 @@ final class AppModelSaveTests: XCTestCase {
         let spy = EffectsSpy()
         let (model, store) = TestModel.make(spy: spy)
         model.updateSettings { $0.timeZoneID = "Asia/Tokyo" }
+        model.flushSaves()
         XCTAssertEqual(try store.load().settings.timeZoneID, "Asia/Tokyo")
         XCTAssertEqual(model.calendar.timeZone.identifier, "Asia/Tokyo")
         XCTAssertEqual(spy.widgetReloads, 1)
@@ -107,6 +116,7 @@ final class AppModelSaveTests: XCTestCase {
         let (model, store) = TestModel.make(snapshot: .empty, spy: spy)
         let restored = Fixtures.restorableSnapshot
         model.applyRestoredSnapshot(restored)
+        model.flushSaves()
         XCTAssertEqual(try store.load(), restored)
         XCTAssertEqual(spy.widgetReloads, 1)
         XCTAssertEqual(spy.syncNotifications, 1)
@@ -159,16 +169,19 @@ final class AppModelSaveTests: XCTestCase {
         let (model, _) = TestModel.make(snapshot: start, store: store, spy: spy)
         store.failsSaving = true
         model.addNote("typed while the disk was full")
+        model.flushSaves()
         XCTAssertTrue(model.saveFailed)
         XCTAssertEqual(try store.load(), start, "nothing reached the disk")
 
         model.reloadFromStore()
+        model.flushSaves()
         XCTAssertEqual(model.today?.notes.count, 1, "the stale file did not replace memory")
         XCTAssertNil(model.today?.removedItems)
         XCTAssertTrue(model.saveFailed)
 
         store.failsSaving = false
         model.reloadFromStore()
+        model.flushSaves()
         XCTAssertFalse(model.saveFailed)
         XCTAssertEqual(try store.load().day(Fixtures.todayKey)?.notes.count, 1)
     }
@@ -183,17 +196,20 @@ final class AppModelSaveTests: XCTestCase {
         store.failsSaving = true
         model.addNote("typed while the disk was full")
         model.reloadFromStore()
+        model.flushSaves()
         XCTAssertEqual(spy.storeCatchUps, 0)
         let reloads = spy.widgetReloads
 
         store.failsSaving = false
         model.reloadFromStore()
+        model.flushSaves()
         XCTAssertFalse(model.saveFailed)
         XCTAssertEqual(spy.storeCatchUps, 1)
         XCTAssertEqual(spy.widgetReloads, reloads + 1)
 
         // Nothing failed: becoming active again is not a catch-up.
         model.reloadFromStore()
+        model.flushSaves()
         XCTAssertEqual(spy.storeCatchUps, 1)
     }
 
@@ -205,6 +221,7 @@ final class AppModelSaveTests: XCTestCase {
         let store = InMemoryStore(start)
         let (model, _) = TestModel.make(snapshot: start, store: store, spy: spy)
         model.addNote("first")
+        model.flushSaves()
         var widget = try store.load()
         widget.updateDay(Fixtures.todayKey) {
             $0.step?.completedAt = Fixtures.date(Fixtures.todayKey, 15)
@@ -214,6 +231,7 @@ final class AppModelSaveTests: XCTestCase {
         store.writeExternally(widget, at: Date().addingTimeInterval(60))
         // The app saves before it has looked: the widget's completion survives.
         model.addNote("second")
+        model.flushSaves()
         let saved = try store.load().day(Fixtures.todayKey)
         XCTAssertEqual(saved?.notes.count, 2)
         XCTAssertTrue(saved?.step?.isDone ?? false)
@@ -227,6 +245,7 @@ final class AppModelSaveTests: XCTestCase {
         }
         store.writeExternally(undone, at: Date().addingTimeInterval(120))
         model.reloadFromStore()
+        model.flushSaves()
         XCTAssertFalse(model.today?.step?.isDone ?? true)
         XCTAssertEqual(model.today?.notes.count, 2)
     }
@@ -256,6 +275,7 @@ final class StoreRoundTripTests: XCTestCase {
         let (model, _) = TestModel.make(store: JSONFileStore(url: url), spy: spy)
         model.addNote("Ask Sam about Friday")
         model.setStepDone(true)
+        model.flushSaves()
 
         // A new process reads the same file (the widget does exactly this).
         let reloaded = try JSONFileStore(url: url).load()
@@ -272,9 +292,11 @@ final class StoreRoundTripTests: XCTestCase {
         let now = Fixtures.date(Fixtures.todayKey, 21).addingTimeInterval(0.7)
         let (model, store) = TestModel.make(store: JSONFileStore(url: url), now: now, spy: spy)
         model.addNote("Ask Sam about Friday")
+        model.flushSaves()
         XCTAssertEqual(model.snapshot, try store.load())
         model.eveningSession.outcome = .moved
         model.saveEveningTake(transcript: "Called Lena", recording: nil, transcriptionFailed: false)
+        model.flushSaves()
         XCTAssertEqual(model.snapshot, try store.load())
         for date in [model.today?.reflection?.createdAt, model.today?.notes.last?.createdAt] {
             XCTAssertEqual(try XCTUnwrap(date).timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1), 0)
@@ -286,6 +308,7 @@ final class StoreRoundTripTests: XCTestCase {
         let spy = EffectsSpy()
         let (model, _) = TestModel.make(store: JSONFileStore(url: url), spy: spy)
         model.addNote("Something")
+        model.flushSaves()
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
         model.deleteEverything()
         XCTAssertEqual(try JSONFileStore(url: url).load(), .empty)

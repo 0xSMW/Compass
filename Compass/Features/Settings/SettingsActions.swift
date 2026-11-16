@@ -14,6 +14,8 @@ extension AppModel {
     func eraseEverything() {
         if fixture == nil, !launch.tapThrough {
             LiveSync.wipeEverywhere(at: now)
+            // No queued write may put the store file back after the eraser removes it.
+            saves.discardPendingWrites()
             DataEraser.eraseLocalData()
         }
         historySelection.day = nil

@@ -12,8 +12,9 @@ import WidgetKit
 /// shared state and cross-flow navigation.
 ///
 /// **One save path.** `snapshot` is read-only outside this file. Every change goes through
-/// `mutate(_:)` (or `commit(_:origin:)` for a whole snapshot), which saves to the store, tells sync
-/// about local changes and reloads the widget timelines. Never save the store directly.
+/// `mutate(_:)` (or `commit(_:origin:)` for a whole snapshot), which queues the store write (`saves`, off the
+/// main actor), tells sync about local changes and, once the write is on disk, reloads the widget
+/// timelines. Never save the store directly.
 @MainActor
 @Observable
 final class AppModel {
@@ -29,10 +30,11 @@ final class AppModel {
     var storeProblem: StoreProblem? = nil
     /// The last save didn't reach the disk (full storage). What was added stays in memory and Today says
     /// so; the store file is older than memory, so it is never read back over it (`reloadFromStore`).
-    /// Saving is retried on the next change and when the app becomes active.
+    /// Saving is retried on the next change and when the app becomes active. Set when the write's outcome
+    /// comes back (`drainSaves`).
     private(set) var saveFailed = false
     /// The store file's modification date right after this app last wrote (or read) it. A later date
-    /// means another process (the widget) wrote it.
+    /// means another process (the widget) wrote it. Mirrors what `saves` knows, after each outcome.
     @ObservationIgnored private(set) var lastSavedAt: Date?
     let launch: LaunchOptions
 
@@ -68,6 +70,8 @@ final class AppModel {
     // MARK: Services
 
     let store: Store
+    /// Writes the snapshot to `store` on a serial worker, newest first, and reports back here (`drainSaves`).
+    @ObservationIgnored let saves: SaveQueue
     let recorder: AudioRecorder
     let transcriber: SpeechTranscriber
     let cloud: CloudAssist
@@ -102,10 +106,12 @@ final class AppModel {
             clock = harness.clock
             moveHarnessClock = harness.moveClock
             store = harness.store
+            saves = SaveQueue(store: harness.store, knownStamp: nil)
             recorder = harness.recorder
             transcriber = harness.transcriber
             cloud = harness.cloud
             path = harness.path
+            connectSaves()
             #if DEBUG
             LaunchHarness.prepare(self)
             #endif
@@ -122,12 +128,15 @@ final class AppModel {
             calendar = SharedStorage.calendar(for: loaded.settings)
             clock = { Date() }
             store = fileStore
+            // The stamp read at launch: until another process writes, saves never decode the file again.
+            saves = SaveQueue(store: fileStore, knownStamp: fileStore.stamp)
             let live = LiveVoiceServices.make() // LiveServices+Voice.swift
             recorder = live.recorder
             transcriber = live.transcriber
             cloud = LiveSync.makeCloudAssist(settings: loaded.settings)
             path = []
             path = [entryScreen]
+            connectSaves()
             LiveSync.start(with: self)
         }
     }
@@ -152,12 +161,14 @@ final class AppModel {
         self.calendar = calendar
         clock = now
         self.store = store
+        saves = SaveQueue(store: store, knownStamp: nil)
         self.recorder = recorder
         self.transcriber = transcriber
         self.cloud = cloud
         self.effects = effects
         path = []
         path = [entryScreen]
+        connectSaves()
     }
 
     // MARK: Derived
@@ -235,56 +246,68 @@ final class AppModel {
         save(origin: origin)
     }
 
+    /// Queue the write (the worker writes the newest snapshot; nothing here waits for the disk), tell sync
+    /// about a local change. The widget reloads once the write is on disk (`drainSaves`).
     private func save(origin: SnapshotOrigin) {
-        writeToStore()
+        saves.enqueue(snapshot)
         if origin != .remote { effects.didChangeLocally() }
-        effects.reloadWidgets()
         AudioTombstoneLog.shared.noteReferenced(snapshot.referencedAudioFiles)
     }
 
-    /// Write the snapshot as one coordinated read-modify-write (`Store.update`): a widget change that
-    /// landed since the last write is taken in inside the same step, so the app's save never overwrites
-    /// it and the widget can't write in between. An unreadable file (copied aside at launch) is replaced.
-    /// A failure is remembered (`saveFailed`), never swallowed.
-    private func writeToStore() {
-        let takeWidgetChanges = !saveFailed
-        let lastSaved = lastSavedAt
-        let memory = snapshot
-        do {
-            let written = try store.update(replacingUnreadable: true) { stored, storedModifiedAt in
-                var next = memory
-                if takeWidgetChanges,
-                   StoreReload.shouldRead(fileModifiedAt: storedModifiedAt, lastSavedAt: lastSaved, saveFailed: false) {
-                    next = next.takingWidgetChanges(from: stored)
-                }
-                stored = next
-            }
-            if written.snapshot != snapshot { snapshot = written.snapshot }
-            lastSavedAt = written.modifiedAt
-            if saveFailed { saveFailed = false }
-        } catch {
-            if !saveFailed { saveFailed = true }
+    /// Outcomes come back on the main actor, in order, as soon as each write is done.
+    private func connectSaves() {
+        saves.setNotify { [weak self] in
+            Task { @MainActor [weak self] in self?.drainSaves() }
         }
+    }
+
+    /// Take in what the save worker reported: every write is one coordinated read-modify-write
+    /// (`SaveQueue`, `Store.write`), so a widget change that landed since the last write is taken in inside
+    /// the same step and the app's save never overwrites it. An unreadable file (copied aside at launch) is
+    /// replaced. A failure is remembered (`saveFailed`), never swallowed.
+    @discardableResult
+    func drainSaves() -> Int {
+        saves.drain { apply($0) }
+    }
+
+    private func apply(_ outcome: SaveOutcome) {
+        switch outcome.write {
+        case .succeeded:
+            lastSavedAt = outcome.modifiedAt
+            if saveFailed { saveFailed = false }
+            // The widget's change, taken into the file by this write, goes into memory too.
+            if let file = outcome.fileChanges {
+                let next = snapshot.takingWidgetChanges(from: file)
+                if next != snapshot { snapshot = next }
+            }
+            // The widget reads the file just written.
+            effects.reloadWidgets()
+            // A failed save went through on becoming active: sync records a wipe it held back while it didn't.
+            if outcome.caughtUp { effects.storeCaughtUp() }
+        case .failed:
+            if !saveFailed { saveFailed = true }
+        case nil:
+            // Becoming active: the widget changed the file. Only a step completed or undone there is taken.
+            guard let file = outcome.fileChanges else { return }
+            lastSavedAt = outcome.modifiedAt
+            let next = snapshot.takingWidgetChanges(from: file)
+            // A local change (made on this phone), so it syncs and the widget reloads like any other.
+            if next != snapshot { commit(next) }
+        }
+    }
+
+    /// Wait for every queued write and apply what came back (tests; the app ending). Blocks the main thread
+    /// for as long as the writes take, so the live app only uses it when it has to.
+    func flushSaves() {
+        repeat { saves.waitUntilIdle() } while drainSaves() > 0
     }
 
     /// Becoming active: retry a failed save, or take in what the widget changed in the shared file since
     /// this app last wrote it. Only a step completed or undone there is taken; a file this app didn't
-    /// manage to write is never adopted (it would read as notes and steps deleted here).
+    /// manage to write is never adopted (it would read as notes and steps deleted here). Both happen on the
+    /// save worker (`SaveQueue.retryOrCheck`); what they find comes back through `drainSaves`.
     func reloadFromStore() {
-        if saveFailed {
-            writeToStore()
-            let after = StoreReload.afterRetry(saveFailed: saveFailed)
-            if after.reloadWidgets { effects.reloadWidgets() }
-            // The store holds memory again: sync records a wipe it held back while it didn't.
-            if after.recordSyncState { effects.storeCaughtUp() }
-            return
-        }
-        guard StoreReload.shouldRead(fileModifiedAt: store.modifiedAt, lastSavedAt: lastSavedAt, saveFailed: saveFailed),
-              let stored = try? store.load() else { return }
-        lastSavedAt = store.modifiedAt
-        let next = snapshot.takingWidgetChanges(from: stored)
-        // A local change (made on this phone), so it syncs and the widget reloads like any other.
-        if next != snapshot { commit(next) }
+        saves.retryOrCheck(memory: snapshot)
     }
 
     func updateToday(_ body: (inout Day) -> Void) {
@@ -357,7 +380,12 @@ final class AppModel {
         snapshot = .empty
         // A1 must not offer the backup that was just deleted (N4): it looks again.
         restoreRouting.reset()
-        if let fileStore = store as? JSONFileStore { try? fileStore.deleteAll() } else { try? store.save(.empty) }
+        // Writes not yet started are dropped and the one in progress finishes first, so nothing from before
+        // writes the file after it is removed.
+        let store = self.store
+        saves.replacingContents {
+            if let fileStore = store as? JSONFileStore { try? fileStore.deleteAll() } else { try? store.save(.empty) }
+        }
         saveFailed = false
         lastSavedAt = store.modifiedAt
         effects.reloadWidgets()
@@ -375,6 +403,7 @@ enum SnapshotOrigin: Equatable {
 
 /// Side effects of a save. `.live` reloads the widget and tells iCloud sync; tests pass spies.
 struct SnapshotEffects: Sendable {
+    /// After a write is on disk.
     var reloadWidgets: @MainActor @Sendable () -> Void
     var didChangeLocally: @MainActor @Sendable () -> Void
     /// A failed save went through on a retry (`reloadFromStore`); sync writes its state again.

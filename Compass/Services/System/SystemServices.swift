@@ -56,6 +56,13 @@ final class SystemServices {
         observers.append(center.addObserver(forName: UIApplication.significantTimeChangeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.deviceClockChanged() }
         })
+        // Store writes run on the model's save worker: let them finish before iOS suspends or ends the app.
+        observers.append(center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.finishSavesInBackground() }
+        })
+        observers.append(center.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.model?.flushSaves() }
+        })
         DataExport.cleanUp() // an export left behind by a killed share sheet
         network.onChange = { [weak self] online in self?.networkChanged(online) }
         network.start()
@@ -96,6 +103,14 @@ final class SystemServices {
         observeTimeZone(model)
         applyClock(model)
         scheduleReminders()
+    }
+
+    /// Going to the background: writes still queued (the store, then sync's state) finish under a background
+    /// task, so a suspended or ended app loses nothing it showed.
+    private func finishSavesInBackground() {
+        guard let model, !model.saves.isIdle else { return }
+        let task = SaveBackgroundTask(name: "Compass save")
+        model.saves.whenIdle { Task { @MainActor in task.end() } }
     }
 
     /// The widget completes steps in its own process; take its change in (`AppModel.reloadFromStore`).
@@ -239,5 +254,21 @@ enum RecordingBlock: Equatable {
         if conditions.microphone == .denied { self = .microphoneOff; return }
         if conditions.storageFull { self = .storageFull; return }
         return nil
+    }
+}
+
+/// A background task assertion, ended once (when the work is done or iOS's time runs out).
+@MainActor
+private final class SaveBackgroundTask {
+    private var id: UIBackgroundTaskIdentifier = .invalid
+
+    init(name: String) {
+        id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in self?.end() }
+    }
+
+    func end() {
+        guard id != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(id)
+        id = .invalid
     }
 }

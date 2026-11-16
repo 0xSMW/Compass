@@ -49,6 +49,7 @@ final class LiveFlowTests: XCTestCase {
         draft.proposePartsIfNeeded()
         model.go(.a2)
         model.onboardingFinish(draft)
+        model.flushSaves()
         XCTAssertEqual(try store.load().goal?.text, "Run a calm studio.")
         XCTAssertEqual(model.settings.input, .typing)
         XCTAssertEqual(model.current, .b1, "day 1 before noon opens Center")
@@ -74,6 +75,7 @@ final class LiveFlowTests: XCTestCase {
         clock.now = at(day(1), 0, 10)
         model.eveningSession.outcome = .moved
         model.saveEveningTake(transcript: "Called Lena", recording: nil, transcriptionFailed: false)
+        model.flushSaves()
         XCTAssertEqual(try store.load().day(day(0))?.reflection?.transcript, "Called Lena")
         XCTAssertNil(try store.load().day(day(1))?.reflection)
         model.closeEvening()
@@ -156,6 +158,7 @@ final class LiveFlowTests: XCTestCase {
         XCTAssertEqual(model.current, .f2)
         model.returnLeaveForToday()
         XCTAssertEqual(model.current.flow, .today)
+        model.flushSaves()
         // Reopened the same day: F2 isn't shown again.
         let reopened = AppModel(snapshot: try! store.load(), store: store, calendar: cal, now: { f.now }, effects: .none)
         XCTAssertEqual(reopened.current.flow, .today)
@@ -168,6 +171,7 @@ final class LiveFlowTests: XCTestCase {
         model.markGoalAchieved()
         model.goToEntry()
         XCTAssertEqual(model.current, .c3)
+        model.flushSaves()
         // Relaunch: not Welcome, and History and Settings are a tap away.
         let nextMorning = at(day(1), 9)
         let relaunched = AppModel(snapshot: try! store.load(), store: store, calendar: cal,
@@ -199,6 +203,7 @@ final class LiveFlowTests: XCTestCase {
         draft.text = "Write a book."
         draft.proposePartsIfNeeded()
         model.onboardingContinueFromParts(draft) // A5: saved here, A6/A7 skipped
+        model.flushSaves()
         XCTAssertEqual(try store.load().goal?.text, "Write a book.")
         XCTAssertEqual(try store.load().settings, before)
         XCTAssertEqual(try store.load().pastGoals.first?.id, oldGoal.id)
@@ -238,9 +243,11 @@ final class LiveFlowTests: XCTestCase {
         XCTAssertTrue(NoteRules.needsWords(note))
 
         model.editNote(id, on: model.todayKey, text: "Ask Sam about Friday")
+        model.flushSaves()
         XCTAssertEqual(try store.load().day(model.todayKey)?.notes.first?.text, "Ask Sam about Friday")
 
         model.deleteNote(id, on: model.todayKey)
+        model.flushSaves()
         XCTAssertEqual(try store.load().day(model.todayKey)?.notes.count, 0)
         XCTAssertFalse(VoiceStorage.shared.exists(file))
     }

@@ -14,6 +14,7 @@ Packages/CompassCore/           Pure Swift, Linux-buildable. `swift test` runs h
     DayEngine.swift             DayPhase / MorningPlan / EveningKind: phase from clock + history
     History.swift               DayMark (moved/missed/empty), HistoryWeek, HistoryBuilder, GoalMarker
     Store.swift                 Store protocol, InMemoryStore, JSONFileStore (schema check, quarantine)
+    SaveQueue.swift             SaveQueue (the app's store writes off the main actor), WipeLedger
     Sync.swift                  SyncEnvelope, SnapshotMerger (per-item updatedAt, wipe generations, E5)
     SyncLocal.swift             DeviceIdentity (E5 labels), LocalEdits (stamping), AudioSyncPlan
     SyncApply.swift             SyncApply.plan (the coordinator's decision), StoreReload, widget merge,
@@ -56,8 +57,9 @@ renders/ios/<ID>.png            Screenshots committed by CI (390×844, compare t
 
 `AppModel.snapshot` is `private(set)`. Change it only with `mutate { snapshot in … }`, the helpers built
 on it (`updateToday`, `updateDay(_:_:)`, `updateSettings`, `setGoal`, …) or `commit(_:origin:)` for a
-whole snapshot (restore, sync merge with `.remote`, the widget's copy). Every change saves to the store,
-tells sync (`.local` only) and reloads the widget timelines (`SnapshotEffects`, spied in `CompassTests`).
+whole snapshot (restore, sync merge with `.remote`, the widget's copy). Every change queues a store write
+(below), tells sync (`.local` only) and, once the write is on disk, reloads the widget timelines
+(`SnapshotEffects`, spied in `CompassTests`).
 `deleteEverything()` clears the store and reloads the widget; sync hears about a wipe through
 `LiveSync.wipeEverywhere`. There is no other save call: never call `store.save` from a feature.
 
@@ -78,21 +80,54 @@ given, so the model never holds a date the file couldn't. Deleting a recording g
 which leaves an audio tombstone so the file leaves iCloud and every device. Only recordings the
 snapshot refers to are uploaded or downloaded.
 
-A save that fails (full disk) sets `model.saveFailed`: Today's notes row says so in I4's words
-(`SystemSaveNotice`), memory keeps everything, and the save is retried on the next change and when the
-app becomes active. A retry on becoming active that goes through reloads the widget and tells sync
-(`SnapshotEffects.storeCaughtUp`, `StoreReload.afterRetry`), which writes its state at once so a wipe held
+**The store write runs off the main actor (`SaveQueue`, CompassCore).** `commit` changes `snapshot` at once
+(it stays the source of truth; the UI never waits for the disk) and hands a copy to `model.saves`, a serial
+worker that owns every write to the store file. Writes stay in order; snapshots queued while one is being
+written are coalesced, so only the newest is written next, and the newest is always written. Each write's
+outcome comes back to the main actor in order (`AppModel.drainSaves`): it sets `saveFailed` and
+`lastSavedAt`, takes in a widget change the write found in the file, and reloads the widget, which is why
+the widget only ever reloads after the file it reads was written. Per commit the main actor now spends
+about 1 ms at a year of heavy days and 4 ms at three (stamping, the stored form of what changed, the
+no-op check and the enqueue), where the synchronous write took 30 ms and 107 ms. The worker's write
+costs an encode and an atomic write (15 ms and 68 ms); the decode is skipped while nobody else has
+written the file (below). `CompassTests` call `model.flushSaves()` (wait for the worker, apply what came
+back) before they look at the store.
+
+A save that fails (full disk) sets `model.saveFailed` when its outcome comes back: Today's notes row says
+so in I4's words (`SystemSaveNotice`), memory keeps everything, and the save is retried on the next change
+and when the app becomes active (`reloadFromStore` → `SaveQueue.retryOrCheck`, on the worker). A retry on
+becoming active that goes through reloads the widget and tells sync (`SaveOutcome.caughtUp`,
+`SnapshotEffects.storeCaughtUp`, `StoreReload.afterRetry`), which writes its state at once so a wipe held
 back while the store didn't hold the snapshot (below) is recorded then, not at the next change or merge.
-The save runs on the main actor: `writeToStore` calls `store.update` synchronously (a coordinated read,
-decode, encode and atomic write; about 29 ms at a year of heavy days, 91 ms at three). The store file is shared with the widget's process: `JSONFileStore` coordinates
-reads, writes, the launch-time copy of an unreadable file and Delete everything (`NSFileCoordinator`,
-always on the URL the coordinator hands back). The widget changes it with one coordinated
-read-modify-write (`Store.update`), and so does the app's save (`AppModel.writeToStore`:
-`store.update(replacingUnreadable:)`, which also returns the modification date read under the same
+The store file is shared with the widget's process: `JSONFileStore` coordinates reads, writes, the
+launch-time copy of an unreadable file and Delete everything (`NSFileCoordinator`, always on the URL the
+coordinator hands back). The widget changes it with one coordinated read-modify-write (`Store.update`), and
+so does each of the app's writes (`Store.write`, which also returns the file's stamp read under the same
 coordination). Inside that step the app takes the file's changes only when its modification date is
-newer than the app's last successful save (`StoreReload.shouldRead`), never while a save has failed, and
-then only what the widget can change (a step's completion, `takingWidgetChanges`). A stale file is
-never adopted as a local edit, so it can't record notes and steps as deleted.
+newer than the app's last successful write or read (`StoreReload.shouldRead`), never while a save has
+failed, and then only what the widget can change (a step's completion, `takingWidgetChanges`). A stale
+file is never adopted as a local edit, so it can't record notes and steps as deleted. A change taken in
+is reported to the main actor and carried into every write queued before the model applied it, so a write
+already in the queue never drops the widget's completion.
+
+**The decode is skipped when the file is the one this app last wrote or read.** The worker remembers the
+file's stamp (modification date, size and file number: `StoreStamp`) right after its own write, read under
+the same coordination. If the stamp is unchanged at the next write, nobody wrote in between, so what is on
+disk is what the app wrote, `shouldRead` would be false and the read could only be thrown away: the write
+encodes memory and replaces the file without reading it. Only the app and its widget write this file (the
+App Group container is local; other devices' copies are separate envelope files in iCloud Drive), every
+write is atomic and coordinated, and an atomic replace gives a new file number and modification date, so
+the widget's write always changes the stamp, even within the same second. The stamp read at launch seeds
+it, so a launch that reads the file never decodes it again until the widget writes.
+
+**Ordering around the queue.** Sync writes `sync-state.json` on the same worker
+(`SaveQueue.afterWrites`, below), so state writes stay in order behind the store writes queued before
+them and never block the main actor. Delete everything drops writes not yet started and waits for the one
+in progress (`SaveQueue.discardPendingWrites` / `replacingContents`, a short wait on the main actor for a
+rare action) before the eraser and `deleteEverything` remove the file, so no queued write puts it back.
+Going to the background starts a background task that ends once the queue is idle (`SystemServices`,
+`SaveQueue.whenIdle`), and `willTerminate` waits for it, so nothing the app showed is lost when iOS
+suspends or ends it. The launch read stays synchronous.
 
 ## Sync (iCloud)
 
@@ -139,9 +174,12 @@ never adopted as a local edit, so it can't record notes and steps as deleted.
 - **The state file never runs ahead of the store.** The exemption trusts the wipe an envelope carries, and
   after a relaunch a device builds its envelope from two files: the store (snapshot) and
   `sync-state.json` (wipe). When a merge carries out a new wipe the coordinator commits the filtered
-  snapshot first and writes the state after; if the store write failed (`saveFailed`) the state file
-  keeps the wipe it had (`WipeRecord.toSave`, every `SyncCoordinator.saveState`), so a crash or a failed
-  save never leaves the pre-wipe snapshot under a state that says the wipe was carried out (F2). Memory
+  snapshot first and writes the state after: `saveState` queues the state write on the model's save worker
+  behind that store write (`SaveQueue.afterWrites`), which runs it once the write is done and tells it
+  whether the store holds the newest snapshot queued before it. If that write failed (or was dropped) the
+  state file keeps the wipe it had (`WipeRecord.toSave` through `WipeLedger`, every
+  `SyncCoordinator.saveState`), so a crash or a failed save never leaves the pre-wipe snapshot under a
+  state that says the wipe was carried out (F2). Memory
   keeps the new wipe: the model holds the filtered snapshot, and that is what it pushes. The next state
   write after a successful save records it: a local change, a merge, or a failed save that goes through
   on a retry (`SyncCoordinator.storeCaughtUp`).

@@ -40,6 +40,8 @@ struct SyncState: Codable, Equatable {
         return try? JSONFileStore.decoder().decode(SyncState.self, from: data)
     }
 
+    /// Called on the save worker after the store writes queued before it (`SyncCoordinator.saveState`), and
+    /// once at first launch.
     func save() {
         try? FileManager.default.createDirectory(at: Self.url.deletingLastPathComponent(), withIntermediateDirectories: true)
         if let data = try? JSONFileStore.encoder().encode(self) { try? data.write(to: Self.url, options: .atomic) }
@@ -67,8 +69,9 @@ final class SyncCoordinator {
     private let io = DispatchQueue(label: "app.compass.icloud", qos: .utility)
     private var state: SyncState
     /// The wipe fields `sync-state.json` holds now. They lag `state` while the store file doesn't hold the
-    /// snapshot that carried a new wipe out (`saveState`, CompassCore `WipeRecord`).
-    private var wipeOnDisk: WipeRecord
+    /// snapshot that carried a new wipe out (`saveState`, CompassCore `WipeRecord`). Updated on the save
+    /// worker, where the state file is written.
+    private let wipeOnDisk: WipeLedger
     private var root: URL?
     private var query: NSMetadataQuery?
     private var pushTask: Task<Void, Never>?
@@ -89,22 +92,27 @@ final class SyncCoordinator {
             loaded = fresh
         }
         state = loaded
-        wipeOnDisk = WipeRecord(wipedAt: loaded.wipedAt, appliedWipe: loaded.appliedWipe)
+        wipeOnDisk = WipeLedger(onDisk: WipeRecord(wipedAt: loaded.wipedAt, appliedWipe: loaded.appliedWipe))
     }
 
-    /// Write `sync-state.json`. A wipe this device carried out is recorded only once the store file holds
-    /// the snapshot that carried it out (`storeHoldsModel`, by default the model's last save went through):
-    /// until then the file keeps the wipe it had, so a relaunch over a stale store filters it again instead
-    /// of exempting pre-wipe data (CompassCore `WipeRecord`). Memory keeps the new wipe either way.
+    /// Write `sync-state.json` as it is now, on the model's save worker after every store write queued so
+    /// far (`SaveQueue.afterWrites`), so state writes keep their order and never wait on the main actor. A
+    /// wipe this device carried out is recorded only once the store file holds the snapshot that carried it
+    /// out (`storeHoldsModel`, by default: the newest store write queued before this went through): until
+    /// then the file keeps the wipe it had, so a relaunch over a stale store filters it again instead of
+    /// exempting pre-wipe data (CompassCore `WipeRecord`). Memory keeps the new wipe either way.
     private func saveState(storeHoldsModel: Bool? = nil) {
-        let holds = storeHoldsModel ?? (model.map { !$0.saveFailed } ?? true)
-        let record = WipeRecord.toSave(inMemory: WipeRecord(wipedAt: state.wipedAt, appliedWipe: state.appliedWipe),
-                                       onDisk: wipeOnDisk, storeHoldsModel: holds)
-        var file = state
-        file.wipedAt = record.wipedAt
-        file.appliedWipe = record.appliedWipe
-        file.save()
-        wipeOnDisk = record
+        let current = state
+        let ledger = wipeOnDisk
+        let write: @Sendable (Bool) -> Void = { storeHoldsQueued in
+            let record = ledger.record(WipeRecord(wipedAt: current.wipedAt, appliedWipe: current.appliedWipe),
+                                       storeHoldsModel: storeHoldsModel ?? storeHoldsQueued)
+            var file = current
+            file.wipedAt = record.wipedAt
+            file.appliedWipe = record.appliedWipe
+            file.save()
+        }
+        if let model { model.saves.afterWrites(write) } else { write(true) }
     }
 
     /// This install, for stamping items and labelling E5.
@@ -258,8 +266,10 @@ final class SyncCoordinator {
 
         switch plan.action {
         case .eraseLocal:
-            // "Delete everything" on another device and nothing made here since: erase here too.
+            // "Delete everything" on another device and nothing made here since: erase here too. No queued
+            // write may put the store file back after the eraser removes it.
             state.tombstones = []
+            model.saves.discardPendingWrites()
             DataEraser.eraseLocalData()
             AudioTombstoneLog.shared.reset(keeping: merged.audioTombstones)
             // The eraser removed the store file: nothing from before the wipe is left on disk.
@@ -273,9 +283,9 @@ final class SyncCoordinator {
             // `.merge` saves and reloads the widget without counting as this device's own change; a fresh
             // goal put back on top (`.localChange`) is this device's decision and is stamped and pushed.
             model.commit(snapshot, origin: source == .localChange ? .local : .remote)
-            // Only now, after the store write: a new wipe is recorded only if the filtered snapshot reached
-            // the disk (`saveFailed` false). Saving the state first left a window where a crash kept the
-            // pre-wipe store under a state that said the wipe was carried out.
+            // Queued after the store write, and run once it is done: a new wipe is recorded only if the
+            // filtered snapshot reached the disk. Saving the state first left a window where a crash kept
+            // the pre-wipe store under a state that said the wipe was carried out.
             saveState()
             // Today's phase changed elsewhere (morning done on the iPad): judge the screen again,
             // unless an answer is in progress (then once it ends). F2.

@@ -16,8 +16,33 @@ public protocol Store: AnyObject, Sendable {
     /// newer-schema file still throws. The result carries the modification date right after the write,
     /// read in the same step, so another process's write can't slip in between.
     func update(replacingUnreadable: Bool, _ body: (inout CompassSnapshot, _ storedModifiedAt: Date?) throws -> Void) throws -> StoreWrite
+    /// The app's save as `SaveQueue` makes it, in one step like `update(replacingUnreadable:_:)`, except that
+    /// what is stored is read only if `body` asks: `body` gets the stamp of what is stored now and a `read`
+    /// that decodes it (with `replacingUnreadable`, a damaged file reads as `.empty`; a newer-schema file
+    /// throws), and returns what to write. `SaveQueue` skips the read when the stamp is the one it saw right
+    /// after its own last write or read: nobody wrote since, so the file holds what it knows.
+    func write(replacingUnreadable: Bool, _ body: (_ stored: StoreStamp?, _ read: () throws -> CompassSnapshot) throws -> CompassSnapshot) throws -> StoreWrite
     /// When the stored data last changed on disk (nil: unknown, or nothing stored).
     var modifiedAt: Date? { get }
+    /// What is stored now, told apart from any other write (nil: nothing stored, or unknown).
+    var stamp: StoreStamp? { get }
+}
+
+/// A stored file as `SaveQueue` tells writes apart: its modification date, size and file number. An atomic
+/// write replaces the file, so the widget's write after the app's gives another stamp even within the same
+/// second.
+public struct StoreStamp: Hashable, Sendable {
+    public var modifiedAt: Date
+    /// The size in bytes (`InMemoryStore`: a count of writes).
+    public var size: Int?
+    /// The file system's file number (inode); nil where unknown.
+    public var fileNumber: Int?
+
+    public init(modifiedAt: Date, size: Int? = nil, fileNumber: Int? = nil) {
+        self.modifiedAt = modifiedAt
+        self.size = size
+        self.fileNumber = fileNumber
+    }
 }
 
 /// What `Store.update(replacingUnreadable:_:)` wrote.
@@ -25,10 +50,13 @@ public struct StoreWrite: Equatable, Sendable {
     public var snapshot: CompassSnapshot
     /// The store's modification date right after the write.
     public var modifiedAt: Date?
+    /// The store's stamp right after the write, read in the same step.
+    public var stamp: StoreStamp?
 
-    public init(snapshot: CompassSnapshot, modifiedAt: Date?) {
+    public init(snapshot: CompassSnapshot, modifiedAt: Date?, stamp: StoreStamp? = nil) {
         self.snapshot = snapshot
         self.modifiedAt = modifiedAt
+        self.stamp = stamp
     }
 }
 
@@ -42,20 +70,29 @@ extension Store {
         return snapshot
     }
 
+    /// Reads first, always, then lets `body` change what was read.
     public func update(replacingUnreadable: Bool, _ body: (inout CompassSnapshot, Date?) throws -> Void) throws -> StoreWrite {
-        let before = modifiedAt
-        var snapshot: CompassSnapshot
-        do {
-            snapshot = try load()
-        } catch StoreError.corrupt where replacingUnreadable {
-            snapshot = .empty
+        try write(replacingUnreadable: replacingUnreadable) { stamp, read in
+            var snapshot = try read()
+            try body(&snapshot, stamp?.modifiedAt)
+            return snapshot
         }
-        try body(&snapshot, before)
+    }
+
+    public func write(replacingUnreadable: Bool, _ body: (StoreStamp?, () throws -> CompassSnapshot) throws -> CompassSnapshot) throws -> StoreWrite {
+        let snapshot = try body(stamp) {
+            do {
+                return try load()
+            } catch StoreError.corrupt where replacingUnreadable {
+                return .empty
+            }
+        }
         try save(snapshot)
-        return StoreWrite(snapshot: snapshot, modifiedAt: modifiedAt)
+        return StoreWrite(snapshot: snapshot, modifiedAt: modifiedAt, stamp: stamp)
     }
 
     public var modifiedAt: Date? { nil }
+    public var stamp: StoreStamp? { modifiedAt.map { StoreStamp(modifiedAt: $0) } }
 
     /// Mark the step for `key` done (or undo). No-op if there is no step. Stamps the completion
     /// (`completionChangedAt`, not `updatedAt`) so sync keeps this change over an older copy on another
@@ -76,6 +113,8 @@ public final class InMemoryStore: Store, Sendable {
     private struct State {
         var snapshot: CompassSnapshot
         var saveCount = 0
+        var loadCount = 0
+        var revision = 0
         var modifiedAt: Date?
         var failsSaving = false
     }
@@ -83,25 +122,53 @@ public final class InMemoryStore: Store, Sendable {
 
     /// How many times `save` ran (tests).
     public var saveCount: Int { state.withLock { $0.saveCount } }
+    /// How many times what is stored was read: `load`, and a `write` whose body read it (tests).
+    public var loadCount: Int { state.withLock { $0.loadCount } }
 
     public init(_ snapshot: CompassSnapshot = .empty) {
         state = Mutex(State(snapshot: snapshot))
     }
 
     public func load() throws -> CompassSnapshot {
-        state.withLock { $0.snapshot }
+        state.withLock {
+            $0.loadCount += 1
+            return $0.snapshot
+        }
     }
 
     public func save(_ snapshot: CompassSnapshot) throws {
-        try state.withLock {
-            if $0.failsSaving { throw CocoaError(.fileWriteOutOfSpace) }
-            $0.snapshot = snapshot
-            $0.saveCount += 1
-            $0.modifiedAt = Date()
+        try state.withLock { try Self.save(snapshot, into: &$0) }
+    }
+
+    private static func save(_ snapshot: CompassSnapshot, into state: inout State) throws {
+        if state.failsSaving { throw CocoaError(.fileWriteOutOfSpace) }
+        state.snapshot = snapshot
+        state.saveCount += 1
+        state.revision += 1
+        state.modifiedAt = Date()
+    }
+
+    /// One step under the lock, as `JSONFileStore` does it under file coordination.
+    public func write(replacingUnreadable: Bool, _ body: (StoreStamp?, () throws -> CompassSnapshot) throws -> CompassSnapshot) throws -> StoreWrite {
+        try state.withLock { s in
+            let current = s.snapshot
+            var reads = 0
+            let snapshot = try body(Self.stamp(of: s)) {
+                reads += 1
+                return current
+            }
+            s.loadCount += reads
+            try Self.save(snapshot, into: &s)
+            return StoreWrite(snapshot: snapshot, modifiedAt: s.modifiedAt, stamp: Self.stamp(of: s))
         }
     }
 
     public var modifiedAt: Date? { state.withLock { $0.modifiedAt } }
+    public var stamp: StoreStamp? { state.withLock { Self.stamp(of: $0) } }
+
+    private static func stamp(of state: State) -> StoreStamp? {
+        state.modifiedAt.map { StoreStamp(modifiedAt: $0, size: state.revision) }
+    }
 
     /// Tests: make every save fail (a full disk), or work again.
     public var failsSaving: Bool {
@@ -113,6 +180,7 @@ public final class InMemoryStore: Store, Sendable {
     public func writeExternally(_ snapshot: CompassSnapshot, at date: Date) {
         state.withLock {
             $0.snapshot = snapshot
+            $0.revision += 1
             $0.modifiedAt = date
         }
     }
@@ -242,27 +310,33 @@ public final class JSONFileStore: Store, Sendable {
         try update(replacingUnreadable: false) { snapshot, _ in try body(&snapshot) }.snapshot
     }
 
-    public func update(replacingUnreadable: Bool, _ body: (inout CompassSnapshot, Date?) throws -> Void) throws -> StoreWrite {
+    /// One coordinated write: the stamp, the read (only if `body` asks), the atomic write and the stamp
+    /// after it, so another process can't write in between.
+    public func write(replacingUnreadable: Bool, _ body: (StoreStamp?, () throws -> CompassSnapshot) throws -> CompassSnapshot) throws -> StoreWrite {
         lock.lock(); defer { lock.unlock() }
         if let blocked = blockedBy.withLock({ $0 }) { throw StoreError.newerSchema(blocked) }
         return try coordinated(.writing) { file in
-            let before = Self.modificationDate(of: file)
-            var snapshot: CompassSnapshot
-            do {
-                snapshot = try readFile(at: file)
-            } catch StoreError.corrupt where replacingUnreadable {
-                snapshot = .empty
+            let snapshot = try body(Self.stamp(of: file)) {
+                do {
+                    return try readFile(at: file)
+                } catch StoreError.corrupt where replacingUnreadable {
+                    return .empty
+                }
             }
-            try body(&snapshot, before)
             try writeFile(snapshot, to: file)
-            return StoreWrite(snapshot: snapshot, modifiedAt: Self.modificationDate(of: file))
+            let after = Self.stamp(of: file)
+            return StoreWrite(snapshot: snapshot, modifiedAt: after?.modifiedAt, stamp: after)
         }
     }
 
-    public var modifiedAt: Date? { Self.modificationDate(of: url) }
+    public var modifiedAt: Date? { Self.stamp(of: url)?.modifiedAt }
+    public var stamp: StoreStamp? { Self.stamp(of: url) }
 
-    private static func modificationDate(of file: URL) -> Date? {
-        (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date
+    private static func stamp(of file: URL) -> StoreStamp? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: file.path),
+              let date = attributes[.modificationDate] as? Date else { return nil }
+        return StoreStamp(modifiedAt: date, size: (attributes[.size] as? NSNumber)?.intValue,
+                          fileNumber: (attributes[.systemFileNumber] as? NSNumber)?.intValue)
     }
 
     private enum Access { case reading, writing, deleting }
