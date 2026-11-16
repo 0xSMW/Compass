@@ -103,6 +103,21 @@ never adopted as a local edit, so it can't record notes and steps as deleted.
   (`morningSkippedAt`, or the day's date for older data) or only deletions made after it is kept. Such a
   snapshot still counts as blank (`isBlank`: no goal and no day with an intention, step, note or evening
   entry): a remote wipe erases it, and the entry screen is Welcome, not a goal-less Today.
+- **The wipe filter applies once per device.** A device carries a wipe out when it first hears of it, and
+  from then on its envelope carries that `wipedAt`. The merge filters only envelopes that don't carry the
+  newest wipe yet (`SnapshotMerger.applyingWipe`); one that does is taken whole, because everything in it
+  was made after its device carried the wipe out or survived that filter. So a device whose clock is
+  slow keeps what the user makes after starting over, even when its clock dates that before the wipe
+  (`SyncRound7Tests`, X1 and X2). Recordings follow: `ICloudDrive.purgeAudio` never removes a file the
+  merged snapshot uses, whatever its file dates.
+- **When a wipe is dated.** `wipeEverywhere` stamps the wipe at the latest of the device's clock, one
+  second after the newest wipe it knows, and one second after the newest stamp on anything it deletes
+  (`SyncEnvelope.wipeDate`, `CompassSnapshot.newestStamp`). With clocks that agree that is simply now.
+  Otherwise a wipe dated by a slow clock would leave things another device stamped later, and they would
+  come back from that device's envelope (X3), and a wipe dated before an earlier one would lose to it.
+  The two rules only work together: a later stamp alone erases more of what a slow device makes next.
+  `SyncRound4Tests` fuzzes wipes with clocks up to 30 minutes apart and checks that no goal set on a
+  device that had carried out the newest wipe is lost and nothing the wiping device held survives.
 - **`SyncApply.plan`** turns what was read into one action: erase (a remote wipe with nothing made here
   since), adopt the survivors and reopen the entry screen (a remote wipe with local survivors), adopt
   the merge (staying on any onboarding screen), put a fresh goal back on top (below), or keep.
@@ -135,6 +150,8 @@ never adopted as a local edit, so it can't record notes and steps as deleted.
   one another device ended as replaced because it set the next goal before the achievement synced. The
   goal keeps the achievement's `endedAt`; the merge stays order-independent (achieved, then ended by a
   user, then the later `versionTime`). Promoting a fresh goal keeps an achievement made elsewhere too.
+  Between two copies users ended as replaced, the earlier end stands: one device replaced the goal, and
+  the other may only have restamped a copy a merge gave it when it set its own next goal later.
 - **Which fresh goal may come back.** `SyncApply.promoting` uses the merge's own order, `(createdAt, id)`,
   strictly: dates are saved as ISO-8601 without fractions, so two new devices finishing onboarding in the
   same second tie on `createdAt`, and only the one the merge put below the other comes back (otherwise
@@ -155,9 +172,15 @@ never adopted as a local edit, so it can't record notes and steps as deleted.
   current goal (nothing is lost; the user sets a goal again). A review fuzz with clocks up to 30 minutes
   apart that sometimes jump hit this in about 12 of 60,000 runs. Telling them apart would take recording
   which device ended a goal.
+- **Known limit: a device that hasn't heard of a wipe.** What a device makes before it hears of a wipe
+  is judged by its own clock alone: kept if that dates it after the wipe, erased if before. Nothing else
+  says which side of the wipe it falls on. With "Set Automatically" on, iOS clocks agree to about a second
+  and this never shows; it takes a manually set clock that is off by more than the time between the wipe
+  and the other device's change. The wipe can also be dated later than the wiping device's clock (above),
+  if something it deletes was stamped by a fast clock, which widens that window by as much.
 - **Merging is order-independent but not associative.** The same set of envelopes merges to the same
   snapshot in any order. Merging pairwise in a different grouping can give a different result: merging
-  two arbitrary envelopes first and then the rest differed from merging all of them at once in 3,795 of
+  two arbitrary envelopes first and then the rest differed from merging all of them at once in 3,778 of
   40,000 random cases. Devices never rely on grouping: each pass merges the full set of envelopes it can
   read (its own and every other device's), and every device-level fuzz settles with all devices agreeing.
 - **The fresh-goal marker expires.** `freshGoalID` guards sync passes until one promotes the fresh goal

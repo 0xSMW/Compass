@@ -284,7 +284,7 @@ final class SyncCoordinator {
                                                        referencedAfter: referenced, tombstones: tombstones)
             for name in remove { MemoAudio.removeLocalCopy(name) }
             drive.deleteAudio(named: Set(tombstones.map(\.name)), root: root)
-            if let wipe { drive.purgeAudio(recordedBefore: wipe, root: root) }
+            if let wipe { drive.purgeAudio(recordedBefore: wipe, keeping: referenced, root: root) }
             let wanted = AudioSyncPlan.toDownload(remote: drive.audioNames(root: root), local: local.subtracting(remove),
                                                   referenced: referenced, tombstones: tombstones)
             drive.download(wanted, into: MemoAudio.syncedAudioDirectory, root: root)
@@ -299,11 +299,17 @@ final class SyncCoordinator {
         noteLocalChange()
     }
 
-    /// H2: wipe iCloud and leave a marker so every other device erases too.
-    func wipeEverywhere(at date: Date) {
+    /// H2: wipe iCloud and leave a marker so every other device erases too. Called before the model is
+    /// cleared. The wipe is dated at `now` unless this device holds something stamped later, or knows a wipe
+    /// that late (a clock set back, or a fast clock elsewhere): then just after it (`SyncEnvelope.wipeDate`),
+    /// so everything deleted here stays deleted and the wipe outranks every earlier one.
+    func wipeEverywhere(at now: Date) {
         pushTask?.cancel()
         pullTask?.cancel()
         let deviceID = state.deviceID
+        let deleting = envelope() ?? SyncEnvelope(deviceID: deviceID, deviceName: SyncDevice.model, savedAt: state.lastLocalChange,
+                                                  snapshot: .empty, tombstones: state.tombstones, wipedAt: state.wipedAt)
+        let date = deleting.wipeDate(now: now, knownWipe: state.appliedWipe)
         state = SyncState(deviceID: deviceID, lastLocalChange: date, tombstones: [], wipedAt: date, appliedWipe: date, freshGoalID: nil)
         AudioTombstoneLog.shared.reset()
         let marker = SyncEnvelope(deviceID: deviceID, deviceName: SyncDevice.model, savedAt: date, snapshot: .empty, wipedAt: date)

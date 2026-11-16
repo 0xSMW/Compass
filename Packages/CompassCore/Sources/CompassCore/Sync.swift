@@ -56,7 +56,8 @@ public struct SyncEnvelope: Codable, Hashable, Sendable {
     public var snapshot: CompassSnapshot
     public var tombstones: [DayTombstone]
     /// H2 "Delete everything" on any device: a generation boundary. Everything created before it is
-    /// dropped from every envelope, however late that envelope was saved.
+    /// dropped from every envelope that doesn't carry it yet, however late that envelope was saved. An
+    /// envelope carrying it comes from a device that has carried the wipe out, and is kept whole.
     public var wipedAt: Date?
     /// Recordings deleted on any device.
     public var audioTombstones: [AudioTombstone]
@@ -179,7 +180,9 @@ extension Step {
 ///   ended elsewhere, the newest goal a merge demoted and nobody ended comes back as current.
 /// - **Tombstones** remove days whose content is older than the deletion.
 /// - **`wipedAt`** is a generation boundary: everything created before the newest wipe is dropped from
-///   every envelope, however late that envelope was saved. Things created after it are kept.
+///   every envelope that doesn't carry that wipe yet, however late it was saved. Things created after it
+///   are kept, and so is everything in an envelope that already carries it (its device carried the wipe
+///   out, so what it holds came after, even if a slow clock dates it earlier).
 public enum SnapshotMerger {
     /// Merge any number of envelopes (local first is not required). nil if there are none readable.
     public static func merge(_ envelopes: [SyncEnvelope]) -> SyncEnvelope? {
@@ -200,9 +203,13 @@ public enum SnapshotMerger {
         return a.deviceID > b.deviceID
     }
 
-    /// Drop everything from before the wipe (see `CompassSnapshot.keepingOnly(createdSince:)`).
+    /// Drop everything from before the wipe (see `CompassSnapshot.keepingOnly(createdSince:)`), once per
+    /// device: an envelope that already carries this wipe (or a newer one) is returned untouched. Its device
+    /// carried the wipe out when it first heard of it, so everything it holds now was made afterwards or
+    /// survived that filter, whatever its clock says.
     static func applyingWipe(_ wipedAt: Date?, to e: SyncEnvelope) -> SyncEnvelope {
         guard let wipedAt else { return e }
+        if let own = e.wipedAt, own >= wipedAt { return e }
         var out = e
         out.snapshot = e.snapshot.keepingOnly(createdSince: wipedAt)
         out.tombstones = e.tombstones.filter { $0.deletedAt >= wipedAt }
@@ -291,7 +298,8 @@ public enum SnapshotMerger {
     ///    as replaced, before the achievement synced).
     /// 2. A version the user ended wins over an active one (ending happens after editing). A copy a merge
     ///    demoted counts as active here (nobody ended it; `mergeGoals` decides its status again).
-    /// 3. Otherwise the later `versionTime`; equal times keep `a`.
+    /// 3. Otherwise the later `versionTime`; equal times keep `a`. Between two copies users ended as
+    ///    replaced, the earlier `endedAt` stands, whichever copy wins.
     /// Parts and the B7 answer merge field-wise so neither device's addition is lost.
     static func pickGoal(_ a: Goal, _ b: Goal) -> Goal {
         let aAchieved = a.status == .achieved, bAchieved = b.status == .achieved
@@ -305,6 +313,11 @@ public enum SnapshotMerger {
             (winner, loser) = b.versionTime > a.versionTime ? (b, a) : (a, b)
         }
         var g = winner
+        // A goal ends once: of two copies users ended as replaced, the first ending dates it (the other
+        // device may only have restamped a copy a merge gave it, when it set its next goal).
+        if aEnded, bEnded, a.status == .replaced, b.status == .replaced, let x = a.endedAt, let y = b.endedAt {
+            g.endedAt = min(x, y)
+        }
         g.why = winner.why ?? loser.why
         g.whyAsked = winner.whyAsked || loser.whyAsked
         let known = Set(winner.parts.map(\.id))
@@ -485,12 +498,47 @@ extension CompassSnapshot {
         return s
     }
 
+    /// The newest time stamped on anything in the snapshot: when goals and day items were made, edited,
+    /// completed or ended, deletions a day remembers, a morning skip and the synced settings. nil when
+    /// nothing is stamped.
+    public var newestStamp: Date? {
+        var dates: [Date] = []
+        for g in pastGoals + [goal].compactMap({ $0 }) {
+            dates += [g.createdAt, g.updatedAt, g.endedAt, g.why?.createdAt, g.why?.updatedAt].compactMap { $0 }
+        }
+        for day in days {
+            if let i = day.intention { dates += [i.createdAt, i.updatedAt].compactMap { $0 } }
+            if let s = day.step { dates += [s.createdAt, s.updatedAt, s.completedAt, s.completionChangedAt].compactMap { $0 } }
+            for n in day.notes { dates += [n.createdAt, n.updatedAt].compactMap { $0 } }
+            for r in day.reflectionVersions { dates += [r.createdAt, r.updatedAt].compactMap { $0 } }
+            dates += (day.removedItems ?? []).map(\.deletedAt)
+            if let skipped = day.morningSkippedAt { dates.append(skipped) }
+        }
+        dates += [settings.updatedAt, settings.rhythmUpdatedAt, settings.cloudAssistUpdatedAt].compactMap { $0 }
+        return dates.max()
+    }
+
     /// Nothing the user made: no goal, and no day with content. Days that only remember a morning skip
     /// or deletions (kept after a wipe, `keepingOnly`) don't count: there is nothing to show or restore.
     public var isBlank: Bool { !hasGoals && !days.contains(where: \.hasContent) }
 
     /// A current goal or any past goal.
     public var hasGoals: Bool { goal != nil || !pastGoals.isEmpty }
+}
+
+extension SyncEnvelope {
+    /// When a "Delete everything" this device makes at `now` is dated: the latest of `now`, one second after
+    /// the newest wipe it knows (its `wipedAt`, or `knownWipe` if later), and one second after the newest
+    /// stamp on anything it deletes (`CompassSnapshot.newestStamp`, day and audio tombstones). A wipe is a
+    /// timestamp, so a slow clock (or a fast one on the device that made something) would otherwise date it
+    /// before things it means to delete, and they would come back from another device's envelope; and a
+    /// wipe dated before an earlier one would lose to it in every merge. With clocks that agree this is `now`.
+    public func wipeDate(now: Date, knownWipe: Date? = nil) -> Date {
+        var floor = [wipedAt, knownWipe].compactMap { $0 }
+        if let newest = snapshot.newestStamp { floor.append(newest) }
+        floor += tombstones.map(\.deletedAt) + audioTombstones.map(\.deletedAt)
+        return floor.map { $0.addingTimeInterval(1) }.reduce(now, max)
+    }
 }
 
 extension Settings {

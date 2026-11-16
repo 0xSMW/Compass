@@ -58,6 +58,10 @@ final class SyncRound4Tests: XCTestCase {
         /// achieved on every device (there is no un-achieve).
         var achieved: Set<UUID> = []
         var nextGoal = 100
+        /// Every wipe so far: its stamp and the goals the wiping device held (and so deleted).
+        var wipes: [(stamp: Date, deleted: Set<UUID>)] = []
+        /// For each goal a user set: the newest wipe its device had carried out when it set it.
+        var appliedWhenMade: [UUID: Date] = [:]
 
         init(_ devices: [Device]) {
             self.devices = devices
@@ -111,6 +115,7 @@ final class SyncRound4Tests: XCTestCase {
                 s.goal = goal
             }
             made[goal.id] = now
+            if let applied = devices[i].appliedWipe { appliedWhenMade[goal.id] = applied }
             log.append("setGoal\(i) \(text)")
         }
 
@@ -124,29 +129,34 @@ final class SyncRound4Tests: XCTestCase {
             log.append("achieve\(i)")
         }
 
-        /// `wipeEverywhere`: iCloud is cleared and holds only this device's marker.
+        /// `wipeEverywhere`: dated by `SyncEnvelope.wipeDate` (this device's clock `now`, unless it holds
+        /// something stamped later or knows a later wipe); iCloud is cleared and holds only this device's marker.
         mutating func wipe(_ i: Int, at now: Date) {
-            var dev = Device(devices[i].identity.id, savedAt: now)
-            dev.wipedAt = now
-            dev.appliedWipe = now
+            let old = devices[i]
+            let stamp = old.envelope.wipeDate(now: now, knownWipe: old.appliedWipe)
+            wipes.append((stamp, Set(([old.snapshot.goal].compactMap { $0 } + old.snapshot.pastGoals).map(\.id))))
+            var dev = Device(old.identity.id, savedAt: stamp)
+            dev.wipedAt = stamp
+            dev.appliedWipe = stamp
             devices[i] = dev
             cloud = [dev.identity.id: dev.envelope]
-            lastWipe = now
-            made = made.filter { $0.value >= now }
+            lastWipe = stamp
+            made = made.filter { $0.value >= stamp }
             achieved = achieved.filter { made[$0] != nil }
             log.append("wipe\(i)")
         }
 
         /// Full rounds (every device reads every file, then pushes) until one changes nothing.
         /// Returns false if the devices are still changing after `limit` rounds.
-        mutating func settle(from start: Date, limit: Int = 6) -> Bool {
+        /// `offsets`: each device's clock, ahead (+) or behind (-) real time.
+        mutating func settle(from start: Date, limit: Int = 6, offsets: [TimeInterval]? = nil) -> Bool {
             var now = start
             for _ in 0..<limit {
                 let before = (devices.map(\.snapshot), cloud)
                 var changed = false
                 for i in devices.indices {
                     now += 60
-                    if let action = pull(i, at: now), action != .keep { changed = true }
+                    if let action = pull(i, at: now + (offsets?[i] ?? 0)), action != .keep { changed = true }
                     push(i)
                 }
                 if !changed && before.0 == devices.map(\.snapshot) && before.1 == cloud { return true }
@@ -180,6 +190,27 @@ final class SyncRound4Tests: XCTestCase {
                 if let lost = made.keys.first(where: { !kept.contains($0) }) { return "goal \(lost) lost: \(show(i))" }
                 if let g = all.first(where: { achieved.contains($0.id) && $0.status != .achieved }) {
                     return "an achieved goal shown as \(g.status): \(show(i))"
+                }
+            }
+            return nil
+        }
+
+        /// What a settled world must hold when clocks disagree and devices wipe: the newest wipe (by stamp)
+        /// deleted everything the wiping device held, and kept every goal set on a device that had already
+        /// carried it out, whatever that device's clock said. A goal made around the wipe on a device that had
+        /// not heard of it can go either way (only its clock says which side it falls on); not checked.
+        func wipeViolation() -> String? {
+            for (i, dev) in devices.enumerated() {
+                let s = dev.snapshot
+                let all = [s.goal].compactMap { $0 } + s.pastGoals
+                if Set(all.map(\.id)).count != all.count { return "goal listed twice on \(show(i))" }
+                guard let newest = wipes.map(\.stamp).max() else { continue }
+                let kept = Set(all.map(\.id))
+                if let back = wipes.filter({ $0.stamp == newest }).flatMap(\.deleted).first(where: kept.contains) {
+                    return "goal \(back) deleted by the wipe is back: \(show(i))"
+                }
+                if let lost = appliedWhenMade.first(where: { $0.value >= newest && !kept.contains($0.key) }) {
+                    return "goal \(lost.key) set after carrying out the wipe lost: \(show(i))"
                 }
             }
             return nil
@@ -328,9 +359,11 @@ final class SyncRound4Tests: XCTestCase {
 
     // MARK: - The fuzz
 
-    /// One random run: `ops` random steps from the scenario's start, then full rounds.
-    func fuzzRun(seed: UInt64, devices count: Int) -> (World, String?) {
-        var rng = Seeded(state: seed &* 0x2545_F491_4F6C_DD1D &+ UInt64(count))
+    /// One random run: `ops` random steps from the scenario's start, then full rounds. With `skewMinutes`,
+    /// each device's clock is off real time by up to that much (and now and then jumps), every run may wipe,
+    /// and the run is judged by `wipeViolation` instead of `violation`.
+    func fuzzRun(seed: UInt64, devices count: Int, skewMinutes skew: Int = 0) -> (World, String?) {
+        var rng = Seeded(state: seed &* 0x2545_F491_4F6C_DD1D &+ UInt64(count) &+ (skew > 0 ? 0x5EED : 0))
         var devices = [Device("A", CompassSnapshot(goal: oldGoal), savedAt: d(8)),
                        Device("B", CompassSnapshot(goal: n1), savedAt: d(9), fresh: rng.next(3) == 0 ? nil : n1.id)]
         if count == 3 {
@@ -341,35 +374,40 @@ final class SyncRound4Tests: XCTestCase {
             }
         }
         var w = World(devices)
-        let wipes = rng.next(5) == 0
+        let wipes = skew > 0 || rng.next(5) == 0
+        func clock() -> TimeInterval { TimeInterval((rng.next(2 * skew + 1) - skew) * 60) }
+        var offset = (0..<count).map { _ in skew > 0 ? clock() : 0 }
         var now = d(10)
         var goals = 0
         for _ in 0..<(4 + rng.next(14)) {
             now += 60
             let i = rng.next(count)
+            if skew > 0, rng.next(25) == 0 { offset[i] = clock() }
+            let local = now + offset[i]
             switch rng.next(20) {
             case 0...5: w.push(i)
-            case 6...9: w.pull(i, at: now)
+            case 6...9: w.pull(i, at: local)
             case 10...13:
                 let others = w.devices.indices.filter { $0 != i }
-                w.pull(i, only: [w.devices[others[rng.next(others.count)]].identity.id], at: now)
+                w.pull(i, only: [w.devices[others[rng.next(others.count)]].identity.id], at: local)
             case 14, 15:
-                w.setGoal(i, "U\(goals)", at: now)
+                w.setGoal(i, "U\(goals)", at: local)
                 goals += 1
-            case 16, 17: w.achieve(i, at: now)
-            case 18 where wipes: w.wipe(i, at: now)
+            case 16, 17: w.achieve(i, at: local)
+            case 18 where wipes: w.wipe(i, at: local)
+            case 19 where skew > 0: w.wipe(i, at: local)
             default: w.push(i)
             }
         }
-        guard w.settle(from: now) else { return (w, "unstable") }
+        guard w.settle(from: now, offsets: offset) else { return (w, "unstable") }
         guard w.converged else { return (w, "diverged") }
-        return (w, w.violation())
+        return (w, skew > 0 ? w.wipeViolation() : w.violation())
     }
 
-    func fuzz(devices count: Int, runs: Int) {
+    func fuzz(devices count: Int, runs: Int, skewMinutes skew: Int = 0) {
         var failures: [String: Int] = [:]
         for seed in 0..<UInt64(runs) {
-            let (w, problem) = fuzzRun(seed: seed, devices: count)
+            let (w, problem) = fuzzRun(seed: seed, devices: count, skewMinutes: skew)
             guard let problem else { continue }
             let kind = String(problem.prefix(while: { $0 != ":" }))
             failures[kind, default: 0] += 1
@@ -378,7 +416,7 @@ final class SyncRound4Tests: XCTestCase {
                         + w.devices.indices.map(w.show).joined(separator: " | "))
             }
         }
-        XCTAssertEqual(failures, [:], "\(count) devices, \(runs) runs")
+        XCTAssertEqual(failures, [:], "\(count) devices, \(runs) runs, clocks up to \(skew) min apart")
     }
 
     /// Two devices: the old phone and a new one (fresh marker in two runs of three), with goal changes,
@@ -390,5 +428,13 @@ final class SyncRound4Tests: XCTestCase {
     /// Three devices: the third holds a second new goal (fresh or not) or is installed but never onboarded.
     func testFuzzThreeDevicesConvergeOnOneCurrentGoal() {
         fuzz(devices: 3, runs: 4000)
+    }
+
+    /// Two and three devices whose clocks are up to 30 minutes off real time (and sometimes jump), with
+    /// wipes in every run, each dated as `wipeEverywhere` dates it: no goal set on a device that had already
+    /// carried out the newest wipe is lost, and nothing the wiping device held survives it.
+    func testFuzzWipesWithClocksThirtyMinutesApart() {
+        fuzz(devices: 2, runs: 3000, skewMinutes: 30)
+        fuzz(devices: 3, runs: 4000, skewMinutes: 30)
     }
 }

@@ -149,10 +149,12 @@ final class ICloudDrive: @unchecked Sendable {
 
     /// After "Delete everything": remove recordings made before the wipe that a device which hadn't heard
     /// of it copied back up. Judged by the recording's own dates (kept on every copy); placeholders whose
-    /// dates aren't known yet are left for a device that has them.
-    func purgeAudio(recordedBefore wipe: Date, root: URL) {
+    /// dates aren't known yet are left for a device that has them. A recording the merged snapshot uses
+    /// (`referenced`) always stays, whatever its dates: a device that had already carried out the wipe
+    /// keeps what it records next even when its clock dates that before the wipe (`SnapshotMerger`).
+    func purgeAudio(recordedBefore wipe: Date, keeping referenced: Set<String>, root: URL) {
         let dir = root.appendingPathComponent("Audio", isDirectory: true)
-        for name in allNames(in: dir) {
+        for name in allNames(in: dir) where !referenced.contains(name) {
             let url = dir.appendingPathComponent(name)
             guard fm.fileExists(atPath: url.path), let attrs = try? fm.attributesOfItem(atPath: url.path) else { continue }
             let dates = [attrs[.creationDate], attrs[.modificationDate]].compactMap { $0 as? Date }
