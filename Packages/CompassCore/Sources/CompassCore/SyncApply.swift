@@ -104,7 +104,8 @@ public enum SyncApply {
         var source = SyncApplyPlan.Source.merge
         if let freshID = input.freshGoalID {
             if let fresh = before.goal, fresh.id == freshID, !isExpired(fresh, now: input.now) {
-                let promoted = promoting(fresh, settings: before.settings, in: next)
+                let promoted = replacedKnowingly(freshID, current: next.goal, by: others)
+                    ? nil : promoting(fresh, settings: before.settings, in: next)
                 if let promoted {
                     next = promoted
                     source = .localChange
@@ -135,11 +136,32 @@ public enum SyncApply {
         return now.timeIntervalSince(fresh.createdAt) > freshGoalLifetime
     }
 
+    /// Another device holds the merged current goal and already moved on from the fresh goal itself: the
+    /// fresh goal is in its past goals, not marked by a merge, and ended no later than that current goal
+    /// was made (both times from that device's own clock). The user replaced or achieved the fresh goal
+    /// there and then set this one, so putting the fresh goal back would undo a choice, even when that
+    /// device's slow clock dates the new goal before the fresh one. A device that ended the fresh goal only
+    /// by promoting its own (`promoting` ends the other goal at the promoted goal's `createdAt`) never
+    /// matches: its current goal is then newer than the fresh one, which `promoting` already refuses.
+    static func replacedKnowingly(_ freshID: UUID, current: Goal?, by others: [SyncEnvelope]) -> Bool {
+        guard let current else { return false }
+        return others.contains { o in
+            guard o.isReadable, let held = o.snapshot.goal, held.id == current.id,
+                  let ended = o.snapshot.pastGoals.first(where: { $0.id == freshID }),
+                  ended.demotedByMerge != true, let endedAt = ended.endedAt else { return false }
+            return endedAt <= held.createdAt
+        }
+    }
+
     /// The merge demoted `fresh` (an earlier goal from another device stays current, because this device
     /// never knew it). Returns the snapshot with `fresh` current again and the other goal ended as replaced,
     /// or nil when `fresh` wasn't demoted that way (e.g. another device replaced it with a later goal).
+    /// "Earlier" is the merge's own order, `(createdAt, id)`, compared strictly: dates are saved without
+    /// fractions of a second, so two goals made in the same second tie on `createdAt`, and only the one
+    /// the merge put below the other may come back.
     static func promoting(_ fresh: Goal, settings: Settings, in s: CompassSnapshot) -> CompassSnapshot? {
-        guard let current = s.goal, current.id != fresh.id, current.createdAt <= fresh.createdAt,
+        guard let current = s.goal, current.id != fresh.id,
+              (current.createdAt, current.id.uuidString) < (fresh.createdAt, fresh.id.uuidString),
               let demoted = s.pastGoals.first(where: { $0.id == fresh.id }) else { return nil }
         var out = s
         // Ended by this device (as if it had set the fresh goal over it): not a merge's demotion.
@@ -148,8 +170,11 @@ public enum SyncApply {
         ended.endedAt = ended.endedAt ?? fresh.createdAt
         ended.demotedByMerge = nil
         var promoted = demoted
-        promoted.status = fresh.status
-        promoted.endedAt = fresh.endedAt
+        if demoted.status != .achieved || fresh.status == .achieved {
+            // An achievement made elsewhere stays (there is no un-achieve).
+            promoted.status = fresh.status
+            promoted.endedAt = fresh.endedAt
+        }
         promoted.demotedByMerge = nil
         out.goal = promoted
         out.pastGoals = ([ended] + s.pastGoals.filter { $0.id != fresh.id && $0.id != current.id }).sorted {

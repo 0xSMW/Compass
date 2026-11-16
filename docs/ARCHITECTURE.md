@@ -125,7 +125,24 @@ never adopted as a local edit, so it can't record notes and steps as deleted.
   `demotedByMerge` that no device retired comes back as current (`SnapshotMerger.orphan`), instead of
   every device settling on no current goal. `SyncRound4Tests` fuzzes two and three devices (push, full
   and partial pulls, set goal, achieve, delete everything) and checks that every run settles, converges,
-  loses no goal, and has a current goal whenever any goal was not ended by a user.
+  loses no goal, has a current goal whenever any goal was not ended by a user, and shows every goal a
+  user achieved on any device as achieved on every device.
+- **Achieved stays achieved.** The app has no un-achieve, so when two copies of one goal differ, an
+  achieved copy wins over any other (`SnapshotMerger.pickGoal`), including one a merge also demoted and
+  one another device ended as replaced because it set the next goal before the achievement synced. The
+  goal keeps the achievement's `endedAt`; the merge stays order-independent (achieved, then ended by a
+  user, then the later `versionTime`). Promoting a fresh goal keeps an achievement made elsewhere too.
+- **Which fresh goal may come back.** `SyncApply.promoting` uses the merge's own order, `(createdAt, id)`,
+  strictly: dates are saved as ISO-8601 without fractions, so two new devices finishing onboarding in the
+  same second tie on `createdAt`, and only the one the merge put below the other comes back (otherwise
+  each promotes its own and both end the other's). It also skips the promotion when another device holds
+  the merged current goal and has the fresh goal in its past goals, unmarked, ended no later than that
+  current goal was made (`replacedKnowingly`, both times from that device's clock): the user replaced or
+  achieved the fresh goal there and set this one, so it stands even when a slow clock dates it before the
+  fresh goal. A device that ended the fresh goal only by promoting its own never matches (its current
+  goal is then newer than the fresh one), so two new devices beside an old one still settle on the newest
+  fresh goal (`testR9_twoNewDevicesBesideAnOldOneKeepACurrentGoal`). `SyncRound5Tests` holds the named
+  cases.
 - **The fresh-goal marker expires.** `freshGoalID` guards sync passes until one promotes the fresh goal
   or reads another device's envelope holding a goal (current or past), and lapses seven days after the
   goal was made (`SyncApply.freshGoalLifetime`), whichever comes first. An envelope with no goals (an

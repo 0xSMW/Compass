@@ -170,7 +170,8 @@ extension Step {
 ///   reflections from two devices are a conflict (E5): the earliest is shown and the others wait in
 ///   `mergeCandidates`; only the summary asks. Two from the same device are a redo: the later one stands.
 ///   Resolving turns the losing reflections into notes, so both recordings stay.
-/// - **Goals** merge by id; an ended goal stays ended. A goal is replaced only by a device that knew it
+/// - **Goals** merge by id; an ended goal stays ended, and an achieved goal stays achieved (there is no
+///   un-achieve, so it wins over a copy another device ended as replaced before hearing of it). A goal is replaced only by a device that knew it
 ///   (that device ended it itself: it is in its past goals, not merely demoted there by a merge). A goal
 ///   created on a device that never saw the current one (onboarding on a second device, two offline
 ///   replacements) never replaces it: the earlier goal stays current and the newcomer is kept as a replaced
@@ -284,14 +285,21 @@ public enum SnapshotMerger {
 
     enum Side { case newer, older }
 
-    /// Two versions of one goal (`a` from the newer envelope): a version the user ended wins over an active
-    /// one (ending happens after editing); otherwise the later `versionTime`. A copy a merge demoted counts
-    /// as active here (nobody ended it; `mergeGoals` decides its status again). Parts and the B7 answer
-    /// merge field-wise so neither device's addition is lost.
+    /// Two versions of one goal (`a` from the newer envelope), in this order:
+    /// 1. **Achieved wins** over every other copy, even one a merge demoted: the app has no un-achieve, so a
+    ///    copy without it only means that device hadn't heard yet (e.g. it set the next goal, ending its copy
+    ///    as replaced, before the achievement synced).
+    /// 2. A version the user ended wins over an active one (ending happens after editing). A copy a merge
+    ///    demoted counts as active here (nobody ended it; `mergeGoals` decides its status again).
+    /// 3. Otherwise the later `versionTime`; equal times keep `a`.
+    /// Parts and the B7 answer merge field-wise so neither device's addition is lost.
     static func pickGoal(_ a: Goal, _ b: Goal) -> Goal {
+        let aAchieved = a.status == .achieved, bAchieved = b.status == .achieved
         let aEnded = a.isEndedByUser, bEnded = b.isEndedByUser
         let winner: Goal, loser: Goal
-        if aEnded != bEnded {
+        if aAchieved != bAchieved {
+            (winner, loser) = aAchieved ? (a, b) : (b, a)
+        } else if aEnded != bEnded {
             (winner, loser) = aEnded ? (a, b) : (b, a)
         } else {
             (winner, loser) = b.versionTime > a.versionTime ? (b, a) : (a, b)

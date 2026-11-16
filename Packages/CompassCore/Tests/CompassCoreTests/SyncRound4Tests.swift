@@ -54,6 +54,9 @@ final class SyncRound4Tests: XCTestCase {
         var lastWipe: Date?
         /// Every goal a user made after the newest wipe: the merge must keep each one somewhere.
         var made: [UUID: Date] = [:]
+        /// Every goal a user marked achieved on some device after the newest wipe: once settled it must be
+        /// achieved on every device (there is no un-achieve).
+        var achieved: Set<UUID> = []
         var nextGoal = 100
 
         init(_ devices: [Device]) {
@@ -112,7 +115,8 @@ final class SyncRound4Tests: XCTestCase {
         }
 
         mutating func achieve(_ i: Int, at now: Date) {
-            guard devices[i].snapshot.goal?.status == .active else { return }
+            guard let goal = devices[i].snapshot.goal, goal.status == .active else { return }
+            achieved.insert(goal.id)
             devices[i].change(at: now) { s in
                 s.goal?.status = .achieved
                 s.goal?.endedAt = now
@@ -129,6 +133,7 @@ final class SyncRound4Tests: XCTestCase {
             cloud = [dev.identity.id: dev.envelope]
             lastWipe = now
             made = made.filter { $0.value >= now }
+            achieved = achieved.filter { made[$0] != nil }
             log.append("wipe\(i)")
         }
 
@@ -173,6 +178,9 @@ final class SyncRound4Tests: XCTestCase {
                 if s.pastGoals.contains(where: { $0.status == .active }) { return "an active past goal: \(show(i))" }
                 let kept = Set(all.map(\.id))
                 if let lost = made.keys.first(where: { !kept.contains($0) }) { return "goal \(lost) lost: \(show(i))" }
+                if let g = all.first(where: { achieved.contains($0.id) && $0.status != .achieved }) {
+                    return "an achieved goal shown as \(g.status): \(show(i))"
+                }
             }
             return nil
         }
